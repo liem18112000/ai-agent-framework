@@ -86,3 +86,78 @@ def memory_self_seed(bank, seed: str, terms: str = "", *, max_seeds: int = 5) ->
     except Exception as exc:  # noqa: BLE001 — self-seed must never break gather
         log.warning("memory self-seed skipped for %s (%s)", seed, exc)
         return [], ""
+
+
+# --- G0.5 (M4c) semantic self-seed: vector-nearest prior seeds, B5-grounded ------------------ #
+_FETCHABLE_TYPES = ("jira-issue", "confluence-page")
+
+
+def _semantic_enabled() -> bool:
+    """Opt-in gate (default OFF) — semantic seeding changes the carefully-tuned de-bias seeding, so
+    it never turns on just from flipping MEMORY_BACKEND."""
+    import os
+
+    return os.environ.get("MEMORY_SEMANTIC_SEED", "").lower() in ("1", "true", "yes", "on")
+
+
+def _neighbors(graph, node_id: str) -> set[str]:
+    """Ids sharing an index edge with `node_id` (either direction) — the seed's B5 anchor set."""
+    out: set[str] = set()
+    for e in graph.edges.values():
+        src, tgt = e.get("source_id", ""), e.get("target", "")
+        if src == node_id and tgt:
+            out.add(tgt)
+        elif tgt == node_id and src:
+            out.add(src)
+    return out
+
+
+def _render_semantic(ids: list[str]) -> str:
+    return "\n".join([f"Semantically-related prior seeds ({len(ids)}), grounded to this ticket:",
+                      *[f"- {i}" for i in ids]])
+
+
+async def semantic_self_seed(bank, seed: str, terms: str = "", *, exclude: set[str] | None = None,
+                             max_seeds: int = 5) -> tuple[list[str], str]:
+    """G0.5: promote VECTOR-nearest fetchable prior seeds, each **B5-grounded** to the seed's graph
+    neighbourhood (shares an index edge with an anchor). The grounding is the de-bias — semantic
+    nearness alone never promotes, so an off-topic vector neighbour can't seed the crawl. A cold
+    seed (no anchors in the index) promotes NOTHING. Opt-in (MEMORY_SEMANTIC_SEED) + DB backend
+    only; best-effort, NEVER raises → ([], "").
+
+    Note on B4: the hub-penalty is a token-frequency de-bias for the substring path; the vector arm
+    ranks by semantic similarity (not token frequency), so B5 grounding + the top-K cap are the
+    appropriate guard here, and B4 is intentionally not applied to the semantic candidates."""
+    exclude = set(exclude or ())
+    try:
+        from common.memory import retrieve
+
+        if not _semantic_enabled() or retrieve.backend() == "gcs":
+            return [], ""
+        from common.memory.graph_index import graph_grounded
+        from common.memory.pg import build_store
+        from common.memory.pg.embed import aembed_query, embed_configured
+
+        store = build_store()
+        if store is None or not embed_configured():
+            return [], ""
+        self_id = normalize_seed(seed)
+        graph, _ = bank.load_index()
+        anchors = _neighbors(graph, self_id)
+        if not anchors:  # cold seed → no semantic promotion (avoid pulling in the memory well)
+            return [], ""
+        q_embed = await aembed_query(terms) if terms else None
+        rows = await store.search(q_text=terms, q_embed=q_embed,
+                                  types=list(_FETCHABLE_TYPES), k=max_seeds * 4)
+        out: list[str] = []
+        for r in rows:
+            nid = r.get("id", "")
+            if (nid and nid != self_id and nid not in exclude and nid.startswith(_FETCHABLE)
+                    and graph_grounded(graph, nid, anchors)):
+                out.append(nid)
+                if len(out) >= max_seeds:
+                    break
+        return out, (_render_semantic(out) if out else "")
+    except Exception as exc:  # noqa: BLE001 — semantic seed must never break gather
+        log.warning("semantic self-seed skipped for %s (%s)", seed, exc)
+        return [], ""

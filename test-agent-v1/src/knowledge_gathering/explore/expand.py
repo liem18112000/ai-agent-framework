@@ -13,7 +13,7 @@ from knowledge_gathering.explore.ask_llm import ask_llm_leads, leads_enabled
 from knowledge_gathering.explore.atlassian_search import atlassian_search_seeds
 from knowledge_gathering.explore.ground_leads import ground_leads
 from knowledge_gathering.explore.hypothesize import hypothesize_enabled, hypothesize_terms
-from knowledge_gathering.explore.self_seed import memory_self_seed
+from knowledge_gathering.explore.self_seed import memory_self_seed, semantic_self_seed
 from knowledge_gathering.loop.seed import normalize_seed
 from knowledge_gathering.monitoring import get_logger
 
@@ -49,7 +49,7 @@ async def expansion_round(
     exclude = set(exclude or ())
     seed_norm = normalize_seed(seed)
     new_seeds: list[str] = []
-    hyp_md = climb_md = prior_md = search_md = leads_md = ""
+    hyp_md = climb_md = prior_md = sem_md = search_md = leads_md = ""
     focus = terms
 
     def _add(candidates: list[str]) -> None:  # dedup vs the running new_seeds + the exclude set
@@ -85,6 +85,11 @@ async def expansion_round(
     if not climbed:
         prior_seeds, prior_md = memory_self_seed(bank, seed, focus)
         _add(prior_seeds)
+        # G0.5 — semantic self-seed (M4c): vector-nearest fetchable prior seeds, B5-grounded to the
+        # seed's graph neighbourhood. Opt-in (MEMORY_SEMANTIC_SEED) + DB backend; best-effort noop else.
+        sem_seeds, sem_md = await semantic_self_seed(
+            bank, seed, focus, exclude=exclude | set(new_seeds) | {seed_norm})
+        _add(sem_seeds)
 
     # G1 — Atlassian search: only when the seed is THIN, sweep Jira/Confluence over the focus terms
     # and promote hits to seeds (the crawl then processes them under the existing budget/dedup).
@@ -108,5 +113,5 @@ async def expansion_round(
         log.info("A2A gather: seed=%s → external-LLM leads grounded=%d unconfirmed=%d",
                  seed, len(grounded), len(unconfirmed))
 
-    md_blocks = [md for md in (hyp_md, climb_md, prior_md, search_md, leads_md) if md]
+    md_blocks = [md for md in (hyp_md, climb_md, prior_md, sem_md, search_md, leads_md) if md]
     return new_seeds, md_blocks

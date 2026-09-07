@@ -52,6 +52,12 @@ variable "memory_drain_budget_s" {
   default     = "8"
 }
 
+variable "memory_semantic_seed" {
+  type        = string
+  description = "Enable G0.5 semantic self-seed (vector-nearest, B5-grounded prior seeds at gather). Opt-in ('1') and only under a DB backend; empty = off (substring+B4 seeding only). Off by default because it changes the tuned de-bias seeding."
+  default     = ""
+}
+
 variable "name_prefix" {
   type        = string
   description = "Prefix for named resources."

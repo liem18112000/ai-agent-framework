@@ -176,5 +176,6 @@ locals {
     { name = "MEMORY_EMBED_DIMS", value = var.memory_embed_dims },
     { name = "MEMORY_EMBED_LOCATION", value = var.memory_embed_location },
     { name = "MEMORY_DRAIN_BUDGET_S", value = var.memory_drain_budget_s },
+    { name = "MEMORY_SEMANTIC_SEED", value = var.memory_semantic_seed },
   ]
 }
