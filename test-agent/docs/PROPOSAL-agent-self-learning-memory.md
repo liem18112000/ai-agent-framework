@@ -1,7 +1,19 @@
 # PROPOSAL — Agent self-learning memory (auto-capture lessons to GCS)
 
-> Status: **design / implementation plan** (no code yet). Author target: KGA + TPD agents.
-> Related: [[RESEARCH-self-exploring-knowledge-gather]] (de-bias B0–B6), PROPOSAL-KNOWLEDGE-REFINEMENT.
+> Status: **IMPLEMENTED & DEPLOYED (live-verified 2026-09-04)** — L0–L6 shipped in `common/learn/*`
+> (committed in `b9948f7`). Flags `{KGA,TPD}_CAPTURE_LESSONS` / `_RECALL_LESSONS` are **declared and
+> enabled (`="1"`) in `deployments/services.tf`** (code default is OFF via `common/learn/config.py`);
+> the full capture → recall → veto loop was proven end-to-end on the deployed MCP tools.
+> Recall today is **structural-only** (B5 `source_refs ∩ seed_refs`); **semantic recall lands with the
+> two-tier memory M4** (§6 · §9). Author target: KGA + TPD agents.
+> Related: [[RESEARCH-self-exploring-knowledge-gather]] (de-bias B0–B6),
+> [[PROPOSAL-two-tier-agent-memory-pgvector]] (**the recall upgrade this needs** — M0–M2 built),
+> [[task-store-cloud-sql]], PROPOSAL-KNOWLEDGE-REFINEMENT.
+> Diagram: `self-learning-memory-loop.excalidraw` / `.png` (this dir) — the four-band loop
+> (① signals · ② async capture: queue → drain → distil → gate → persist · ③ recall into the next run),
+> plus the safety band (cited · confidence-tiered · vetoable · B4/B5 de-biased).
+
+![Agent self-learning memory — capture · gate · persist · recall loop](self-learning-memory-loop.png)
 
 ## 1. Goal
 
@@ -144,6 +156,16 @@ the index and G0 self-seed surfaces them insights-first). Add:
   a B0 run-scoped refine pack). Confirm interaction with B0 (`load_pack` filters by `run_id`): lessons
   influence seeding/hypothesis and are surfaced, they are not re-interrogated as pack nodes.
 
+**Recall upgrade — structural today, semantic next ([[PROPOSAL-two-tier-agent-memory-pgvector]]).**
+L4 as shipped is **structural-only**: `common/learn/recall.py` surfaces a lesson only when its
+`source_refs` intersect the run's seed anchors (B5), so a semantically-identical lesson learned on a
+*different* ticket never resurfaces. That proposal's **M0–M2 are already built** (`common/db.py`,
+`common/memory/pg/*`, `common/memory/retrieve.py` — the `MEMORY_BACKEND=gcs|hybrid|postgres` facade);
+its **M4** ports lesson recall onto the hybrid **vector ∪ full-text ∪ SQL** path (keeping the B4
+hub-penalty + B5 grounding), so a `shared` lesson resurfaces on a *similar* new run even with zero
+token/edge overlap — **without** re-opening the memory-bias hole (§7). This is the missing piece that
+makes `scope=shared` genuinely reusable; until M4 lands, cross-run recall stays conservative (structural).
+
 ## 7. Safety — this is the memory-bias problem again (CRITICAL)
 
 Auto-writing to shared memory **is exactly the failure mode B0–B6 just fixed**: a saturated/incorrect
@@ -154,7 +176,8 @@ less. Mandatory safeguards:
 - **Human veto / retraction** — a `veto-lesson <id>` MCP tool sets `status=vetoed` (reusing the
   `rejected` pattern); vetoed lessons are excluded from recall and never re-promoted.
 - **De-biased recall** — lesson recall runs through **B4 IDF hub-penalty + B5 grounding**: an
-  over-general or off-topic lesson can't flood an unrelated run's promotions.
+  over-general or off-topic lesson can't flood an unrelated run's promotions. (When semantic recall
+  lands, the same B4/B5 gates run on the **vector path** — [[PROPOSAL-two-tier-agent-memory-pgvector]] §9.)
 - **Promotion criteria** — `context` → `shared` only when human-confirmed **or** corroborated across
   ≥N runs; default stays `context`.
 - **Supersede on contradiction** — a newer, higher-confidence lesson replaces an older one rather than
@@ -165,8 +188,9 @@ less. Mandatory safeguards:
 - **One LLM call per step, thread-offloaded, and OFF the response critical path** (§4b) — capture never
   gates the step's reply or the next step. Best-effort; degrade to heuristic/noop; never raise into the
   pipeline. (Cloud-Run liveness/timeout history: serial blocking Vertex calls have killed an instance.)
-- **Flags (default OFF):** `KGA_CAPTURE_LESSONS`, `TPD_CAPTURE_LESSONS` (+ `*_RECALL_LESSONS` for the
-  recall side), wired in `deployments/services.tf` / `variables.tf`. Safe dark launch.
+- **Flags:** `KGA_CAPTURE_LESSONS`, `TPD_CAPTURE_LESSONS` (+ `*_RECALL_LESSONS` for the recall side) —
+  code default OFF (`common/learn/config.py` `_on`), **declared and currently enabled (`="1"`) in
+  `deployments/services.tf`**. Dark-launch capability; presently ON in the deployed config.
 - **CAS index writes** batched per step; run-log of captures for auditability.
 
 ## 9. Phasing
@@ -179,7 +203,8 @@ less. Mandatory safeguards:
 | **L3 ✅ DONE** | Capture at **define** (first TPD memory writes) + **gather** (codegraph-repo fact). *implement deferred* — scenarios aren't decisions, would flood | `test_plan_definition/executor/define.py`, `knowledge_gathering/executor/gather.py` |
 | **L4 ✅ DONE** | **Recall** grounded lessons (B5 structural: source_ref ∩ seed_refs; not term-match) into the refine/define pack preamble (`Pack.lessons`), flag-gated `*_RECALL_LESSONS` | `common/learn/recall.py`, `common/models/pack.py`, both executors |
 | **L5 ✅ DONE** | Governance: `search-lessons` / `veto-lesson` agent commands + MCP tools; head-of-request `drain` (async, off the reply path) | `common/learn/govern.py`, `executor/memory.py` + `base.py`, `bridge/mcp_server.py` |
-| **L6 ✅ DONE** | Deployment flags (default OFF `"0"`): `KGA_/TPD_CAPTURE_LESSONS`, `KGA_/TPD_RECALL_LESSONS` | `deployments/services.tf` |
+| **L6 ✅ DONE + DEPLOYED** | Flags declared in `deployments/services.tf` (`{KGA,TPD}_CAPTURE_LESSONS` / `_RECALL_LESSONS`), **currently enabled `="1"`**; code default OFF via `common/learn/config.py`. Deployed & live-verified 2026-09-04 (capture → recall → veto proven on the deployed MCP tools) | `deployments/services.tf`, `common/learn/config.py` |
+| **L7 — planned** | **Semantic recall** — route lesson recall through the two-tier **hybrid** path (vector ∪ text ∪ SQL, B4/B5) so `shared` lessons surface on *similar* runs, not just token/edge-overlapping ones. Depends on [[PROPOSAL-two-tier-agent-memory-pgvector]] **M4** (M0–M2 built) | `common/memory/retrieve.py`, `common/learn/recall.py` |
 
 ## 10. Testing (mirrors the existing suite)
 
@@ -197,6 +222,8 @@ recall ranking applies IDF hub-penalty; capture never raises on a broken step; f
 
 ## 12. TL;DR
 
-Reuse `Insight` → add a `lesson` kind + a shared `capture_lessons` step after each stage, **gated,
-cited, vetoable, de-biased on recall**. It closes the loop the B-phases opened: the agent stops
-re-learning the same corrections, without re-introducing the memory-bias those phases removed.
+**Built & deployed (L0–L6; live-verified 2026-09-04, flags `="1"`).** Reuse `Insight` → add a `lesson`
+kind + a shared `capture_lessons` step after each stage, **gated, cited, vetoable, de-biased on recall**.
+It closes the loop the B-phases opened: the agent stops re-learning the same corrections, without
+re-introducing the memory-bias those phases removed. **Remaining (L7):** upgrade recall from structural
+to **semantic** once the two-tier pgvector M4 lands.
