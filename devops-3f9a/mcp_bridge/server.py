@@ -33,9 +33,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-import vertexai
 from mcp.server.fastmcp import FastMCP
-from vertexai import agent_engines
 
 PROJECT_ID = "klara-nonprod"
 LOCATION = "us-central1"
@@ -45,15 +43,27 @@ CONFIRMATION_FUNCTION_NAME = "adk_request_confirmation"
 
 mcp = FastMCP("devops-3f9a-bridge")
 
-vertexai.init(project=PROJECT_ID, location=LOCATION)
 _agent_engine = None
+_vertexai_initialized = False
 
 # session_id -> {"confirmation_fc_id": str, "hint": str, "original_call": dict}
 _pending_confirmations: dict[str, dict] = {}
 
 
 def _get_agent_engine():
-    global _agent_engine
+    global _agent_engine, _vertexai_initialized
+    # `vertexai` and `vertexai.agent_engines` pull in a heavy dependency
+    # tree (grpc, protobuf, google-cloud-*) that takes 10-25s to import.
+    # Importing them lazily, on the first actual tool call rather than at
+    # module load, lets mcp.run(transport="stdio") start listening
+    # immediately -- otherwise the MCP client's handshake times out
+    # waiting for the server and reports CONNECTION_CLOSED.
+    import vertexai
+    from vertexai import agent_engines
+
+    if not _vertexai_initialized:
+        vertexai.init(project=PROJECT_ID, location=LOCATION)
+        _vertexai_initialized = True
     if _agent_engine is None:
         _agent_engine = agent_engines.get(RESOURCE_NAME)
     return _agent_engine
