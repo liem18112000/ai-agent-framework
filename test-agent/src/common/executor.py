@@ -32,6 +32,9 @@ def build_bank():
     from google.cloud import storage
 
     from common.memory import MemoryBank
+    from common.memory.pg.project import index_on_write
 
     client = storage.Client(project=os.environ.get("GCP_PROJECT") or os.environ.get("VERTEX_PROJECT"))
-    return MemoryBank(client.bucket(os.environ["GCS_BUCKET"]))
+    # on_write enqueues an index-projection job; index_on_write is a no-op under MEMORY_BACKEND=gcs,
+    # so this is safe to wire unconditionally and a runtime backend flip needs no bank rebuild.
+    return MemoryBank(client.bucket(os.environ["GCS_BUCKET"]), on_write=index_on_write)

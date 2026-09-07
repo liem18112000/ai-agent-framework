@@ -44,6 +44,10 @@ class TestPlanDefinitionExecutor(AgentExecutor):
         if bank is not None and learn.capture_enabled("TPD"):
             await asyncio.to_thread(learn.drain, bank, now=now())
 
+        # M2: project notes/insights into the pgvector index (no-op under MEMORY_BACKEND=gcs).
+        from common.memory.pg.project import maybe_drain_index
+        await maybe_drain_index(bank)
+
         if text.lower().startswith(("get-test-plan", "get-scenarios")):
             if bank is None:
                 return await reply(context, event_queue, "Config error: memory bank unavailable.")

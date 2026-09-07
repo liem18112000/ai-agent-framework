@@ -10,8 +10,8 @@ from a2a.server.agent_execution import RequestContext
 from a2a.server.events import EventQueue
 
 from common.learn import search_lessons, veto_lesson
+from common.memory import retrieve
 from knowledge_gathering.executor.common import reply
-from knowledge_gathering.explore.index import match_index_nodes
 
 
 def _arg(text: str, cmd: str) -> str:
@@ -43,17 +43,17 @@ async def run_veto_lesson(ex, context: RequestContext, event_queue: EventQueue, 
 async def run_search_memory(ex, context: RequestContext, event_queue: EventQueue, bank, text: str) -> None:
     """Search the knowledge index (link graph): list nodes whose id / title / type match the query."""
     q = _arg(text, "search-memory").lower()
-    graph, _ = bank.load_index()
-    nodes = match_index_nodes(graph, q)
+    nodes = await retrieve.search_nodes(bank, q)  # backend-dispatched (gcs graph by default)
     if not nodes:
         return await reply(
             context, event_queue,
             f"No memory nodes match '{q}'." if q else "The memory index is empty — gather something first.",
         )
-    header = (
-        f"{len(nodes)} node(s) matching '{q}'" if q
-        else f"{len(nodes)} node(s), {len(graph.edges)} edge(s) in the index"
-    )
+    if q:
+        header = f"{len(nodes)} node(s) matching '{q}'"
+    else:
+        graph, _ = bank.load_index()  # only the empty-query summary needs the edge count
+        header = f"{len(nodes)} node(s), {len(graph.edges)} edge(s) in the index"
     lines = [header + ":", ""]
     for n in sorted(nodes, key=lambda n: n.get("id", "")):
         title = n.get("title") or ""

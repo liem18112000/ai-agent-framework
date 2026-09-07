@@ -36,6 +36,9 @@ from common.models import (
     RefinementRun,
     RunLog,
 )
+from common.monitoring import get_logger
+
+log = get_logger("memory.bank")
 
 ROOT = "memory"
 INDEX_JSON = f"{ROOT}/index/knowledge-index.json"
@@ -47,9 +50,20 @@ def _slug(s: str) -> str:
 
 
 class MemoryBank:
-    def __init__(self, bucket, *, redactor: Callable[[str], str] | None = None) -> None:
+    def __init__(self, bucket, *, redactor: Callable[[str], str] | None = None, on_write=None) -> None:
         self._bucket = bucket
         self._redact = redactor or (lambda s: s)
+        # M2 projector seam: called (bank, node_id, node_type, kind) after a note/insight lands in
+        # GCS. build_bank wires it to the pgvector index queue; None → GCS-only (the default).
+        self.on_write = on_write
+
+    def _fire_on_write(self, node_id: str, node_type: str, kind: str) -> None:
+        if self.on_write is None:
+            return
+        try:
+            self.on_write(self, node_id, node_type, kind)
+        except Exception as exc:  # noqa: BLE001 — projection is best-effort; GCS stays the truth
+            log.warning("memory: on_write hook failed for %s (%s)", node_id, exc)
 
     def _note_json(self, note_type: str, note_id: str) -> str:
         return f"{ROOT}/notes/{note_type}/{_slug(note_id)}.json"
@@ -98,6 +112,7 @@ class MemoryBank:
         )
         path = self._note_md(note.type, note.id)
         self._put(path, self._redact(render_note_md(merged)), "text/markdown")
+        self._fire_on_write(merged.id, merged.type, "")
         return path
 
     # index (compare-and-set)
@@ -165,6 +180,7 @@ class MemoryBank:
         )
         path = self._note_md(INSIGHT, insight.id)
         self._put(path, self._redact(render_insight_md(insight)), "text/markdown")
+        self._fire_on_write(insight.id, INSIGHT, insight.kind)
         return path
 
     def read_insight(self, insight_id: str) -> Insight | None:

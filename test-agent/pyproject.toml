@@ -14,6 +14,7 @@ dependencies = [
   "google-cloud-storage>=2.16",
   "google-cloud-secret-manager>=2.20",
   "anthropic[vertex]>=1,<2",    # Claude on Vertex AI (claude-sonnet-5) — the Distill step
+  "google-cloud-aiplatform>=1.60",  # vertexai TextEmbeddingModel — pgvector recall embeddings (M3); imported lazily
   "beautifulsoup4>=4.12",
   "uvicorn[standard]>=0.30",
   "graphifyy>=0.9,<1",              # local tree-sitter code-graph CLI (`graphify`) — the codegraph fetcher
