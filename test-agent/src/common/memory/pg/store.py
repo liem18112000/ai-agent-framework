@@ -39,12 +39,16 @@ class PgMemoryStore:
         self._ready = False
 
     async def _ensure(self) -> None:
-        """Apply the schema once per process (idempotent CREATE … IF NOT EXISTS)."""
+        """Apply the schema once per process (idempotent CREATE … IF NOT EXISTS). SCHEMA_SQL is
+        split into individual statements: asyncpg's extended protocol rejects multiple commands in
+        one execute() ('cannot insert multiple commands into a prepared statement')."""
         if self._ready:
             return
         from sqlalchemy import text
         async with self._engine.begin() as conn:
-            await conn.execute(text(SCHEMA_SQL))
+            for stmt in (s.strip() for s in SCHEMA_SQL.split(";")):
+                if stmt:
+                    await conn.execute(text(stmt))
         self._ready = True
 
     # --- writes (projector, M2) --- #
