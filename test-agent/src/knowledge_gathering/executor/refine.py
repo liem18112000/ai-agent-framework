@@ -20,6 +20,7 @@ from a2a.types import a2a_pb2
 from common import learn
 from common.interrogate import RefineSession, present
 from common.interrogate.loop import RefineResult
+from common.memory import retrieve
 from knowledge_gathering.executor.common import build_client, now, reply
 from knowledge_gathering.loop import crawl
 from knowledge_gathering.monitoring import get_logger
@@ -27,12 +28,17 @@ from knowledge_gathering.monitoring import get_logger
 log = get_logger("executor.refine")
 
 
-def _recall_into(session, bank) -> None:
-    """L4: inject prior grounded lessons into the pack so refine doesn't re-learn them."""
+async def _recall_into(session, bank) -> None:
+    """L4: inject prior lessons into the pack so refine doesn't re-learn them — structural ∪
+    semantic under a DB backend (M4b), structural-only on GCS. Best-effort, flag-gated."""
     if not learn.recall_enabled("KGA"):
         return
     try:
-        session.pack.lessons = learn.recall_lessons(bank, seed_refs={n.id for n in session.pack.grounded})
+        grounded = session.pack.grounded
+        session.pack.lessons = await retrieve.recall_lessons(
+            bank, seed_refs={n.id for n in grounded},
+            query_text=" ".join(n.title for n in grounded if n.title),
+        )
     except Exception as exc:  # noqa: BLE001 — recall is best-effort
         log.warning("A2A refine: lesson recall skipped (%s)", exc)
 
@@ -151,7 +157,7 @@ async def run_refine(ex, context: RequestContext, event_queue: EventQueue,
         log.info("A2A refine: ingesting answers for %s", pack_ctx)
         await session.submit(text)
 
-    _recall_into(session, bank)  # L4: prior grounded lessons → pack preamble (flag-gated)
+    await _recall_into(session, bank)  # L4: prior lessons → pack preamble (flag-gated)
 
     if context.current_task is None:  # enqueue the initial Task before any status-update event
         await event_queue.enqueue_event(new_task_from_user_message(context.message))

@@ -20,6 +20,7 @@ from a2a.types import a2a_pb2
 
 from common import learn
 from common.interrogate import present
+from common.memory import retrieve
 from test_plan_definition import memory as store
 from test_plan_definition.define.loop import PlanResult, PlanSession
 from test_plan_definition.executor.common import now, reply
@@ -29,13 +30,17 @@ from test_plan_definition.monitoring import get_logger
 log = get_logger("executor.define")
 
 
-def _recall_into(session, bank) -> None:
-    """L4: inject prior grounded lessons into the plan pack so define doesn't re-learn them."""
+async def _recall_into(session, bank) -> None:
+    """L4: inject prior lessons into the plan pack — structural ∪ semantic under a DB backend
+    (M4b), structural-only on GCS. Best-effort, flag-gated."""
     if not learn.recall_enabled("TPD"):
         return
     try:
         pack = session.plan_pack.pack
-        pack.lessons = learn.recall_lessons(bank, seed_refs={n.id for n in pack.grounded})
+        pack.lessons = await retrieve.recall_lessons(
+            bank, seed_refs={n.id for n in pack.grounded},
+            query_text=" ".join(n.title for n in pack.grounded if n.title),
+        )
     except Exception as exc:  # noqa: BLE001 — recall is best-effort
         log.warning("A2A define: lesson recall skipped (%s)", exc)
 
@@ -153,7 +158,7 @@ async def run_define(ex, context: RequestContext, event_queue: EventQueue,
         log.info("A2A define: ingesting answers for %s", pack_ctx)
         await session.submit(text)
 
-    _recall_into(session, bank)  # L4: prior grounded lessons → plan-pack preamble (flag-gated)
+    await _recall_into(session, bank)  # L4: prior lessons → plan-pack preamble (flag-gated)
 
     if context.current_task is None:  # enqueue the initial Task before any status-update event
         await event_queue.enqueue_event(new_task_from_user_message(context.message))
