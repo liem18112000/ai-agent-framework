@@ -32,13 +32,15 @@ def _graph_search(bank, query: str) -> list[dict]:
 async def search_nodes(bank, query: str, *, store=None) -> list[dict]:
     """Index nodes matching `query`, as `{id,type,title}` dicts. Postgres (hybrid/postgres) when a
     store is available, else the GCS graph. A Postgres error/empty-in-hybrid degrades to the graph."""
-    if backend() in ("hybrid", "postgres") and store is not None:
-        try:
-            rows = await store.search(q_text=query, q_embed=await _query_embedding(query))
-            if rows or backend() == "postgres":
-                return rows
-        except Exception as exc:  # noqa: BLE001 — recall is best-effort; fall back to the graph
-            log.warning("memory.retrieve: pg search failed (%s); using graph", exc)
+    if backend() in ("hybrid", "postgres"):
+        store = store or _build_store()  # self-build so callers (search-memory) needn't wire one
+        if store is not None:
+            try:
+                rows = await store.search(q_text=query, q_embed=await _query_embedding(query))
+                if rows or backend() == "postgres":
+                    return rows
+            except Exception as exc:  # noqa: BLE001 — best-effort; fall back to the graph
+                log.warning("memory.retrieve: pg search failed (%s); using graph", exc)
     return _graph_search(bank, query)
 
 
