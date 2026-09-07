@@ -1,0 +1,31 @@
+# CI for the Testing-Agent stack (test-agent/). Runs ruff + the pytest suite, including the
+# pgvector INTEGRATION tests against a real Postgres service (tests/test_pg_integration.py) — the
+# class of store SQL bug the offline fakes can't catch. The judged `eval` extra is out of scope
+# here (nightly/manual). Vectors in the integration tests are deterministic fakes, so no cloud creds.
+
+image: python:3.12
+
+definitions:
+  services:
+    pgvector:
+      image: pgvector/pgvector:pg16
+      variables:
+        POSTGRES_DB: testdb
+        POSTGRES_USER: testuser
+        POSTGRES_PASSWORD: testpass
+
+pipelines:
+  default:
+    - step:
+        name: lint + tests (incl. pgvector integration)
+        caches:
+          - pip
+        services:
+          - pgvector
+        script:
+          - cd test-agent
+          - pip install ".[dev]"
+          - ruff check src tests
+          # PGVECTOR_TEST_URL un-gates tests/test_pg_integration.py against the pgvector service.
+          - export PGVECTOR_TEST_URL="postgresql+asyncpg://testuser:testpass@localhost:5432/testdb"
+          - pytest -q --ignore=tests/eval
