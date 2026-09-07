@@ -166,4 +166,13 @@ locals {
     DB_USER                     = var.db_user
     DB_NAME                     = var.db_name
   } : {}
+
+  # Two-tier memory (pgvector recall) env, injected into every agent container. Harmless under the
+  # default MEMORY_BACKEND=gcs (the code reads the DB / embeds only when the backend is hybrid or
+  # postgres), so it needs no gating and a runtime flip is just a tfvars change + apply.
+  memory_env = [
+    { name = "MEMORY_BACKEND", value = var.memory_backend },
+    { name = "MEMORY_EMBED_MODEL", value = var.memory_embed_model },
+    { name = "MEMORY_EMBED_DIMS", value = var.memory_embed_dims },
+  ]
 }

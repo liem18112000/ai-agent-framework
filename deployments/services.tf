@@ -93,6 +93,7 @@ module "kga" {
       startup_probe_http_path  = "/livez"
       liveness_probe_http_path = "/livez"
       env = concat(
+        local.memory_env, # pgvector recall tier (inert under MEMORY_BACKEND=gcs)
         var.deploy_cloudsql ? [
           { name = "DB_INSTANCE_CONNECTION_NAME", value = local.cloudsql_connection_name },
           { name = "DB_NAME", value = var.db_name },
@@ -187,6 +188,7 @@ module "tpd" {
       startup_probe_http_path  = "/livez"
       liveness_probe_http_path = "/livez"
       env = concat(
+        local.memory_env, # pgvector recall tier (inert under MEMORY_BACKEND=gcs)
         var.deploy_cloudsql ? [
           { name = "DB_INSTANCE_CONNECTION_NAME", value = local.cloudsql_connection_name },
           { name = "DB_NAME", value = var.db_name },
@@ -266,6 +268,7 @@ module "tev" {
       startup_probe_http_path  = "/livez"
       liveness_probe_http_path = "/livez"
       env = concat(
+        local.memory_env, # pgvector recall tier (inert under MEMORY_BACKEND=gcs)
         var.deploy_cloudsql ? [
           { name = "DB_INSTANCE_CONNECTION_NAME", value = local.cloudsql_connection_name },
           { name = "DB_NAME", value = var.db_name },

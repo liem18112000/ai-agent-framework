@@ -332,7 +332,7 @@ run on the vector path:
 | **M4b ✅ DONE** | **Semantic lesson recall**: `store.recall` = structural (`source_refs ∩ seed_refs`) ∪ semantic (vector-nearest, **`scope='shared'` only** — the de-bias so a `context` lesson never leaks cross-run); `retrieve.recall_lessons` async facade (embeds the pack's grounded-titles as the query, PG→graph fallback); the two sync `_recall_into` helpers (refine + define) rewired to `async`/`await`. 5 new tests; suite 298 pass, ruff clean | `common/memory/pg/store.py` (`recall`), `common/memory/retrieve.py`, `{refine,define}.py`, `tests/test_pg_recall.py` |
 | **M4c** _(optional / deferred)_ | **Semantic seed-promotion + PG de-bias port**: make `self_seed`/`ground_leads`/`loop` promote **vector-nearest** fetchable seeds (not just substring) with B4 hub-penalty + B5 grounding computed over the PG candidate set. Deferred deliberately: B4/B5 already run correctly on the in-memory graph (GCS-populated under every backend) and **nothing consumes a PG-ported B4/B5 until this exists**; it adds a Vertex call to every crawl and can't be tested offline. Low ROI vs. risk — do only if gather seed-recall proves too lexical | `explore/self_seed.py`, `explore/ground_leads.py`, `explore/loop.py`, `pg/store.py` |
 | **M5 ✅ DONE** (tool) | **Backfill** — `enqueue_all` (one IndexJob per GCS-index node) → `drain_index` until empty; reuses the projector end-to-end so it inherits the mapper, embeddings, content-hash skip, and idempotency; durable queue ⇒ resumable. Logic in `common/memory/pg/backfill.py` (packaged/testable), thin CLI at `tools/backfill_memory.py`. 3 new tests; suite 301 pass, ruff clean. _Soak-in-`hybrid`-then-flip-`postgres` is the ops step (§8 runbook), pending real DB._ | `common/memory/pg/backfill.py`, `tools/backfill_memory.py`, `tests/test_backfill.py` |
-| **M6** | Deployment flags (default `gcs`), docs/USAGE, eval hook: does hybrid recall lift PQS recall without dropping precision? | `deployments/services.tf`, `docs/USAGE.md`, `tests/eval/` |
+| **M6 ✅ DONE** (config) | Terraform vars `memory_backend`/`memory_embed_model`/`memory_embed_dims` (default `gcs`) + a shared `local.memory_env` injected into all three agent containers (inert under `gcs`); reuses existing `DB_*`/`VERTEX_*` env, no new secret/instance. `terraform fmt` clean, `terraform validate` = Success. Rollout/rollback runbook in **Appendix B** (deploy `gcs` → backfill → HNSW → `hybrid` soak → `postgres`). _Live `apply` + soak pending a real DB._ | `deployments/variables.tf`, `deployments/cloudsql.tf`, `deployments/services.tf`, Appendix B |
 
 ---
 
@@ -635,3 +635,66 @@ projection + embeddings (the bulk). M4 is the retrieval SQL + de-bias port (the 
 rollout. Each phase is shippable behind `MEMORY_BACKEND=gcs` (dark), so it can merge incrementally without
 touching production behaviour until the flip. No change to the A2A contract, the MCP tools, or the client
 pipeline — only the memory backend behind `MemoryBank` and the four predicates.
+
+---
+
+# Appendix B — M6 deploy & rollout runbook
+
+> Terraform for the recall tier is **authored** (`deployments/`); the steps below are the **ops
+> flip**, to run against the real Cloud SQL instance when you're ready. Nothing here changes
+> behaviour until step 3 — `terraform apply` with the default `memory_backend="gcs"` is a no-op flip
+> of three inert env vars.
+
+## B.1 What the terraform adds
+
+- **Vars** (`variables.tf`): `memory_backend` (`gcs`→`hybrid`→`postgres`, default `gcs`),
+  `memory_embed_model` (`text-multilingual-embedding-002`), `memory_embed_dims` (`768`).
+- **`local.memory_env`** (`cloudsql.tf`) injected into **all three** agent containers (kga/tpd/tev)
+  via `services.tf`. Inert under `gcs` (the code reads the DB / embeds only when the backend is
+  `hybrid`/`postgres`), so it is wired unconditionally — a flip is just a tfvars edit + apply, no
+  bank rebuild. Reuses the existing `DB_*` (task-store) + `VERTEX_PROJECT/LOCATION` env already on
+  the agent; **no new secret, no new instance.**
+- **No DB flag needed for pgvector**: it's on the Cloud SQL extension allowlist and the app creates
+  it lazily (`CREATE EXTENSION IF NOT EXISTS vector` in `PgMemoryStore._ensure`); the terraform
+  `google_sql_user` carries `cloudsqlsuperuser`, which may create allowlisted extensions.
+
+## B.2 Rollout (dark → hybrid → authoritative)
+
+1. **Deploy on `gcs` (no-op).** Build + apply the memory-tier image with `memory_backend="gcs"`.
+   Production behaviour is unchanged; the tables don't exist yet and nothing reads them.
+2. **Create schema + backfill.** With the DB env present, run the backfill — it lazily applies the
+   DDL (extension + `memory_node`/`memory_edge`) and projects every GCS-index node (metadata +
+   embeddings):
+   ```bash
+   # against the deployed instance (Cloud SQL Connector env set) or via a proxy:
+   uv run python test-agent/tools/backfill_memory.py
+   ```
+3. **Create the ANN index** once the corpus has embeddings (it is intentionally *not* in the lazy
+   DDL — HNSW build cost/memory depends on corpus size + tier; on `db-f1-micro` prefer IVFFlat or a
+   small `m`):
+   ```sql
+   CREATE INDEX IF NOT EXISTS memory_node_embedding_hnsw
+     ON memory_node USING hnsw (embedding vector_cosine_ops);
+   ```
+4. **Flip `hybrid` + soak.** Set `memory_backend="hybrid"` in `terraform.tfvars`, apply. Recall now
+   reads pgvector and **falls back to the GCS graph** on any miss/error. Watch the eval harness:
+   does hybrid lift PQS **recall** without dropping **precision** ([[pqs-precision-zero-despite-no-leak]])?
+5. **Flip `postgres`.** Once soaked, set `memory_backend="postgres"` and apply — pgvector authoritative
+   (still degrades to the graph on a DB error; GCS is still the write truth).
+
+## B.3 Rollback
+
+Set `memory_backend="gcs"` and apply. Nothing was removed from GCS, so recall returns to the
+substring-graph path with **zero data loss**; `DROP TABLE memory_node, memory_edge;` is a no-op on
+truth. The recall tier is disposable by construction (§2).
+
+## B.4 Apply gotchas (carried from prior deploys)
+
+- `terraform.tfvars` is gitignored — the image tag + `memory_backend` flips are working-tree-only,
+  never in `git status` ([[tfvars-gitignored-image-tag-not-tracked]]). Only `tfvars.example` is tracked.
+- A `terraform -replace` of a Cloud Run service **wipes the `allUsers` invoker** → clients get a GFE
+  401/403; re-add the invoker iam_member ([[cloudrun-replace-wipes-iam]]).
+- `deploy.sh` can die before its final apply on the harmless Cloud Build log-streaming error
+  (`set -e`); finish with a manual `terraform apply -var=image=<tag>` ([[deploy-sh-cloudbuild-streaming-abort]]).
+- The pool is shared with the A2A task store (one engine, `common/db.py`) — size it for both; a recall
+  query storm must not starve task-store writes.

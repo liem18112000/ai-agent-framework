@@ -21,6 +21,25 @@ variable "vertex_model" {
   default     = "claude-sonnet-5"
 }
 
+# --- Two-tier memory (pgvector recall) — all inert under the default gcs backend ---
+variable "memory_backend" {
+  type        = string
+  description = "Recall backend for the shared memory: 'gcs' (substring graph, default — no behaviour change), 'hybrid' (read pgvector, fall back to the graph — safe dark launch), or 'postgres' (pgvector authoritative). GCS stays the write source of truth under all three."
+  default     = "gcs"
+}
+
+variable "memory_embed_model" {
+  type        = string
+  description = "Vertex text-embedding model for the pgvector recall tier. Multilingual (Swiss/German + EN) by default."
+  default     = "text-multilingual-embedding-002"
+}
+
+variable "memory_embed_dims" {
+  type        = string
+  description = "Embedding width; MUST match the memory_node.embedding vector(N) column and the model's output dims. Changing it needs a column migration + full re-embed."
+  default     = "768"
+}
+
 variable "name_prefix" {
   type        = string
   description = "Prefix for named resources."
