@@ -1,0 +1,40 @@
+{
+  "issues": {
+    "LUZ-701": {
+      "key": "LUZ-701",
+      "fields": {
+        "summary": "QR-bill fallback removal (individual customers only)",
+        "description": {"type": "doc", "version": 1, "content": [
+          {"type": "paragraph", "content": [{"type": "text",
+            "text": "Remove the QR fallback for individual accounts. Company accounts are out of scope."}]}
+        ]},
+        "issuelinks": [
+          {"type": {"name": "Relates"}, "outwardIssue": {"key": "LUZ-702"}}
+        ],
+        "labels": ["billing"],
+        "components": []
+      }
+    },
+    "LUZ-702": {
+      "key": "LUZ-702",
+      "fields": {
+        "summary": "failCount is the day-of-month of the dunning run",
+        "description": {"type": "doc", "version": 1, "content": []},
+        "issuelinks": []
+      }
+    },
+    "LUZ-799": {
+      "key": "LUZ-799",
+      "fields": {
+        "summary": "ZIP import mapping for address enrichment (unrelated domain)",
+        "description": {"type": "doc", "version": 1, "content": []},
+        "issuelinks": []
+      }
+    }
+  },
+  "remote_links": {},
+  "pages": {},
+  "jql": {},
+  "cql": {},
+  "dev_status": {}
+}

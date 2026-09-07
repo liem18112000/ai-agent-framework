@@ -1,0 +1,14 @@
+# Copy to terraform.tfvars and fill in. Do NOT put secret values here.
+project_id         = "my-gcp-project"
+region             = "europe-west6"
+vertex_region      = "global"          # Claude on Vertex (claude-sonnet-5) is served in 'global'
+vertex_model       = "claude-sonnet-5"
+
+atlassian_base_url = "https://axonivy.atlassian.net"
+atlassian_email    = "liem.doanvanthanh@axonactive.com"
+
+# Optional overrides:
+# bucket_name          = "my-gcp-project-kga-memory"
+# image                = "europe-west6-docker.pkg.dev/my-gcp-project/kga/kga:latest"
+# min_instances        = 1        # warm for lower first-call latency
+# allow_unauthenticated = true    # rely on the A2A bearer as the gate

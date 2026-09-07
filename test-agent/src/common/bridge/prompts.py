@@ -1,0 +1,91 @@
+"""Shared trigger content for the two MCP bridges — delivered by the SERVER, so a fresh
+client that has only connected the MCP server(s) (no CLAUDE.md, no slash-command files) can
+run the whole Testing Agent by saying "test <JIRA>".
+
+- `TRIGGER_INSTRUCTIONS` is appended to each bridge's MCPServer `instructions` (the client
+  surfaces server instructions to the model), so free-text "test LUZ-158390" is recognized.
+- `test_prompt()` is the body of the `test` MCP prompt each bridge registers (the client
+  surfaces it as a slash command, e.g. /mcp__test-plan-definition__test) — same workflow.
+
+Both live here (imported by both bridges) so the wording has one source of truth.
+"""
+
+from __future__ import annotations
+
+TRIGGER_INSTRUCTIONS = (
+    "TESTING-AGENT TRIGGER — when the user asks to test a Jira ticket (e.g. says "
+    "'test LUZ-158390', 'test the ticket LUZ-158390', or invokes the `test` prompt), run the "
+    "FULL Testing-Agent pipeline for that ticket, interactively. This spans the MCP servers "
+    "`knowledge-gathering` and `test-plan-definition` (both required), plus the OPTIONAL "
+    "`test-evaluation` scorer. Pipeline: "
+    "gather_knowledge -> refine (ask the user each question round) -> approve -> "
+    "[evaluate_pack — optional pack-quality gate] -> define_plan "
+    "(ask the user each methodology/scope/metrics round) -> approve_plan -> implement_plan -> "
+    "get_scenarios -> render HTML artifact. Reuse the one context_id gather_knowledge returns for "
+    "every later call. OPTIONAL QUALITY GATE — if `test-evaluation` is connected, after approve "
+    "call evaluate_pack(context_id): it scores the gathered+refined pack into a Pack Quality Score "
+    "(retrieval recall/precision with a hard-negative leak gate + groundedness rubrics). If it "
+    "flags a leak or low recall, surface that and offer to re-gather (exclude=... / repo=...) "
+    "before planning; otherwise proceed. It is read-only and never blocks. YOU "
+    "(the client) own the confirm gates: before each of starting refine, approve, starting "
+    "define_plan, approve_plan, and implement_plan, ask the user a Yes/No YOURSELF via the "
+    "client's interactive question/dialog UI and call the tool only once they say yes — never "
+    "auto-approve. (The tools no longer prompt on their own: server-driven MCP elicitation was "
+    "removed because Claude Code cannot deliver it over the bridges' remote HTTP transport, "
+    "issue #85442.) For the per-round questions each interrogation returns, present them (options "
+    "+ recommendation) and let the user pick before you submit the next answer. If the "
+    "test-plan-definition tools are not connected, run gather+refine+approve and tell the user to "
+    "connect that server before the plan stage. "
+    "OPTIMIZE READS (fan-out) — the gated stages above are sequential (one context_id, a human "
+    "gate before each), but the READ-ONLY steps are not: whenever you must read MANY Memory-Bank "
+    "nodes at once (e.g. get_note across a large pack, or a search_memory / get_understanding "
+    "sweep), run them in PARALLEL via concurrent read-only subagents — split the node ids into "
+    "slices (~5 each), have each subagent fetch its slice and return compact per-node summaries "
+    "(never full note bodies). This cuts wall-clock versus serial get_note round-trips and keeps "
+    "large note bodies out of the driver's context. Never parallelize the stateful gated stages "
+    "(refine / approve / define_plan / approve_plan / implement) or two ops on the same context_id."
+)
+
+
+def test_prompt(jira_key: str = "", depth: str = "2") -> str:
+    """Body of the `test` MCP prompt — the full interactive workflow for one ticket."""
+    key = jira_key.strip() or "<JIRA-KEY the user names>"
+    return (
+        f"Run the **Testing Agent** end-to-end for Jira ticket **{key}** (crawl depth {depth}).\n\n"
+        "Drive the whole KNOWLEDGE -> PLAN pipeline INTERACTIVELY over the two agents' MCP tools. "
+        "At every question round and before every approve gate, show the user the questions (each "
+        "option with its implication + the agent's recommendation) and WAIT for their answer — "
+        "never auto-answer, never auto-approve. Reuse the one context_id from step 1 throughout. "
+        "When a step needs to read many Memory-Bank nodes at once (e.g. summarizing the gathered "
+        "pack, or a get_note sweep), FAN the reads out across concurrent read-only subagents (~5 "
+        "nodes each, compact summaries) to save wall-clock + driver context; keep the gated stages "
+        "sequential.\n\n"
+        "Tools:\n"
+        "- knowledge-gathering: gather_knowledge, refine, get_questions, get_understanding, approve\n"
+        "- test-plan-definition: define_plan, get_plan, approve_plan, implement_plan, get_scenarios\n"
+        "- test-evaluation (optional): evaluate_pack\n"
+        "If the test-plan-definition tools are unavailable, run steps 1-3 and tell the user to "
+        "connect that MCP server before continuing.\n\n"
+        f"1. Gather — gather_knowledge(seed=\"{key}\", depth={depth}); capture the context_id; "
+        "summarize nodes / links / declared gaps.\n"
+        "2. Refine (interactive) — refine(context_id); for each round, show the questions + "
+        "recommendations, ask the user, then refine(context_id, answer=\"Q-...: <choice>\"); repeat "
+        "until 'Refinement complete'; show get_understanding(context_id) and ask the user to confirm.\n"
+        "3. Approve (knowledge) — after the user confirms: approve(context_id).\n"
+        "3b. Evaluate (optional) — if the test-evaluation server is connected: "
+        "evaluate_pack(context_id); surface the Pack Quality Score + the retrieval/rubric "
+        "breakdown. If it flags a bleed (leaked hard-negatives) or low recall, offer to re-gather "
+        "(exclude=... / repo=...) before planning. Read-only; never blocks.\n"
+        "4. Define (interactive) — define_plan(context_id); for each methodology/scope/metrics "
+        "round, show the questions + recommendations, ask the user, then "
+        "define_plan(context_id, answer=\"Q-...: <choice>\"); repeat until 'Plan definition "
+        "complete'; show get_plan(context_id) and ask the user to confirm.\n"
+        "5. Approve (plan) — after the user confirms: approve_plan(context_id).\n"
+        "6. Implement — implement_plan(context_id), then get_scenarios(context_id); report the test "
+        "data, happy/negative scenarios, steps, and the exported .feature.\n"
+        "7. Render — on success of get_scenarios, RENDER the returned scenarios into a single "
+        "self-contained, versioned HTML artifact for the user (render the agent's output; do not "
+        "author scenarios freehand). This is the final deliverable.\n"
+        "8. Summarize — the context_id, the confirmed plan, and where the artifacts live in the "
+        "Memory Bank."
+    )
