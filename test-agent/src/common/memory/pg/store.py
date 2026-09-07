@@ -96,8 +96,8 @@ class PgMemoryStore:
         from sqlalchemy import text
         await self._ensure()
         sql = text("UPDATE memory_node SET embedding = CAST(:emb AS vector), "
-                   "meta = coalesce(meta, '{}'::jsonb) || jsonb_build_object('emb_hash', :h) "
-                   "WHERE id = :id")
+                   "meta = coalesce(meta, '{}'::jsonb) || jsonb_build_object('emb_hash', CAST(:h AS text)) "
+                   "WHERE id = :id")  # CAST(:h AS text): asyncpg can't infer the type of a jsonb_build_object arg
         async with self._engine.begin() as conn:
             await conn.execute(sql, {"emb": _vec_literal(vec), "h": emb_hash, "id": node_id})
 
