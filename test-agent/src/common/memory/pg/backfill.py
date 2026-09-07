@@ -40,6 +40,10 @@ async def backfill(bank, store, *, embedder=None, batch: int = 100, max_passes: 
         projected += n
         if n == 0:  # queue empty, or only permanently-failing jobs remain
             break
+    try:  # build the ANN index once the corpus is populated (idempotent; best-effort)
+        await store.ensure_ann_index()
+    except Exception as exc:  # noqa: BLE001 — index build must not fail the backfill
+        log.warning("backfill: ANN index build skipped (%s)", exc)
     log.info("backfill: %d node(s) in index, %d projected", total, projected)
     return total, projected
 

@@ -12,6 +12,7 @@ class _FakeStore:
     def __init__(self):
         self.nodes: dict = {}
         self.edges: list = []
+        self.ann_built = False
 
     async def upsert_node(self, row):
         self.nodes[row["id"]] = row
@@ -21,6 +22,9 @@ class _FakeStore:
 
     async def set_embedding(self, node_id, vec, *, emb_hash=""):
         pass
+
+    async def ensure_ann_index(self):
+        self.ann_built = True
 
 
 def _seeded_bank(fake_bucket) -> MemoryBank:
@@ -43,6 +47,7 @@ async def test_backfill_projects_every_index_node(fake_bucket):
     assert set(store.nodes) == {"jira:LUZ-1", "insight:x"}
     assert store.nodes["insight:x"]["kind"] == "lesson"
     assert bank.get_json(INDEX_QUEUE, []) == []          # queue fully drained
+    assert store.ann_built                                # ANN index built after populate
 
 
 async def test_backfill_is_idempotent(fake_bucket):

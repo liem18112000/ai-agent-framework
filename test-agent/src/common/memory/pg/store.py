@@ -11,7 +11,7 @@ codec for throughput. Schema is applied idempotently on first use (lazy, like Da
 
 from __future__ import annotations
 
-from common.memory.pg.schema import SCHEMA_SQL
+from common.memory.pg.schema import HNSW_INDEX_SQL, SCHEMA_SQL
 from common.monitoring import get_logger
 
 log = get_logger("memory.pg")
@@ -110,6 +110,15 @@ class PgMemoryStore:
                    "FROM memory_node WHERE id = :id")
         async with self._engine.connect() as conn:
             return bool((await conn.execute(sql, {"h": emb_hash, "id": node_id})).scalar())
+
+    async def ensure_ann_index(self) -> None:
+        """Build the HNSW ANN index (idempotent). Kept out of the lazy `_ensure` DDL because its
+        build cost scales with the corpus — call it after a backfill, once embeddings are populated.
+        (At small corpus sizes the planner still seq-scans, which is correct; HNSW wins at scale.)"""
+        from sqlalchemy import text
+        await self._ensure()
+        async with self._engine.begin() as conn:
+            await conn.execute(text(HNSW_INDEX_SQL))
 
     # --- reads (retrieval facade) --- #
     async def search(self, *, q_text: str = "", q_embed: list[float] | None = None,
