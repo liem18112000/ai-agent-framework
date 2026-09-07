@@ -20,6 +20,10 @@ from common.monitoring import get_logger
 log = get_logger("memory.embed")
 
 _MODEL_NAME = os.environ.get("MEMORY_EMBED_MODEL", "text-multilingual-embedding-002")
+# Embeddings need a REGIONAL Vertex endpoint: the vertexai SDK 404s on location="global" for
+# embedding models (the Claude/AnthropicVertex path uses global, but that's a different SDK). So this
+# is deliberately separate from VERTEX_LOCATION. Default us-central1 (broad); override per deploy.
+_EMBED_LOCATION = os.environ.get("MEMORY_EMBED_LOCATION", "us-central1")
 TASK_DOCUMENT = "RETRIEVAL_DOCUMENT"
 TASK_QUERY = "RETRIEVAL_QUERY"
 
@@ -27,8 +31,8 @@ _model = None  # cached across calls (vertexai.init + from_pretrained are not fr
 
 
 def embed_configured() -> bool:
-    """True when the Vertex project/location env needed to embed is present."""
-    return bool(os.environ.get("VERTEX_PROJECT") and os.environ.get("VERTEX_LOCATION"))
+    """True when the Vertex project needed to embed is present (location has a regional default)."""
+    return bool(os.environ.get("VERTEX_PROJECT"))
 
 
 def _get_model():
@@ -37,7 +41,7 @@ def _get_model():
         import vertexai
         from vertexai.language_models import TextEmbeddingModel
 
-        vertexai.init(project=os.environ["VERTEX_PROJECT"], location=os.environ["VERTEX_LOCATION"])
+        vertexai.init(project=os.environ["VERTEX_PROJECT"], location=_EMBED_LOCATION)
         _model = TextEmbeddingModel.from_pretrained(_MODEL_NAME)
     return _model
 

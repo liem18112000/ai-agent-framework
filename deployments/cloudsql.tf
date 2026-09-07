@@ -174,5 +174,6 @@ locals {
     { name = "MEMORY_BACKEND", value = var.memory_backend },
     { name = "MEMORY_EMBED_MODEL", value = var.memory_embed_model },
     { name = "MEMORY_EMBED_DIMS", value = var.memory_embed_dims },
+    { name = "MEMORY_EMBED_LOCATION", value = var.memory_embed_location },
   ]
 }

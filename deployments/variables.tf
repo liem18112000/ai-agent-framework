@@ -40,6 +40,12 @@ variable "memory_embed_dims" {
   default     = "768"
 }
 
+variable "memory_embed_location" {
+  type        = string
+  description = "Vertex REGION for embeddings. Must be a real region — the vertexai SDK 404s on 'global' for embedding models (unlike Claude, which uses vertex_region=global). Separate from vertex_region."
+  default     = "us-central1"
+}
+
 variable "name_prefix" {
   type        = string
   description = "Prefix for named resources."
