@@ -1,0 +1,20 @@
+{
+  "seed": "LUZ-701",
+  "fixture": "eval_bleed",
+  "depth": 1,
+  "shape": "bleed-prone billing seed — the define-brief-scoping bug: tests Scope Precision + must_not_scope",
+  "expected_trajectory": ["define_plan", "approve_plan", "implement_plan"],
+  "expected_rounds": ["methodology", "scope", "metrics"],
+  "in_scope_ids": ["jira:LUZ-701", "jira:LUZ-702"],
+  "must_not_scope_ids": ["jira:LUZ-799"],
+  "behaviours": [
+    {"id": "jira:LUZ-701", "expected_partitions": ["happy", "negative", "boundary", "error"],
+     "fault_classes": ["QR fallback removed for a COMPANY tenant (should be individual-only)"]},
+    {"id": "jira:LUZ-702", "expected_partitions": ["happy", "negative"],
+     "fault_classes": ["retry fires on the wrong failCount day-of-month"]}
+  ],
+  "pass_criteria": ["the QR-bill fallback is removed for individual customers only"],
+  "min_ac_recall": 0.9,
+  "min_scope_precision": 0.8,
+  "reference_brief": "Test the QR-bill fallback removal for individual customers (LUZ-701); company accounts are out of scope. failCount is the dunning day-of-month (LUZ-702). The ZIP-import domain (LUZ-799) must never be scoped."
+}

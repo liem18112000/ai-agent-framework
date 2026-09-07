@@ -6,6 +6,23 @@ Consolidated sequencing across Plan A ([`02`](02-plan-testing-agents.md)) and Pl
 
 ---
 
+## 0. A0 spike — DONE (2026-09-07) · decision: **Option B is the default**
+
+The HITL pause/resume spike ran on **`google-adk 2.8.0`** (the `>=1.22` pin now resolves to 2.x).
+**Option B** — a custom `BaseAgent` that checkpoints interrogation loop state into ADK session state
+(via an Event `state_delta`), emits the round, and ends the invocation, then resumes on the next
+invocation — **passed all checks**: three rounds paused/resumed in order, state survived a simulated
+process restart (`DatabaseSessionService` rebuilt from disk mid-run), and no round re-executed. So
+**RefineAgent/DefineAgent use Option B** (see `test-agent-v2/spikes/` + its README for the full
+findings and confirmed ADK-2.x API facts). **Option A** (LongRunningFunctionTool-in-SequentialAgent,
+the shape with the reported resume bugs) needs a model to run and was left model-gated; it would only
+be adopted if that probe comes back clean — and it isn't needed, since Option B is proven. Two facts
+to propagate: `DatabaseSessionService` requires `google-adk[db]` + an **async** driver
+(`postgresql+asyncpg://` in prod, matching `common/db.py`); and all `[verify @1.22]` markers should be
+re-targeted to **`[verify @2.x]`**.
+
+---
+
 ## 1. Sequencing
 
 The safe order front-loads a de-risking spike, then goes agent-by-agent behind the unchanged bridge

@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+*.db
+spikes/.spike_hitl.db
+.pytest_cache/
+.ruff_cache/

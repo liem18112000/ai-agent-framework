@@ -1,7 +1,11 @@
 # test-agent-v2 — the ADK version (implementation target)
 
 This directory is where the **Google ADK (`google-adk`) rebuild** of the Testing Agent is
-implemented. It starts empty; build it per the migration plan.
+implemented. It starts empty; build it per the plan.
+
+- **▶ Build guide (start here):** [`docs/IMPLEMENTATION-PLAN.md`](docs/IMPLEMENTATION-PLAN.md) — the
+  detailed, executable plan (invariants, directory layout, phased milestones, test gates) +
+  [`docs/code-skeletons.md`](docs/code-skeletons.md) (concrete ADK stubs).
 
 - **Plan & mapping:** [`../docs/adk-transform/`](../docs/adk-transform/) — read `README.md` first,
   then `01-mapping.md` (component mapping), `02-plan-testing-agents.md` (Plan A: KGA + TPD),
