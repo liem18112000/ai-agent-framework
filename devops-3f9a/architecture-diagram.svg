@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 620" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#444"/>
+    </marker>
+  </defs>
+
+  <rect width="980" height="620" fill="#ffffff"/>
+
+  <!-- Local machine -->
+  <rect x="30" y="30" width="220" height="70" rx="8" fill="#e8f0fe" stroke="#4285f4" stroke-width="1.5"/>
+  <text x="140" y="58" text-anchor="middle" font-size="14" font-weight="bold" fill="#1a3a6b">Claude Code</text>
+  <text x="140" y="76" text-anchor="middle" font-size="11" fill="#1a3a6b">(local machine)</text>
+
+  <rect x="30" y="140" width="220" height="70" rx="8" fill="#e8f0fe" stroke="#4285f4" stroke-width="1.5"/>
+  <text x="140" y="168" text-anchor="middle" font-size="13" font-weight="bold" fill="#1a3a6b">mcp_bridge/server.py</text>
+  <text x="140" y="186" text-anchor="middle" font-size="11" fill="#1a3a6b">local MCP stdio server</text>
+
+  <line x1="140" y1="100" x2="140" y2="140" stroke="#444" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="150" y="125" font-size="10" fill="#444">MCP tool calls</text>
+
+  <!-- Arrow to cloud -->
+  <line x1="250" y1="175" x2="330" y2="175" stroke="#444" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="255" y="167" font-size="10" fill="#444">stream_query (HTTPS)</text>
+
+  <!-- Vertex AI Agent Engine -->
+  <rect x="335" y="120" width="290" height="110" rx="8" fill="#fef7e0" stroke="#f9ab00" stroke-width="1.5"/>
+  <text x="480" y="145" text-anchor="middle" font-size="14" font-weight="bold" fill="#7a5900">devops-3f9a</text>
+  <text x="480" y="163" text-anchor="middle" font-size="11" fill="#7a5900">Vertex AI Agent Engine</text>
+  <text x="480" y="179" text-anchor="middle" font-size="11" fill="#7a5900">ADK · gemini-2.5-flash</text>
+  <text x="480" y="197" text-anchor="middle" font-size="11" fill="#7a5900">region: us-central1</text>
+  <text x="480" y="215" text-anchor="middle" font-size="10" fill="#7a5900" font-style="italic">mutating tools pause for confirmation</text>
+
+  <!-- Two tool paths -->
+  <line x1="410" y1="230" x2="410" y2="280" stroke="#444" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="550" y1="230" x2="550" y2="280" stroke="#444" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="320" y="285" width="180" height="70" rx="8" fill="#e6f4ea" stroke="#34a853" stroke-width="1.5"/>
+  <text x="410" y="310" text-anchor="middle" font-size="12" font-weight="bold" fill="#1e6b34">GKE Container API</text>
+  <text x="410" y="327" text-anchor="middle" font-size="10" fill="#1e6b34">list/get clusters, node pools,</text>
+  <text x="410" y="341" text-anchor="middle" font-size="10" fill="#1e6b34">resize node pool (confirm)</text>
+
+  <rect x="510" y="285" width="180" height="70" rx="8" fill="#fce8e6" stroke="#ea4335" stroke-width="1.5"/>
+  <text x="600" y="310" text-anchor="middle" font-size="12" font-weight="bold" fill="#a10000">Kubernetes API</text>
+  <text x="600" y="327" text-anchor="middle" font-size="10" fill="#a10000">list pods, get logs,</text>
+  <text x="600" y="341" text-anchor="middle" font-size="10" fill="#a10000">restart/scale (confirm)</text>
+  <text x="600" y="365" text-anchor="middle" font-size="9" fill="#a10000" font-style="italic">needs network path + RBAC</text>
+
+  <!-- Down to projects -->
+  <line x1="410" y1="355" x2="410" y2="420" stroke="#444" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="600" y1="355" x2="600" y2="420" stroke="#444" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Allowed projects -->
+  <rect x="120" y="430" width="620" height="90" rx="8" fill="#f8f9fa" stroke="#9aa0a6" stroke-width="1"/>
+  <text x="140" y="450" font-size="11" font-weight="bold" fill="#3c4043">Allowed scope (enforced in code)</text>
+
+  <rect x="140" y="460" width="130" height="45" rx="6" fill="#e6f4ea" stroke="#34a853"/>
+  <text x="205" y="487" text-anchor="middle" font-size="11" fill="#1e6b34">klara-nonprod</text>
+
+  <rect x="285" y="460" width="140" height="45" rx="6" fill="#e6f4ea" stroke="#34a853"/>
+  <text x="355" y="487" text-anchor="middle" font-size="11" fill="#1e6b34">klara-performance</text>
+
+  <rect x="440" y="460" width="120" height="45" rx="6" fill="#e6f4ea" stroke="#34a853"/>
+  <text x="500" y="487" text-anchor="middle" font-size="11" fill="#1e6b34">klara-infra</text>
+
+  <rect x="575" y="460" width="120" height="45" rx="6" fill="#e6f4ea" stroke="#34a853"/>
+  <text x="635" y="487" text-anchor="middle" font-size="11" fill="#1e6b34">klara-repo</text>
+
+  <!-- Excluded prod -->
+  <rect x="790" y="430" width="150" height="90" rx="8" fill="#fce8e6" stroke="#ea4335" stroke-width="2" stroke-dasharray="6,3"/>
+  <text x="865" y="465" text-anchor="middle" font-size="12" font-weight="bold" fill="#a10000">klara-prod</text>
+  <text x="865" y="482" text-anchor="middle" font-size="10" fill="#a10000">NEVER accessed --</text>
+  <text x="865" y="497" text-anchor="middle" font-size="10" fill="#a10000">rejected in code</text>
+
+  <line x1="740" y1="465" x2="785" y2="465" stroke="#ea4335" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="700" y="440" font-size="10" fill="#a10000" font-style="italic">config.assert_project_allowed()</text>
+
+  <!-- Legend -->
+  <text x="30" y="580" font-size="10" fill="#5f6368">Read tools: no confirmation. Mutating tools (resize node pool, restart</text>
+  <text x="30" y="595" font-size="10" fill="#5f6368">deployment, scale deployment): ADK require_confirmation=True gate.</text>
+</svg>

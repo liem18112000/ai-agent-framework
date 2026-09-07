@@ -1,19 +1,52 @@
-# devops-3f9a
+# devops-3f9a - GKE DevOps Assistant
 
-GKE DevOps assistant for the LUZ ops estate, built on Google's Agent
-Development Kit (ADK) and deployed to Vertex AI Agent Engine.
+## Overview
 
-## Scope (enforced in code, not just the prompt)
+devops-3f9a is a GKE ops agent for the LUZ ops estate, built on Google's
+Agent Development Kit (ADK) and deployed to Vertex AI Agent Engine. It
+helps engineers inspect GKE clusters, pods, and deployments, and -- with
+an explicit human confirmation step -- resize node pools, restart
+deployments, and scale deployments.
 
-- **Allowed projects:** `klara-nonprod`, `klara-performance`, `klara-infra`, `klara-repo`
-- **Never:** `klara-prod` -- every tool call checks this via
-  `devops_3f9a/config.py:assert_project_allowed`, independent of what the
-  model decides to do.
+This README follows the structure of
+[adk-samples' software-bug-assistant](https://github.com/google/adk-samples/tree/main/python/agents/software-bug-assistant),
+the reference sample this repo's other ops agent (`sba-us-central1`) is
+based on.
 
-## Capabilities
+## Agent Details
+
+| Feature | Description |
+| --- | --- |
+| **Interaction Type** | Conversational (Agent Engine playground/API, or via the local MCP bridge from Claude Code) |
+| **Complexity** | Intermediate |
+| **Agent Type** | Single Agent |
+| **Components** | Tools (GKE Container API, Kubernetes API), ADK tool confirmation |
+| **Vertical** | DevOps / SRE -- GKE |
+
+## Architecture
+
+<img src="architecture-diagram.svg" width="90%" alt="devops-3f9a architecture: Claude Code talks to a local MCP bridge, which calls the devops-3f9a Vertex AI Agent Engine over stream_query. The agent's read tools call the GKE Container API; pod/deployment tools call each cluster's Kubernetes API directly, gated by ADK tool confirmation for mutating actions. Both are scoped to klara-nonprod, klara-performance, klara-infra, and klara-repo; klara-prod is excluded in code.">
+
+## Key Features
+
+- **Scope enforced in code, not just the prompt.** Every tool calls
+  `devops_3f9a/config.py:assert_project_allowed` before touching GCP --
+  `klara-prod` is rejected regardless of what the model decides, or what
+  the user asks for.
+- **Confirmation-gated mutations.** `resize_node_pool`,
+  `restart_deployment`, and `scale_deployment` use ADK's native
+  `require_confirmation=True` -- nothing mutating runs without an
+  explicit approval step, whether that's the Agent Engine playground's
+  built-in prompt or the MCP bridge's two-call confirm flow.
+- **Two access layers matched to two different reachability
+  guarantees** -- see below.
+- **Local MCP bridge** so Claude Code on your machine can drive this
+  agent directly, including resolving its confirmation prompts.
+
+### Tools
 
 | Tool | Type | Confirmation required? |
-|---|---|---|
+| --- | --- | --- |
 | `list_clusters` | read | no |
 | `get_cluster` | read | no |
 | `list_node_pools` | read | no |
@@ -23,12 +56,7 @@ Development Kit (ADK) and deployed to Vertex AI Agent Engine.
 | `restart_deployment` | mutating | **yes** |
 | `scale_deployment` | mutating | **yes** |
 
-Mutating tools use ADK's built-in `require_confirmation=True` -- the
-Agent Engine playground shows a native approve/reject prompt for these;
-the MCP bridge (see below) surfaces the same pause as a two-step tool
-call.
-
-## Two access layers, two different prerequisites
+### Two access layers, two different prerequisites
 
 1. **Cluster/node-pool tools** call the GKE **Container API**
    (`container.googleapis.com`) directly -- this always works regardless
@@ -46,20 +74,66 @@ call.
      may additionally need an explicit `ClusterRoleBinding` for this
      agent's service account.
 
-If pod/deployment tools fail with a connection or permission error, that's
-this prerequisite, not a bug -- the agent will say so rather than pretend
-the call succeeded.
+If pod/deployment tools fail with a connection or permission error,
+that's this prerequisite, not a bug -- the agent will say so rather than
+pretend the call succeeded.
 
-## Prerequisites (GCP-side, one-time)
+## Setup and Installation
+
+### Prerequisites
+
+- Python 3.12
+- [`uv`](https://docs.astral.sh/uv/) for dependency management
+- `gcloud` CLI, authenticated with Application Default Credentials
+  (`gcloud auth application-default login`)
+- Access to the `klara-nonprod` GCP project
+
+### GCP-side prerequisite (one-time, not yet done)
 
 The Agent Engine runtime service account for whichever project it's
-deployed into (e.g. `service-<project-number>@gcp-sa-aiplatform-re.iam.gserviceaccount.com`
+deployed into (e.g.
+`service-<project-number>@gcp-sa-aiplatform-re.iam.gserviceaccount.com`
 for `klara-nonprod`) needs `roles/container.admin` (or narrower, e.g.
-`roles/container.developer` for read + most mutations without full admin)
-on each of the 4 allowed projects. **This has not been granted yet** as of
-this agent's initial deployment -- tool calls will fail with a permission
-error until it is. Granting cross-project IAM roles needs explicit
-sign-off; see `DEPLOY.md` for the exact command.
+`roles/container.developer` for read + most mutations without full
+admin) on each of the 4 allowed projects. **This has not been granted
+yet** -- tool calls will fail with a permission error until it is.
+Granting cross-project IAM roles needs explicit sign-off; see
+`DEPLOY.md` for the exact command.
+
+### Install
+
+```powershell
+cd devops-3f9a
+uv venv --python 3.12
+uv pip install "google-adk==1.28.0" "mcp==1.26.0" "google-cloud-aiplatform[agent-engines,evaluation]>=1.93.0" "google-cloud-container>=2.55.0" "kubernetes>=31.0.0" "python-dotenv>=1.1.0"
+```
+
+## Deploy to Google Cloud
+
+Full step-by-step instructions -- including the one-time GCP setup, the
+`extra_packages` path trap that broke the first deploy attempt, testing
+the confirmation-resume flow, and wiring the MCP bridge into Claude Code
+-- are in **[`DEPLOY.md`](DEPLOY.md)**. Short version:
+
+```powershell
+$env:PYTHONPATH = (Get-Location)
+.\.venv\Scripts\python.exe deployment\deploy.py
+```
+
+Current deployment: `projects/335505349498/locations/us-central1/reasoningEngines/5955858224837033984`
+
+## Using it from Claude Code (MCP)
+
+This repo's root `.mcp.json` registers `devops-3f9a` as a local MCP
+server (`mcp_bridge/server.py`) exposing two tools:
+
+- `ask_devops_agent(message, session_id)` -- ask it anything; if it
+  wants to run a mutating action, this returns the pending confirmation
+  instead of running it.
+- `confirm_devops_agent_action(session_id, approve)` -- approve or
+  reject that pending action.
+
+See `DEPLOY.md` "Wire it into Claude Code via MCP" for setup.
 
 ## Files
 
@@ -70,5 +144,6 @@ sign-off; see `DEPLOY.md` for the exact command.
 - `deployment/deploy.py` -- create/update the Agent Engine deployment.
 - `mcp_bridge/server.py` -- local MCP server exposing this agent to
   Claude Code (or any MCP client) on your machine.
+- `architecture-diagram.svg` -- the diagram above.
 - `DEPLOY.md` -- step-by-step instructions to deploy this agent from a
   local machine to Vertex AI Agent Engine.
