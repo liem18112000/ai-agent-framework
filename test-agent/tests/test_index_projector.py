@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from common.memory import MemoryBank
-from common.memory.pg.project import INDEX_QUEUE, drain_index, index_on_write
+from common.memory.pg.project import INDEX_QUEUE, drain_index, enqueue_index, index_on_write
 from common.models import Insight, LinkRecord, Note
 
 
@@ -101,3 +101,24 @@ async def test_drain_time_budget_stops_early(fake_bucket, monkeypatch):
     n = await drain_index(bank, store, budget_s=0)        # 0s budget → one job, then stop
     assert n == 1
     assert len(bank.get_json(INDEX_QUEUE, [])) == 2        # the rest stay queued for the next drain
+
+
+async def test_drain_projects_test_scenario_from_index(fake_bucket, monkeypatch):
+    monkeypatch.setenv("MEMORY_BACKEND", "hybrid")
+    bank = _bank(fake_bucket)
+    sid = "scenario:run-x:jira_LUZ-1:happy"
+
+    def _add(g):  # test-scenario nodes live only in the index (no Note sidecar)
+        g.nodes[sid] = {"id": sid, "type": "test-scenario", "title": "Import a ZIP — happy path"}
+        g.edges[f"{sid}->jira:LUZ-1"] = {"source_id": sid, "target": "jira:LUZ-1",
+                                         "type": "test-scenario", "origin": "happy", "in_scope": True}
+
+    bank.update_index(_add)                                # update_index does NOT fire on_write
+    enqueue_index(bank, sid, "test-scenario")
+    store = _FakeStore()
+    assert await drain_index(bank, store) == 1
+    row = store.nodes[sid]
+    assert row["type"] == "test-scenario"
+    assert row["kind"] == "happy"                          # parsed from the id's last segment
+    assert row["synopsis"] == "Import a ZIP — happy path"  # index title is the embeddable text
+    assert {e["target"] for e in store.edges} == {"jira:LUZ-1"}   # scenario → source edge projected

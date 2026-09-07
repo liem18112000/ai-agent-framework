@@ -50,6 +50,7 @@ def implement_plan(bank, context_id: str, *, run_id: str = "implement", now: str
     store.write_steps(bank, context_id, steps)
     feature = export_features(bank, context_id) or ""  # BDD export for the execution stage
     bank.update_index(lambda g: _add_provenance(g, plan, scenarios))
+    _project_nodes(bank, plan, scenarios)  # enqueue plan/scenario into the pgvector recall tier
 
     run = TestPlanRun(
         run_id=run_id, context_id=context_id, plan_id=plan.id,
@@ -60,6 +61,20 @@ def implement_plan(bank, context_id: str, *, run_id: str = "implement", now: str
     log.info("implement done: %d scenarios, %d steps, %d test-data, feature=%s",
              len(scenarios), len(steps), len(test_data), bool(feature))
     return ImplementResult(plan, test_data, scenarios, steps, feature, run)
+
+
+def _project_nodes(bank, plan: TestPlan, scenarios: list[TestScenario]) -> None:
+    """Enqueue the plan + scenario index nodes for the pgvector projector (no-op under
+    MEMORY_BACKEND=gcs). They aren't written via upsert_note/insight, so on_write never fires for
+    them — this is their equivalent hook. Best-effort; never breaks implement."""
+    try:
+        from common.memory.pg.project import index_on_write
+
+        index_on_write(bank, plan.id, TEST_PLAN)
+        for sc in scenarios:
+            index_on_write(bank, sc.id, TEST_SCENARIO)
+    except Exception as exc:  # noqa: BLE001 — projection is best-effort
+        log.warning("implement: index-node projection skipped (%s)", exc)
 
 
 def _add_provenance(graph, plan: TestPlan, scenarios: list[TestScenario]) -> None:

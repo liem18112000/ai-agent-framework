@@ -31,6 +31,11 @@ def _text_hash(text: str) -> str:
     return hashlib.sha1(text.strip().encode()).hexdigest()[:16]
 
 
+# TPD node types, as plain strings — `common` must NOT import the test_plan_definition package, and
+# these are already the type contract in the knowledge index / memory_node.type.
+_TEST_PLAN, _TEST_SCENARIO = "test-plan", "test-scenario"
+
+
 @dataclass
 class IndexJob:
     """A queued projection unit: one node to (re)project from GCS into Postgres."""
@@ -93,11 +98,37 @@ def _insight_row_edges(ins) -> tuple[dict, list[dict]]:
     return row, edges
 
 
-def _load_row_edges(bank, node_id: str, node_type: str):
-    """Read a node back from GCS (the truth) and map it to a memory_node row + memory_edge rows."""
+def _index_row_edges(graph, node_id: str, node_type: str):
+    """Map a test-plan / test-scenario node from the knowledge INDEX. TPD writes these as raw JSON
+    (not Note sidecars) and `common` can't read the object without importing the agent — so the
+    embeddable text is the index title (scenario titles are descriptive), and edges are the node's
+    index edges (scenario/plan → source insight/note)."""
+    node = graph.nodes.get(node_id) if graph else None
+    if node is None:
+        return None
+    title = node.get("title") or ""
+    kind = node_id.rsplit(":", 1)[-1] if node_type == _TEST_SCENARIO else ""
+    row = {
+        "id": node_id, "type": node_type, "kind": kind, "title": title, "synopsis": title,
+        "source_url": "", "content_uri": "", "run_id": "", "context_id": "",
+        "scope": "context", "status": "active", "confidence": "high", "meta": {},
+    }
+    edges = [
+        {"source_id": node_id, "target": e.get("target"), "type": e.get("type"),
+         "origin": e.get("origin"), "in_scope": e.get("in_scope", True)}
+        for e in graph.edges.values() if e.get("source_id") == node_id and e.get("target")
+    ]
+    return row, edges
+
+
+def _load_row_edges(bank, node_id: str, node_type: str, graph=None):
+    """Read a node back from the truth (GCS note/insight; the index for TPD plan/scenario) and map
+    it to a memory_node row + memory_edge rows."""
     if node_type == INSIGHT:
         ins = bank.read_insight(node_id)
         return _insight_row_edges(ins) if ins is not None else None
+    if node_type in (_TEST_PLAN, _TEST_SCENARIO):
+        return _index_row_edges(graph, node_id, node_type)
     note = bank.read_note(node_id, node_type)
     return _note_row_edges(note) if note is not None else None
 
@@ -113,10 +144,15 @@ async def drain_index(bank, store, *, embedder=None, max_jobs: int = 50, budget_
     pending = await asyncio.to_thread(bank.get_json, INDEX_QUEUE, []) or []
     done: list[str] = []
     start = time.monotonic()
-    for raw in pending[:max_jobs]:
+    batch = pending[:max_jobs]
+    # TPD plan/scenario nodes are mapped from the index (no Note sidecar) — load it once if needed.
+    graph = None
+    if any(r.get("node_type") in (_TEST_PLAN, _TEST_SCENARIO) for r in batch):
+        graph = (await asyncio.to_thread(bank.load_index))[0]
+    for raw in batch:
         node_id = raw.get("node_id")
         try:
-            mapped = await asyncio.to_thread(_load_row_edges, bank, node_id, raw.get("node_type", ""))
+            mapped = await asyncio.to_thread(_load_row_edges, bank, node_id, raw.get("node_type", ""), graph)
             if mapped is None:  # node vanished from GCS — nothing to project; drop the job
                 done.append(raw["id"]); continue
             row, edges = mapped
