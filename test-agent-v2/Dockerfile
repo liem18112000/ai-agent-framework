@@ -20,4 +20,4 @@ USER appuser
 
 EXPOSE 8080
 # Cloud Run injects $PORT; the A2A ASGI app is knowledge_gathering.server:app (M0).
-CMD ["sh", "-c", "uvicorn knowledge_gathering.server:app --host 0.0.0.0 --port ${PORT}"]
+CMD ["sh", "-c", "uvicorn knowledge_gathering.adk_app:app --host 0.0.0.0 --port ${PORT}"]

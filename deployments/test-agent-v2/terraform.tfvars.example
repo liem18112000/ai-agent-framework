@@ -1,0 +1,23 @@
+# Copy to terraform.tfvars and fill in. Do NOT put secret values here.
+#
+# This is the v2 (ADK) stack — a SEPARATE, coexisting deployment from test-agent-v1:
+# distinct service names (…-v2), its own secrets/SA (name_prefix "kga-v2") and memory bucket
+# (<project>-kga-v2-memory), and its own terraform state. v1 is untouched.
+project_id         = "my-gcp-project"
+region             = "europe-west6"
+vertex_region      = "global" # Claude on Vertex (claude-sonnet-5) is served in 'global'
+vertex_model       = "claude-sonnet-5"
+
+atlassian_base_url = "https://axonivy.atlassian.net"
+atlassian_email    = "liem.doanvanthanh@axonactive.com"
+
+# The v2 image (built by ./build-image.sh / ./deploy.sh from ../../test-agent-v2):
+# image = "europe-west6-docker.pkg.dev/klara-repo/artifact-registry-container-images/test-agent-v2:latest"
+
+# Optional overrides:
+# bucket_name          = "my-gcp-project-kga-v2-memory"
+# min_instances        = 1        # warm for lower first-call latency
+# allow_unauthenticated = true    # rely on the A2A bearer as the gate
+#
+# Durable sessions (default OFF for v2 — in-memory; GCS bank stays durable):
+# deploy_cloudsql      = true     # provisions v2's OWN Cloud SQL instance (DatabaseSessionService)
