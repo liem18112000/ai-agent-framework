@@ -15,7 +15,7 @@ RAW_IMAGE="${IMAGE:-europe-west6-docker.pkg.dev/klara-repo/artifact-registry-con
 IMAGE="$(printf '%s' "$RAW_IMAGE" | sed 's#//\+#/#g')"
 [ "$IMAGE" != "$RAW_IMAGE" ] && echo "note: normalized image '$RAW_IMAGE' -> '$IMAGE'"
 
-CONTEXT="../test-agent"                # holds the Dockerfile
+CONTEXT="../../test-agent-v1"                # holds the Dockerfile
 REGISTRY_HOST="${IMAGE%%/*}"           # e.g. europe-west6-docker.pkg.dev
 
 [ -f "$CONTEXT/Dockerfile" ] || { echo "Dockerfile not found at $CONTEXT"; exit 1; }

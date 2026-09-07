@@ -67,14 +67,27 @@ async def aembed_one(text: str, *, task: str = TASK_DOCUMENT) -> list[float]:
         return []
 
 
+async def aembed_batch(texts: list[str], *, task: str = TASK_DOCUMENT) -> list[list[float]]:
+    """Embed a whole batch in ONE Vertex call, thread-offloaded. Whole-batch best-effort: any
+    failure → [] (the projector re-queues those nodes), so one bad batch never breaks the drain."""
+    if not texts:
+        return []
+    try:
+        return await asyncio.to_thread(embed_texts, texts, task=task)
+    except Exception as exc:  # noqa: BLE001 — batch embedding is best-effort
+        log.warning("memory: batch embed of %d text(s) failed (%s); left NULL", len(texts), exc)
+        return []
+
+
 def build_embedder():
-    """The document embedder used by the projector drain, or None when Vertex isn't configured
-    (→ the drain projects metadata only, i.e. M2 behaviour). Signature: async (text) -> vector."""
+    """The DOCUMENT batch embedder for the projector drain, or None when Vertex isn't configured
+    (→ the drain projects metadata only). Signature: async (list[str]) -> list[list[float]] — one
+    Vertex call per batch (the drain groups nodes; MEMORY_EMBED_BATCH sizes the group)."""
     if not embed_configured():
         return None
 
-    async def _embed(text: str) -> list[float]:
-        return await aembed_one(text, task=TASK_DOCUMENT)
+    async def _embed(texts: list[str]) -> list[list[float]]:
+        return await aembed_batch(texts, task=TASK_DOCUMENT)
 
     return _embed
 

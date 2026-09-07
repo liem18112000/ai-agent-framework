@@ -8,7 +8,7 @@
 #   SKIP_BUILD=1 ./deploy.sh    # infra + secrets only (reuse current image)
 #   PLAN=1 ./deploy.sh          # terraform plan only, change nothing
 #
-# Secrets are read from ../test-agent/.env (ATLASSIAN_API_TOKEN, A2A_BEARER_TOKEN,
+# Secrets are read from ../../test-agent-v1/.env (ATLASSIAN_API_TOKEN, A2A_BEARER_TOKEN,
 # KGA_BRIDGE_BEARER_TOKEN, TPD_BRIDGE_BEARER_TOKEN) or the current shell env.
 # Requires: terraform, gcloud (with ADC), a terraform.tfvars.
 set -euo pipefail
@@ -19,7 +19,7 @@ command -v gcloud   >/dev/null || { echo "gcloud not on PATH"; exit 1; }
 [ -f terraform.tfvars ] || { echo "terraform.tfvars missing (copy terraform.tfvars.example)"; exit 1; }
 
 # Load secrets from the app .env if present (non-fatal if absent).
-ENV_FILE="../test-agent/.env"
+ENV_FILE="../../test-agent-v1/.env"
 if [ -f "$ENV_FILE" ]; then
   set -a; . "$ENV_FILE"; set +a
 fi
@@ -80,7 +80,7 @@ fi
 IMAGE="${IMAGE:-$(awk -F'"' '/^[[:space:]]*image[[:space:]]*=/{print $2; exit}' terraform.tfvars)}"
 if [ "${SKIP_BUILD:-0}" != "1" ]; then
   echo "==> build + push $IMAGE"
-  gcloud builds submit ../test-agent --tag "$IMAGE" --suppress-logs
+  gcloud builds submit ../../test-agent-v1 --tag "$IMAGE" --suppress-logs
 fi
 echo "==> terraform apply (image=$IMAGE)"
 terraform apply -auto-approve -input=false -var="image=$IMAGE"

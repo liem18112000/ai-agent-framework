@@ -133,16 +133,43 @@ def _load_row_edges(bank, node_id: str, node_type: str, graph=None):
     return _note_row_edges(note) if note is not None else None
 
 
-async def drain_index(bank, store, *, embedder=None, max_jobs: int = 50, budget_s: float | None = None) -> int:
-    """Project pending IndexJobs into Postgres; return how many completed. At-least-once — a job
-    clears only after its upsert runs; ON CONFLICT makes re-processing idempotent. GCS reads and
-    the queue CAS are thread-offloaded so the event loop isn't blocked. Best-effort per job.
+async def _flush_embeds(store, embedder, queued: list[tuple]) -> list[str]:
+    """Embed a batch of (job_id, node_id, synopsis, emb_hash) in ONE embedder call, then persist
+    each. Returns the job ids whose embedding was written (→ safe to mark done). On a whole-batch
+    failure returns [] so every job stays queued for retry (at-least-once); a single set_embedding
+    failure drops just that node."""
+    if not queued:
+        return []
+    vecs = await embedder([syn for (_jid, _nid, syn, _h) in queued])
+    if len(vecs) != len(queued):  # embedder returned [] / mismatch → whole batch retries
+        return []
+    out: list[str] = []
+    for (job_id, node_id, _syn, emb_hash), vec in zip(queued, vecs):
+        try:
+            if vec:
+                await store.set_embedding(node_id, vec, emb_hash=emb_hash)
+            out.append(job_id)
+        except Exception as exc:  # noqa: BLE001 — one set_embedding failure retries just that node
+            log.warning("memory: set_embedding %s failed (%s); left for retry", node_id, exc)
+    return out
 
-    `budget_s` time-bounds the pass: stop after that wall-clock (leaving the rest queued for the
-    next drain), so a head-of-request drain stays snappy no matter how slow embedding is. None =
-    process up to `max_jobs` (the backfill tool loops this to empty)."""
+
+async def drain_index(bank, store, *, embedder=None, max_jobs: int = 50,
+                      budget_s: float | None = None, embed_batch: int | None = None) -> int:
+    """Project pending IndexJobs into Postgres; return how many completed. At-least-once — a job
+    clears only after its row is upserted AND (when it needs embedding) its embedding is persisted;
+    ON CONFLICT makes re-processing idempotent. GCS reads and the queue CAS are thread-offloaded so
+    the event loop isn't blocked. Best-effort per job.
+
+    Embeddings are BATCHED: nodes needing an embedding are grouped and sent in ONE Vertex call per
+    `embed_batch` (env MEMORY_EMBED_BATCH, default 16) — cuts N per-node round-trips to N/batch.
+    `budget_s` time-bounds the pass (leftover stays queued for the next drain) so a head-of-request
+    drain stays snappy; None = up to `max_jobs` (the backfill tool loops this to empty)."""
+    if embed_batch is None:
+        embed_batch = int(os.environ.get("MEMORY_EMBED_BATCH", "16"))
     pending = await asyncio.to_thread(bank.get_json, INDEX_QUEUE, []) or []
     done: list[str] = []
+    queued: list[tuple] = []  # (job_id, node_id, synopsis, emb_hash) awaiting a batched embed
     start = time.monotonic()
     batch = pending[:max_jobs]
     # TPD plan/scenario nodes are mapped from the index (no Note sidecar) — load it once if needed.
@@ -162,15 +189,18 @@ async def drain_index(bank, store, *, embedder=None, max_jobs: int = 50, budget_
             fresh = embedder is None or not synopsis or await store.embedding_fresh(node_id, emb_hash)
             await store.upsert_node(row)
             await store.upsert_edges(edges)
-            if not fresh:  # M3: embed only new/changed text (content-hash skip)
-                vec = await embedder(synopsis)
-                if vec:
-                    await store.set_embedding(node_id, vec, emb_hash=emb_hash)
-            done.append(raw["id"])
+            if fresh:
+                done.append(raw["id"])  # nothing to embed → job complete
+            else:  # embed only new/changed text (content-hash skip), batched — one Vertex call
+                queued.append((raw["id"], node_id, synopsis, emb_hash))
+                if len(queued) >= embed_batch:
+                    done.extend(await _flush_embeds(store, embedder, queued))
+                    queued = []
         except Exception as exc:  # noqa: BLE001 — one bad job must not block the drain
             log.warning("memory: index job %s failed (%s); left for retry", node_id, exc)
         if budget_s is not None and time.monotonic() - start >= budget_s:
             break  # time-bounded: the rest stay queued for the next drain (keeps requests snappy)
+    done.extend(await _flush_embeds(store, embedder, queued))  # flush the tail (also after a break)
     if done:
         ids = set(done)
         await asyncio.to_thread(
