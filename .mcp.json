@@ -1,9 +1,9 @@
 {
   "mcpServers": {
     "devops-3f9a": {
-      "command": "C:\\Users\\ntxbao\\Projects\\LUZ\\Repositories\\ops\\.claude\\worktrees\\gcp-ops-agents\\devops-3f9a\\.venv\\Scripts\\python.exe",
+      "command": "C:\\Users\\ntxbao\\Projects\\LUZ\\Repositories\\ops\\devops-3f9a\\.venv\\Scripts\\python.exe",
       "args": [
-        "C:\\Users\\ntxbao\\Projects\\LUZ\\Repositories\\ops\\.claude\\worktrees\\gcp-ops-agents\\devops-3f9a\\mcp_bridge\\server.py"
+        "C:\\Users\\ntxbao\\Projects\\LUZ\\Repositories\\ops\\devops-3f9a\\mcp_bridge\\server.py"
       ]
     }
   }
