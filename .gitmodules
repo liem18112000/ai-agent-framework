@@ -1,9 +1,12 @@
 [submodule "luz_kubernetes"]
 	path = luz_kubernetes
-	url = ./luz_kubernetes
+	url = ../luz_kubernetes
+	branch = master
 [submodule "luz_kubernetes_infra"]
 	path = luz_kubernetes_infra
-	url = ./luz_kubernetes_infra
+	url = ../luz_kubernetes_infra
+	branch = master
 [submodule "luz_dockerfiles"]
 	path = luz_dockerfiles
-	url = ./luz_dockerfiles
+	url = ../luz_dockerfiles
+	branch = master
