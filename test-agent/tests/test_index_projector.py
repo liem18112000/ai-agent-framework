@@ -90,3 +90,14 @@ async def test_drain_survives_a_missing_node(fake_bucket, monkeypatch):
     assert await drain_index(bank, store) == 1           # job consumed (node gone → dropped)
     assert store.nodes == {}
     assert bank.get_json(INDEX_QUEUE, []) == []
+
+
+async def test_drain_time_budget_stops_early(fake_bucket, monkeypatch):
+    monkeypatch.setenv("MEMORY_BACKEND", "hybrid")
+    bank = _bank(fake_bucket)
+    for i in (1, 2, 3):
+        bank.upsert_note(Note(id=f"jira:LUZ-{i}", type="jira-issue", title=f"n{i}", synopsis="x"))
+    store = _FakeStore()
+    n = await drain_index(bank, store, budget_s=0)        # 0s budget → one job, then stop
+    assert n == 1
+    assert len(bank.get_json(INDEX_QUEUE, [])) == 2        # the rest stay queued for the next drain

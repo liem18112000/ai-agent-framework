@@ -46,6 +46,12 @@ variable "memory_embed_location" {
   default     = "us-central1"
 }
 
+variable "memory_drain_budget_s" {
+  type        = string
+  description = "Wall-clock seconds the head-of-request pgvector projector drain may run before deferring the rest to the next request. Keeps user requests snappy under slow embedding. Raise for faster bulk populate."
+  default     = "8"
+}
+
 variable "name_prefix" {
   type        = string
   description = "Prefix for named resources."

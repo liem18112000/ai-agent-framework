@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
+import time
 from dataclasses import asdict, dataclass
 
 from common.memory.bank import ROOT
@@ -100,12 +102,17 @@ def _load_row_edges(bank, node_id: str, node_type: str):
     return _note_row_edges(note) if note is not None else None
 
 
-async def drain_index(bank, store, *, embedder=None, max_jobs: int = 50) -> int:
+async def drain_index(bank, store, *, embedder=None, max_jobs: int = 50, budget_s: float | None = None) -> int:
     """Project pending IndexJobs into Postgres; return how many completed. At-least-once — a job
     clears only after its upsert runs; ON CONFLICT makes re-processing idempotent. GCS reads and
-    the queue CAS are thread-offloaded so the event loop isn't blocked. Best-effort per job."""
+    the queue CAS are thread-offloaded so the event loop isn't blocked. Best-effort per job.
+
+    `budget_s` time-bounds the pass: stop after that wall-clock (leaving the rest queued for the
+    next drain), so a head-of-request drain stays snappy no matter how slow embedding is. None =
+    process up to `max_jobs` (the backfill tool loops this to empty)."""
     pending = await asyncio.to_thread(bank.get_json, INDEX_QUEUE, []) or []
     done: list[str] = []
+    start = time.monotonic()
     for raw in pending[:max_jobs]:
         node_id = raw.get("node_id")
         try:
@@ -126,6 +133,8 @@ async def drain_index(bank, store, *, embedder=None, max_jobs: int = 50) -> int:
             done.append(raw["id"])
         except Exception as exc:  # noqa: BLE001 — one bad job must not block the drain
             log.warning("memory: index job %s failed (%s); left for retry", node_id, exc)
+        if budget_s is not None and time.monotonic() - start >= budget_s:
+            break  # time-bounded: the rest stay queued for the next drain (keeps requests snappy)
     if done:
         ids = set(done)
         await asyncio.to_thread(
@@ -145,7 +154,12 @@ async def maybe_drain_index(bank) -> int:
         from common.memory.pg.embed import build_embedder
 
         store = build_store()
-        return await drain_index(bank, store, embedder=build_embedder()) if store is not None else 0
+        if store is None:
+            return 0
+        # Time-bound the head-of-request drain so a user request never waits on a big embed batch;
+        # the rest of the queue drains over subsequent requests. MEMORY_DRAIN_BUDGET_S tunes it.
+        budget = float(os.environ.get("MEMORY_DRAIN_BUDGET_S", "8"))
+        return await drain_index(bank, store, embedder=build_embedder(), max_jobs=500, budget_s=budget)
     except Exception as exc:  # noqa: BLE001 — best-effort; never break the request
         log.warning("memory: index drain skipped (%s)", exc)
         return 0
