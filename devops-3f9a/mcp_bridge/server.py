@@ -27,36 +27,56 @@ Two tools:
 This process holds pending-confirmation state in memory only -- it is not
 persisted, and is meant to be run locally as a stdio MCP server, one
 instance per Claude Code session.
+
+The actual Vertex AI Agent Engine call is delegated to vertex_worker.py,
+run as a fresh subprocess per call, rather than made in this process.
+Loading vertexai/grpc here and letting it touch the network while this
+process's own asyncio event loop is busy running the MCP stdio transport
+deadlocks indefinitely on Windows (reproduced with real calls; ruled out
+for a plain sleep, a nested asyncio.run(), and a thread-offloaded call --
+only the combination of grpc's C-core and this process's own event loop
+hangs). A plain subprocess has no event loop of its own, so it never hits
+the conflict.
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
+import sys
+from pathlib import Path
 from typing import Optional
 
-import vertexai
 from mcp.server.fastmcp import FastMCP
-from vertexai import agent_engines
 
-PROJECT_ID = "klara-nonprod"
-LOCATION = "us-central1"
-RESOURCE_NAME = "projects/335505349498/locations/us-central1/reasoningEngines/5955858224837033984"
-
+WORKER_SCRIPT = str(Path(__file__).parent / "vertex_worker.py")
 CONFIRMATION_FUNCTION_NAME = "adk_request_confirmation"
+USER_ID = "claude-code-local"
 
 mcp = FastMCP("devops-3f9a-bridge")
-
-vertexai.init(project=PROJECT_ID, location=LOCATION)
-_agent_engine = None
 
 # session_id -> {"confirmation_fc_id": str, "hint": str, "original_call": dict}
 _pending_confirmations: dict[str, dict] = {}
 
 
-def _get_agent_engine():
-    global _agent_engine
-    if _agent_engine is None:
-        _agent_engine = agent_engines.get(RESOURCE_NAME)
-    return _agent_engine
+async def _call_worker(payload: dict) -> dict:
+    """Runs vertex_worker.py as a fresh subprocess with the given JSON
+    payload on stdin, and returns its parsed JSON stdout.
+    """
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable,
+        WORKER_SCRIPT,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await proc.communicate(json.dumps(payload).encode())
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"vertex_worker.py failed (exit {proc.returncode}): "
+            f"{stderr.decode(errors='replace')[-2000:]}"
+        )
+    return json.loads(stdout.decode())
 
 
 def _extract_confirmation_request(events: list[dict]) -> Optional[dict]:
@@ -88,7 +108,7 @@ def _extract_text(events: list[dict]) -> str:
 
 
 @mcp.tool()
-def ask_devops_agent(message: str, session_id: str = "") -> str:
+async def ask_devops_agent(message: str, session_id: str = "") -> str:
     """Send a message to the devops-3f9a GKE ops agent (running on Vertex AI
     Agent Engine in klara-nonprod) and return its response.
 
@@ -102,16 +122,16 @@ def ask_devops_agent(message: str, session_id: str = "") -> str:
         message: What to ask or tell the agent.
         session_id: Session to continue, or empty to start a new one.
     """
-    engine = _get_agent_engine()
-    user_id = "claude-code-local"
-
-    if not session_id:
-        session = engine.create_session(user_id=user_id)
-        session_id = session["id"]
-
-    events = list(
-        engine.stream_query(user_id=user_id, session_id=session_id, message=message)
+    result = await _call_worker(
+        {
+            "action": "query",
+            "user_id": USER_ID,
+            "session_id": session_id,
+            "message": message,
+        }
     )
+    session_id = result["session_id"]
+    events = result["events"]
 
     pending = _extract_confirmation_request(events)
     if pending:
@@ -131,7 +151,7 @@ def ask_devops_agent(message: str, session_id: str = "") -> str:
 
 
 @mcp.tool()
-def confirm_devops_agent_action(session_id: str, approve: bool) -> str:
+async def confirm_devops_agent_action(session_id: str, approve: bool) -> str:
     """Approve or reject a pending mutating action from a prior
     ask_devops_agent call.
 
@@ -147,28 +167,16 @@ def confirm_devops_agent_action(session_id: str, approve: bool) -> str:
             "It may have already been resolved, or the session_id is wrong."
         )
 
-    engine = _get_agent_engine()
-    user_id = "claude-code-local"
-
-    resume_message = {
-        "role": "user",
-        "parts": [
-            {
-                "function_response": {
-                    "id": pending["confirmation_fc_id"],
-                    "name": CONFIRMATION_FUNCTION_NAME,
-                    "response": {"confirmed": approve},
-                }
-            }
-        ],
-    }
-
-    events = list(
-        engine.stream_query(
-            user_id=user_id, session_id=session_id, message=resume_message
-        )
+    result = await _call_worker(
+        {
+            "action": "resume",
+            "user_id": USER_ID,
+            "session_id": session_id,
+            "confirmation_fc_id": pending["confirmation_fc_id"],
+            "approve": approve,
+        }
     )
-    text = _extract_text(events)
+    text = _extract_text(result["events"])
     verdict = "approved" if approve else "rejected"
     return f"[session_id={session_id}] Action {verdict}.\n{text}"
 
