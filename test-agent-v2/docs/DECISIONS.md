@@ -81,13 +81,26 @@ them. Each entry: *Decision · Why · Consequence · Status*. Invariants (I1–I
   interrogation store.
 - **Status:** current.
 
-## D8 — Agent Engine is an additional deploy target, not a replacement for Cloud Run (E6)
-- **Decision:** `deployment/deploy.py` deploys to Vertex **Agent Engine** (default target
-  `testing_agent`); the Cloud Run `to_a2a` + MCP bridge stays the primary runtime.
-- **Why:** Agent Engine changes the client contract (no A2A/MCP bridge), so it suits the autonomous
-  consumer; the gated KGA/TPD depend on the bridge (I4).
-- **Consequence:** two deploy paths; choose per environment/consumer.
-- **Status:** optional.
+## D8 — Cloud Run + MCP bridge is the only deploy path; Agent Engine dropped (supersedes E6)
+- **Decision:** removed the Vertex Agent Engine path (`deployment/deploy.py` deleted). The Cloud Run
+  `to_a2a` + MCP bridge is the single runtime; `deployments/test-agent-v2/install-mcp.{sh,cmd}` registers
+  the three bridges with Claude Code (deployed `/mcp` URLs resolved from `terraform output`).
+- **Why:** ADK has **no native "expose an agent as an MCP server"** — its MCP support is `McpToolset`, a
+  *consumer* of external MCP tools — so the A2A→MCP bridge IS Claude Code's native channel to the agents.
+  Agent Engine changes the client contract and drops that bridge, the whole gated Testing-Agent UX (I4/D2).
+  One well-supported native path beats two half-supported ones.
+- **Consequence:** `deployment/deploy.py` and the Agent Engine option are gone; DEPLOY.md now lists three
+  paths. `adk deploy agent_engine` still exists natively but is intentionally unused here.
+- **Status:** current (supersedes the earlier "additional target" stance).
+
+## D8b — v2 provisions its OWN Cloud SQL Postgres (`deploy_cloudsql` default ON)
+- **Decision:** flipped `deploy_cloudsql` to default `true`; the v2 stack stands up a dedicated Cloud SQL
+  Postgres instance and wires `DatabaseSessionService` (DB_* env → `common/db.get_engine`).
+- **Why:** durable sessions/tasks for v2 without sharing v1's DB — isolation over the extra instance cost.
+- **Consequence:** two Cloud SQL instances (v1 + v2). The DB password is terraform-generated
+  (`random_password` → Secret Manager), no secret to supply. `deploy_cloudsql=false` reverts to in-memory
+  sessions (the GCS memory bank stays durable regardless).
+- **Status:** current.
 
 ## D9 — Freed the canonical `agent.py` name via an `a2a_card.py` rename, not by dropping v1 (E1)
 - **Decision:** each agent's v1 A2A card moved to `a2a_card.py`; the ADK root took `agent.py` (so

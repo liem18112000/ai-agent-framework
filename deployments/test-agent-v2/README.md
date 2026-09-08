@@ -4,8 +4,9 @@
 > distinct `…-v2` Cloud Run service names, its own secrets/SA (`name_prefix = "kga-v2"`), its own
 > memory bucket (`<project>-kga-v2-memory`), and its own terraform state. v1 is left untouched.
 > The agent sidecars run the ADK `to_a2a` apps (`uvicorn <pkg>.adk_app:app`); the MCP bridges are
-> unchanged. `deploy_cloudsql` defaults **off** (in-memory sessions; the GCS bank stays durable) so
-> a parallel v2 doesn't stand up a second Cloud SQL instance. Build context: `../../test-agent-v2`.
+> unchanged. `deploy_cloudsql` defaults **on**: v2 stands up its **own** Cloud SQL Postgres instance
+> (durable `DatabaseSessionService`), isolated from v1 (extra cost) — set it `false` for in-memory
+> sessions (the GCS bank stays durable regardless). Build context: `../../test-agent-v2`.
 
 
 Provisions everything the two agents run on: **Cloud Run** (two services — one per agent),
@@ -125,11 +126,21 @@ gate); set it `false` to keep the bridge private and reach it through a local au
 (`./proxy.sh` → `gcloud run services proxy`), which owns the Google identity token. The agent is
 never exposed either way, so the old "agent public + header collision" problem is gone.
 
-Register with Claude (public-bridge form — restart Claude Code to load it):
+Register all three MCP servers with Claude Code (idempotent; resolves `/mcp` URLs from
+`terraform output`, reads the bridge bearer tokens from `../../test-agent-v2/.env`, then restart
+Claude Code to load them):
 
 ```bash
-claude mcp add --transport http knowledge-gathering  "$(terraform output -raw bridge_url)"
-claude mcp add --transport http test-plan-definition "$(terraform output -raw tpd_bridge_url)"
+./install-mcp.sh            # or: install-mcp.cmd on Windows
+./install-mcp.sh --scope user   # register in every project
+```
+
+ADK has no native MCP-server (its `McpToolset` only *consumes* MCP tools), so this A2A→MCP bridge is
+Claude Code's native channel to the agents. Under the hood it runs, per server:
+
+```bash
+claude mcp add --transport http knowledge-gathering  "$(terraform output -raw bridge_url)" \
+  --header "Authorization: Bearer $KGA_BRIDGE_BEARER_TOKEN"
 ```
 
 ## Cloud SQL task store (`cloudsql.tf`)

@@ -18,8 +18,8 @@
 
 variable "deploy_cloudsql" {
   type        = bool
-  description = "Provision a Cloud SQL Postgres store and wire the agents to it. Default OFF for the v2 stack: sessions/tasks fall back to in-memory (the GCS memory bank stays durable) so a parallel v2 doesn't stand up a second Cloud SQL instance. Set true (its own instance) or point DB_* at v1's instance to get durable DatabaseSessionService."
-  default     = false
+  description = "Provision the v2 stack's OWN Cloud SQL Postgres instance and wire the agents to it (durable DatabaseSessionService). Default ON: v2 runs its own instance, isolated from v1 (extra cost — the two stacks do NOT share a DB). Set false to fall back to in-memory sessions/tasks (the GCS memory bank stays durable regardless)."
+  default     = true
 }
 
 variable "db_instance_name" {

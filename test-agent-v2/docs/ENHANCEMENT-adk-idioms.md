@@ -168,6 +168,11 @@ Each is independently shippable; none regresses the offline gates (M0→B).
 - **Size:** M. (Builds directly on the Plan B code already in `test_evaluation/eval/`.)
 
 ### E6 — `deployment/deploy.py` (Agent Engine option, alongside Cloud Run)
+> **⚠️ Superseded / removed** (see DECISIONS **D8**): `deployment/deploy.py` and its test were deleted.
+> ADK has no native MCP-server, so the A2A→MCP bridge is Claude Code's native channel; Agent Engine drops
+> that bridge. The single deploy path is Cloud Run `to_a2a` + the bridge, registered via
+> `deployments/test-agent-v2/install-mcp.{sh,cmd}`. `adk deploy agent_engine` still exists natively but is
+> unused here. The rest of this section is retained as the original proposal.
 - **Why:** the canonical managed-runtime deploy; a lower-ops alternative to the Cloud Run sidecar (G9).
 - **Do:** a `deployment/deploy.py` per agent: `AdkApp(agent=root_agent, enable_tracing=True)` +
   `agent_engines.create(requirements=[pinned], extra_packages=["./src/<pkg>"], env_vars=…)`, flags

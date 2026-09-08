@@ -116,15 +116,16 @@ Shapes · Gate · DoD**. Code shapes are stubbed in [`code-skeletons.md`](code-s
   reads state back and advances) round-trips a 3-round dialogue with `DatabaseSessionService`.
 - **Also:** a throwaway probe of **Option A** (`LongRunningFunctionTool` inside a `SequentialAgent`)
   to confirm/deny the known resume bugs (#3348/#5349/#3184/#5064) on the pinned `google-adk`.
-- **Files:** `spikes/hitl_option_b.py`, `spikes/hitl_option_a.py` (throwaway, not shipped).
+- **Files:** `spikes/hitl_option_b.py`, `spikes/hitl_option_a.py` (throwaway, not shipped — **removed
+  after verification**; the confirmed facts live in §9 and Option B ships as `common/adk/interrogation.py`).
 - **Gate:** Option B: 3 rounds, state intact across simulated restarts, no re-execution of prior
   rounds. Decision recorded: default = Option B (adopt A only if the probe is clean).
 - **DoD:** a one-paragraph decision note appended to `04-roadmap-risks.md`.
 - **Size:** S. **Blocks A.0/A1/A2.**
 - **✅ STATUS: DONE (2026-09-07).** Option B **passed** on `google-adk 2.8.0` (3 rounds paused/resumed
   in order, state survived a simulated `DatabaseSessionService` restart, no round re-executed) →
-  RefineAgent/DefineAgent use Option B. Option A left model-gated (not needed). Artifacts +
-  confirmed ADK-2.x API facts: [`../spikes/`](../spikes/README.md). See §9.
+  RefineAgent/DefineAgent use Option B. Option A left model-gated (not needed). The spike dir was
+  **removed post-verification**; the confirmed ADK-2.x API facts are retained in §9.
 
 ### A.0 — `common/adk/` shared foundation
 - **Goal:** the substrate every v2 agent uses. See [`code-skeletons.md`](code-skeletons.md) for full stubs.
@@ -299,7 +300,7 @@ M0 → A0(spike) → A.0(foundation) → A1(KGA) → A2(TPD) → B(evaluator) �
 
 ## 9. A0 spike findings — confirmed ADK facts (env: `google-adk 2.8.0`, python 3.12)
 
-Established by running the spike (`../spikes/`), not assumed. **The `>=1.22` pin resolves to 2.x — the
+Established by running the A0 spike (since removed), not assumed. **The `>=1.22` pin resolves to 2.x — the
 docs' `[verify @1.22]` markers should read `[verify @2.x]`, and the pin should become
 `google-adk[db]>=2`.**
 
