@@ -1,23 +1,16 @@
-"""Offline harness — drive the KGA executor in-process (no HTTP, no Cloud Run, no live network)."""
+"""Offline harness — drive the ADK KGA agent in-process (no HTTP, no Cloud Run, no live network)."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-
-from a2a.server.request_handlers import DefaultRequestHandler
-from a2a.server.routes import create_jsonrpc_routes
-from a2a.server.tasks import InMemoryTaskStore
-from a2a.utils import DEFAULT_RPC_URL
-from starlette.applications import Starlette
-from starlette.testclient import TestClient
+from unittest.mock import patch
 
 from common.memory import MemoryBank
-from knowledge_gathering.a2a_card import AGENT_CARD
-from knowledge_gathering.executor import KnowledgeGatheringExecutor
 from tests.conftest import FakeBucket
 
 _FIX = Path(__file__).parent / "fixtures" / "atlassian"
@@ -36,7 +29,7 @@ def derive_tiers(reply: str) -> list[str]:
 
 
 class RecordedAtlassianClient:
-    """Duck-typed AtlassianClient backed by recorded fixture JSON. Records every call for tool-use"""
+    """Duck-typed AtlassianClient backed by recorded fixture JSON; records every call for tool-use asserts."""
 
     base_url = "https://axonivy.atlassian.net"
 
@@ -94,35 +87,44 @@ def env(flags: dict):
             os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
 
 
-def _all_text(obj) -> str:
-    """Concatenate every `text` value in the JSON-RPC response (status message + artifacts +"""
-    out: list[str] = []
-
-    def walk(o):
-        if isinstance(o, dict):
-            for k, v in o.items():
-                out.append(v) if k == "text" and isinstance(v, str) else walk(v)
-        elif isinstance(o, list):
-            for x in o:
-                walk(x)
-
-    walk(obj)
-    return "\n".join(out)
+def _run_sync(coro):
+    """Run a coroutine to completion whether or not the caller already has a running event loop."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(1) as ex:
+        return ex.submit(lambda: asyncio.run(coro)).result()
 
 
-def _app(bank, client=None):
-    ex = KnowledgeGatheringExecutor(bank=bank, client=client)
-    handler = DefaultRequestHandler(
-        agent_executor=ex, task_store=InMemoryTaskStore(), agent_card=AGENT_CARD)
-    return Starlette(routes=create_jsonrpc_routes(handler, DEFAULT_RPC_URL, enable_v0_3_compat=True))
+async def _adk_gather(text: str, context_id: str, client, bank: MemoryBank) -> str:
+    """Drive the ADK KGA router through a Runner with session_id == context_id; return the reply text."""
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+    from google.genai import types
 
+    import knowledge_gathering.agents.gather_agent as ga
+    from knowledge_gathering.agent import build_root_agent
 
-def _send(tc: TestClient, text: str, *, context_id: str | None = None) -> dict:
-    msg = {"messageId": "m", "role": "user", "parts": [{"kind": "text", "text": text}]}
-    if context_id:
-        msg["contextId"] = context_id
-    payload = {"jsonrpc": "2.0", "id": 1, "method": "message/send", "params": {"message": msg}}
-    return tc.post("/", json=payload).json()
+    with patch.object(ga, "build_client", lambda: client), \
+         patch.object(ga, "build_bank", lambda: bank), \
+         patch("knowledge_gathering.agent.build_bank", lambda: bank), \
+         patch("common.adk.interrogation.build_bank", lambda: bank), \
+         patch("common.adk.tools.build_bank", lambda: bank):
+        svc = InMemorySessionService()
+        await svc.create_session(app_name="kga", user_id="u", session_id=context_id)
+        runner = Runner(app_name="kga", agent=build_root_agent(), session_service=svc)
+        out: list[str] = []
+        async for ev in runner.run_async(
+            user_id="u", session_id=context_id,
+            new_message=types.Content(role="user", parts=[types.Part(text=text)]),
+        ):
+            c = getattr(ev, "content", None)
+            for p in getattr(c, "parts", None) or []:
+                if getattr(p, "text", None) and getattr(c, "role", None) != "user":
+                    out.append(p.text)
+        return " ".join(out)
 
 
 @dataclass
@@ -162,17 +164,15 @@ class RunTrace:
 def run_gather_offline(seed: str, *, client: RecordedAtlassianClient, bank: MemoryBank | None = None,
                        flags: dict | None = None, text: str | None = None,
                        context_id: str | None = None) -> RunTrace:
-    """Drive one gather through the real executor with a recorded client. Returns a RunTrace whose"""
+    """Drive one gather through the ADK KGA agent with a recorded client. Returns a RunTrace."""
     bank = bank or MemoryBank(FakeBucket())
     context_id = context_id or f"eval-{seed}"
     with env(flags or {}):
-        body = _send(TestClient(_app(bank, client)), text or f"gather {seed}", context_id=context_id)
-    return RunTrace(seed=seed, reply=_all_text(body), bank=bank, context_id=context_id, client=client)
+        reply = _run_sync(_adk_gather(text or f"gather {seed}", context_id, client, bank))
+    return RunTrace(seed=seed, reply=reply, bank=bank, context_id=context_id, client=client)
 
 
 def run_refine_offline(bank: MemoryBank, ctx: str, *, seed: str = ""):
-    """Run the refine interrogation to completion offline (heuristic answers, no LLM). Returns a"""
-    import asyncio
-
+    """Run the refine interrogation to completion offline (heuristic answers, no LLM)."""
     from common.interrogate.loop import refine
-    return asyncio.run(refine(bank, ctx, seed=seed or ctx))
+    return _run_sync(refine(bank, ctx, seed=seed or ctx))
