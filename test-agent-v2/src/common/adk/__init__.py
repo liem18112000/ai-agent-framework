@@ -9,7 +9,7 @@ from common.adk.interrogation import InterrogationAgent
 from common.adk.model import agent_model, claude_llm
 from common.adk.plugins import LearnDrainPlugin, LessonRecallPlugin
 from common.adk.serve import serve
-from common.adk.services import build_artifact_service, build_runner, build_session_service
+from common.adk.services import build_runner, build_session_service
 from common.adk.tools import memory_tools
 
 __all__ = [
@@ -18,7 +18,6 @@ __all__ = [
     "LearnDrainPlugin",
     "LessonRecallPlugin",
     "agent_model",
-    "build_artifact_service",
     "build_runner",
     "build_session_service",
     "claude_llm",

@@ -17,22 +17,17 @@ sessions select Claude-on-Vertex when configured and the heuristic otherwise (I5
 from __future__ import annotations
 
 import asyncio
-import datetime
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from google.adk.agents import BaseAgent
 
-from common.adk.events import incoming_text, text_event
+from common.adk.events import incoming_text, now, text_event
 from common.interrogate.present import render_questions
 from common.memory.factory import build_bank
 from common.monitoring import get_logger
 
 log = get_logger("adk.interrogation")
-
-
-def _now() -> str:
-    return datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
 
 
 @dataclass(frozen=True)
@@ -71,7 +66,7 @@ class InterrogationAgent(BaseAgent):
         incoming = incoming_text(ctx)
 
         if not live:
-            session = spec.make(bank, ctx_id, self.rounds, _now())
+            session = spec.make(bank, ctx_id, self.rounds, now())
             if session.is_empty():
                 yield text_event(self.name, f"Nothing to {self.kind} — run the prior step first.")
                 return

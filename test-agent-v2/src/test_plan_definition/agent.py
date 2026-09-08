@@ -47,10 +47,6 @@ class TpdRouter(BaseAgent):
                                     "get-test-plan <ctx> | get-scenarios <ctx>.")
 
     # --- deterministic inline commands (no sub-agent, no LLM) --- #
-    def _ctx(self, text: str, ctx) -> str:
-        return present.extract_ctx(text, ("define", "approve", "implement", "get-test-plan",
-                                          "get-scenarios")) or ctx.session.id
-
     def _read_helper(self, text: str) -> str:
         ctx_id = present.extract_ctx(text, ("get-test-plan", "get-scenarios"))
         if not ctx_id:
@@ -61,7 +57,7 @@ class TpdRouter(BaseAgent):
         return store.read_scenarios_md(bank, ctx_id) or f"No scenarios yet for {ctx_id} — run implement first."
 
     def _approve(self, ctx, text: str) -> str:
-        ctx_id = self._ctx(text, ctx)
+        ctx_id = present.extract_ctx(text, ("approve",)) or ctx.session.id
         bank = build_bank()
         plan = store.read_plan(bank, ctx_id)
         if plan is None:

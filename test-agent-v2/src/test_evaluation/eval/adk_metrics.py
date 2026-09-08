@@ -41,41 +41,37 @@ def _ctx(actual_invocations) -> str:
     return ""
 
 
-def _result(score, threshold, actual, expected) -> EvaluationResult:
-    passed = score is not None and score >= threshold
-    status = EvalStatus.PASSED if passed else EvalStatus.FAILED
-    pir = PerInvocationResult(
-        actual_invocation=actual[0],
-        expected_invocation=(expected[0] if expected else None),
-        score=score, eval_status=status,
-    )
-    return EvaluationResult(overall_score=score, overall_eval_status=status,
-                            per_invocation_results=[pir])
+def _result(metric: EvalMetric, score, actual, expected) -> EvaluationResult:
+    status = EvalStatus.PASSED if (score is not None and score >= metric.threshold) else EvalStatus.FAILED
+    pir = PerInvocationResult(actual_invocation=actual[0],
+                              expected_invocation=(expected[0] if expected else None),
+                              score=score, eval_status=status)
+    return EvaluationResult(overall_score=score, overall_eval_status=status, per_invocation_results=[pir])
 
 
-# --- pack (KGA) --- #
-def pqs_score(eval_metric: EvalMetric, actual_invocations, expected_invocations=None,
-              conversation_scenario=None) -> EvaluationResult:
-    report = evaluate_pack(_bank(), _ctx(actual_invocations), golden_for(_ctx(actual_invocations)))
-    return _result(report.pqs, eval_metric.threshold, actual_invocations, expected_invocations)
+def _pack(actual):  # ctx computed once (not twice) → one event scan + one golden lookup
+    ctx = _ctx(actual)
+    return evaluate_pack(_bank(), ctx, golden_for(ctx))
 
 
-def hard_negative_leak(eval_metric: EvalMetric, actual_invocations, expected_invocations=None,
-                       conversation_scenario=None) -> EvaluationResult:
-    report = evaluate_pack(_bank(), _ctx(actual_invocations), golden_for(_ctx(actual_invocations)))
-    score = 0.0 if report.retrieval.leaked else 1.0  # threshold 1.0 → FAIL on any leak
-    return _result(score, eval_metric.threshold, actual_invocations, expected_invocations)
+def _plan(actual):
+    ctx = _ctx(actual)
+    return evaluate_plan(_bank(), ctx, golden_plan_for(ctx))
 
 
-# --- plan (TPD) --- #
-def tps_score(eval_metric: EvalMetric, actual_invocations, expected_invocations=None,
-              conversation_scenario=None) -> EvaluationResult:
-    report = evaluate_plan(_bank(), _ctx(actual_invocations), golden_plan_for(_ctx(actual_invocations)))
-    return _result(report.tps, eval_metric.threshold, actual_invocations, expected_invocations)
+# Each metric = one scoring rule over the (unchanged v1) engine's report. Threshold 1.0 on a leak
+# gate → PASS only when nothing leaked.
+def pqs_score(metric: EvalMetric, actual, expected=None, scenario=None) -> EvaluationResult:
+    return _result(metric, _pack(actual).pqs, actual, expected)
 
 
-def must_not_scope_leak(eval_metric: EvalMetric, actual_invocations, expected_invocations=None,
-                        conversation_scenario=None) -> EvaluationResult:
-    report = evaluate_plan(_bank(), _ctx(actual_invocations), golden_plan_for(_ctx(actual_invocations)))
-    score = 0.0 if report.scope.leaked else 1.0
-    return _result(score, eval_metric.threshold, actual_invocations, expected_invocations)
+def hard_negative_leak(metric: EvalMetric, actual, expected=None, scenario=None) -> EvaluationResult:
+    return _result(metric, 0.0 if _pack(actual).retrieval.leaked else 1.0, actual, expected)
+
+
+def tps_score(metric: EvalMetric, actual, expected=None, scenario=None) -> EvaluationResult:
+    return _result(metric, _plan(actual).tps, actual, expected)
+
+
+def must_not_scope_leak(metric: EvalMetric, actual, expected=None, scenario=None) -> EvaluationResult:
+    return _result(metric, 0.0 if _plan(actual).scope.leaked else 1.0, actual, expected)

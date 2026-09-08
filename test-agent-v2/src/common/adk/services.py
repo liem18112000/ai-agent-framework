@@ -33,27 +33,20 @@ def build_session_service():
     return DatabaseSessionService(db_engine=engine)
 
 
-def build_artifact_service():
-    bucket = os.environ.get("GCS_BUCKET")
-    if not bucket:
-        from google.adk.artifacts import InMemoryArtifactService
-
-        return InMemoryArtifactService()
-    from google.adk.artifacts import GcsArtifactService
-
-    return GcsArtifactService(bucket_name=bucket)
-
-
 def build_runner(agent, *, app_name: str):
-    """A Runner with the durable session store, the GCS artifact store, and the shared plugins."""
+    """A Runner with the durable session store, the GCS artifact store (bucket → GCS, else in-memory),
+    and the shared plugins."""
+    from google.adk.artifacts import GcsArtifactService, InMemoryArtifactService
     from google.adk.runners import Runner
 
     from common.adk.plugins import LearnDrainPlugin, LessonRecallPlugin
 
+    bucket = os.environ.get("GCS_BUCKET")
+    artifacts = GcsArtifactService(bucket_name=bucket) if bucket else InMemoryArtifactService()
     return Runner(
         app_name=app_name,
         agent=agent,
         session_service=build_session_service(),
-        artifact_service=build_artifact_service(),
+        artifact_service=artifacts,
         plugins=[LearnDrainPlugin(), LessonRecallPlugin()],
     )

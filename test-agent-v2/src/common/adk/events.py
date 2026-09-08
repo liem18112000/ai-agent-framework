@@ -1,20 +1,26 @@
-"""Tiny shared helpers for custom BaseAgents — read the turn's user text, emit a text Event."""
+"""Tiny shared helpers for custom BaseAgents/plugins — the turn's user text, a UTC stamp, a text Event."""
 
 from __future__ import annotations
+
+import datetime
 
 from google.adk.events import Event, EventActions
 from google.genai import types
 
 
 def incoming_text(ctx) -> str:
-    """The latest user-role text part in the session (the current turn's input)."""
-    for ev in reversed(getattr(ctx.session, "events", []) or []):
-        c = getattr(ev, "content", None)
-        if c and getattr(c, "role", None) == "user" and (c.parts or []):
-            for p in c.parts:
-                if getattr(p, "text", None):
-                    return p.text
+    """The current turn's user text. ADK hands it to us directly as the InvocationContext's
+    `user_content` — no need to walk `session.events` ourselves."""
+    for part in getattr(getattr(ctx, "user_content", None), "parts", None) or []:
+        if getattr(part, "text", None):
+            return part.text
     return ""
+
+
+def now() -> str:
+    """UTC stamp in the engine's filename-safe format. Mirrors `common.executor.now`, re-derived here
+    because that module pulls in the a2a-sdk shell this ADK layer replaced."""
+    return datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
 
 
 def text_event(author: str, text: str, *, state_delta: dict | None = None) -> Event:

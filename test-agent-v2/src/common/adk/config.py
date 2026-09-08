@@ -15,7 +15,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Config(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="TESTAGENT_", env_file=".env", extra="ignore")
-
     model_backend: Literal["claude", "gemini"] = "claude"
     gemini_model: str = "gemini-2.5-flash"
     default_max_tokens: int = 6000

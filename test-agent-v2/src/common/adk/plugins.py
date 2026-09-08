@@ -10,19 +10,15 @@ registered once on the Runner (mapping §6).
 from __future__ import annotations
 
 import asyncio
-import datetime
 
 from google.adk.plugins import BasePlugin
 
 from common import learn
+from common.adk.events import now
 from common.memory.factory import build_bank
 from common.monitoring import get_logger
 
 log = get_logger("adk.plugins")
-
-
-def _now() -> str:
-    return datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
 
 
 def _agent_prefix(ictx) -> str:
@@ -42,7 +38,7 @@ class LearnDrainPlugin(BasePlugin):
             return
         prefix = _agent_prefix(invocation_context)
         if learn.capture_enabled(prefix):
-            await asyncio.to_thread(learn.drain, bank, now=_now())  # off-path (I3)
+            await asyncio.to_thread(learn.drain, bank, now=now())  # off-path (I3)
         try:
             from common.memory.pg.project import maybe_drain_index
 
