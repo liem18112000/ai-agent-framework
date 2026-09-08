@@ -11,9 +11,7 @@ import asyncio
 import os
 
 from common.codegraph import build_and_store, distill_code_note
-from common.executor import (
-    build_bank,  # from common (not KG executor) to avoid a loop<-fetch<-executor cycle
-)
+from common.memory.factory import build_bank
 from common.models import CODEGRAPH, LinkRecord, Note, Scope
 from knowledge_gathering.loop.fetch.base import NodeFetcher
 

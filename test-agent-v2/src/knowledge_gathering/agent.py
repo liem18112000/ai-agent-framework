@@ -19,7 +19,7 @@ from common.adk import tools
 from common.adk.events import incoming_text, text_event
 from common.interrogate import present
 from common.memory.factory import build_bank
-from knowledge_gathering.executor.refine import wants_refine
+from knowledge_gathering.refine import wants_refine
 
 
 class KgaRouter(BaseAgent):

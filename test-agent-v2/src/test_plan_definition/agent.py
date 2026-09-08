@@ -13,7 +13,7 @@ from common.adk.events import incoming_text, text_event
 from common.interrogate import present
 from common.memory.factory import build_bank
 from test_plan_definition import memory as store
-from test_plan_definition.executor.define import wants_define
+from test_plan_definition.define_ops import wants_define
 from test_plan_definition.models import CONFIRMED
 
 

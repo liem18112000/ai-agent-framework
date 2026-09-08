@@ -50,7 +50,7 @@ async def backfill(bank, store, *, embedder=None, batch: int = 100, max_passes: 
 
 async def run() -> int:
     """CLI entrypoint: build the bank/store/embedder from env and backfill. 1 if no DB configured."""
-    from common.executor import build_bank
+    from common.memory.factory import build_bank
     from common.memory.pg import build_store
     from common.memory.pg.embed import build_embedder
 

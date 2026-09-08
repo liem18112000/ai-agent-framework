@@ -14,8 +14,9 @@ from google.adk.agents import BaseAgent
 from common.adk.events import incoming_text, text_event
 from common.memory.factory import build_bank
 from common.models import Scope
-from knowledge_gathering.executor.common import build_client
-from knowledge_gathering.executor.gather import (
+from knowledge_gathering.atlassian_client import build_client
+from knowledge_gathering.explore.expand import expansion_round
+from knowledge_gathering.gather import (
     _capture_gather,
     _explore_loop_enabled,
     _follow_web_enabled,
@@ -23,7 +24,6 @@ from knowledge_gathering.executor.gather import (
     parse_input,
     summarize_gather,
 )
-from knowledge_gathering.explore.expand import expansion_round
 from knowledge_gathering.loop import crawl
 from knowledge_gathering.monitoring import get_logger
 

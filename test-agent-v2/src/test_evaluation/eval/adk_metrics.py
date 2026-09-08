@@ -17,7 +17,7 @@ from google.adk.evaluation.evaluator import EvaluationResult, PerInvocationResul
 
 from common.memory.factory import build_bank
 from test_evaluation.engine import evaluate_pack
-from test_evaluation.executor.base import golden_for, golden_plan_for
+from test_evaluation.golden import golden_for, golden_plan_for
 from test_evaluation.plan_engine import evaluate_plan
 
 _BANK = None

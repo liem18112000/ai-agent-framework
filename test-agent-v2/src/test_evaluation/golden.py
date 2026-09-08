@@ -23,3 +23,21 @@ def load_golden() -> list[dict]:
 
 def load_golden_plans() -> list[dict]:
     return _load("golden_plans")
+
+
+def golden_for(ctx: str):
+    """The golden pack EvalCase whose seed or fixture matches this context (best-effort)."""
+    from test_evaluation.models import EvalCase
+    for d in load_golden():
+        if ctx in (d.get("seed"), d.get("fixture")):
+            return EvalCase.from_dict(d)
+    return None
+
+
+def golden_plan_for(ctx: str):
+    """The golden PlanEvalCase whose seed or fixture matches this context (best-effort)."""
+    from test_evaluation.models import PlanEvalCase
+    for d in load_golden_plans():
+        if ctx in (d.get("seed"), d.get("fixture")):
+            return PlanEvalCase.from_dict(d)
+    return None

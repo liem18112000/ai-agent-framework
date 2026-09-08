@@ -10,7 +10,7 @@ from __future__ import annotations
 from common.adk.interrogation import InterrogationAgent, SessionSpec, register_spec
 from test_plan_definition import memory as store
 from test_plan_definition.define.loop import PlanSession
-from test_plan_definition.executor.define import summarize_define
+from test_plan_definition.define_ops import summarize_define
 from test_plan_definition.models import ROUNDS
 
 register_spec("plan", SessionSpec(
