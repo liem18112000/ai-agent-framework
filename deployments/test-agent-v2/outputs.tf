@@ -1,19 +1,23 @@
-# The agents are sidecars now — reachable only on localhost inside their service, so there is
-# no public agent URL. Claude connects to the bridge (MCP) endpoints below.
+# Claude connects to the SINGLE gateway (MCP). The agents are A2A-only (reached by the gateway).
 
-output "bridge_url" {
-  description = "knowledge-gathering MCP endpoint. Register: claude mcp add --transport http knowledge-gathering <bridge_url>"
-  value       = var.deploy_bridge ? "${module.kga.uri}/mcp" : null
+output "gateway_url" {
+  description = "The one MCP endpoint. Register: claude mcp add --transport http testing-agent <gateway_url>"
+  value       = var.deploy_gateway ? "${module.gateway.uri}/mcp" : null
 }
 
-output "tpd_bridge_url" {
-  description = "test-plan-definition MCP endpoint. Register: claude mcp add --transport http test-plan-definition <tpd_bridge_url>"
-  value       = var.deploy_test_plan ? "${module.tpd.uri}/mcp" : null
+output "kga_a2a_url" {
+  description = "knowledge-gathering A2A base URL (the gateway's KGA_A2A_URL)."
+  value       = var.deploy_bridge ? module.kga.uri : null
 }
 
-output "tev_bridge_url" {
-  description = "test-evaluation MCP endpoint. Register: claude mcp add --transport http test-evaluation <tev_bridge_url>"
-  value       = var.deploy_test_evaluation ? "${module.tev.uri}/mcp" : null
+output "tpd_a2a_url" {
+  description = "test-plan-definition A2A base URL (the gateway's TPD_A2A_URL)."
+  value       = var.deploy_test_plan ? module.tpd.uri : null
+}
+
+output "tev_a2a_url" {
+  description = "test-evaluation A2A base URL (the gateway's TEV_A2A_URL)."
+  value       = var.deploy_test_evaluation ? module.tev.uri : null
 }
 
 output "memory_bucket" {
@@ -22,7 +26,7 @@ output "memory_bucket" {
 }
 
 output "runtime_service_account" {
-  description = "The single SA shared by both containers of both services."
+  description = "The single SA shared by the gateway + all agent containers."
   value       = google_service_account.kga.email
 }
 
@@ -40,6 +44,6 @@ output "secret_ids" {
 }
 
 output "cloudsql_connection_name" {
-  description = "Cloud SQL instance connection name (PROJECT:REGION:INSTANCE) the agent sidecars mount as the task store."
+  description = "Cloud SQL instance connection name (PROJECT:REGION:INSTANCE) the agents mount as the task store."
   value       = var.deploy_cloudsql ? google_sql_database_instance.taskstore[0].connection_name : null
 }

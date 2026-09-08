@@ -66,7 +66,7 @@ variable "name_prefix" {
 
 variable "service_name" {
   type        = string
-  description = "knowledge-gathering Cloud Run service name (bridge ingress + agent sidecar)."
+  description = "knowledge-gathering Cloud Run service name (A2A-only agent, ingress :8080)."
   default     = "knowledge-gathering-agent-v2"
 }
 
@@ -191,7 +191,7 @@ variable "deploy_test_plan" {
 
 variable "tpd_service_name" {
   type        = string
-  description = "test-plan-definition Cloud Run service name (bridge ingress + agent sidecar)."
+  description = "test-plan-definition Cloud Run service name (A2A-only agent, ingress :8080)."
   default     = "test-plan-definition-agent-v2"
 }
 
@@ -206,7 +206,7 @@ variable "deploy_test_evaluation" {
 
 variable "tev_service_name" {
   type        = string
-  description = "test-evaluation Cloud Run service name (bridge ingress + agent sidecar)."
+  description = "test-evaluation Cloud Run service name (A2A-only agent, ingress :8080)."
   default     = "test-evaluation-agent-v2"
 }
 
@@ -220,4 +220,19 @@ variable "kga_self_explore" {
   type        = bool
   description = "Enable the KGA self-exploration stack G2-G5 (KGA_LLM_HYPOTHESIZE + KGA_FOLLOW_WEB + KGA_LLM_LEADS + KGA_EXPLORE_LOOP). Turns the single pre-crawl fan-out into a bounded, resumable multi-round explore loop with optional LLM-focused search terms/leads and external-web following. Off = single fan-out, byte-for-byte unchanged. Bounds are conservative (3 rounds / 300s total, under the 600s timeout)."
   default     = false
+}
+
+# ---------------------------------------------------------------------------
+# Single MCP gateway (G2) — the one endpoint Claude connects to; fronts the 3 A2A agents.
+# ---------------------------------------------------------------------------
+variable "deploy_gateway" {
+  type        = bool
+  description = "Create the single mcp-gateway-v2 service (the one MCP endpoint Claude connects to)."
+  default     = true
+}
+
+variable "gateway_service_name" {
+  type        = string
+  description = "Cloud Run service name for the single MCP gateway."
+  default     = "mcp-gateway-v2"
 }

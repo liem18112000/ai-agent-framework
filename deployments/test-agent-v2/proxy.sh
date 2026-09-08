@@ -14,9 +14,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-SERVICE="${SERVICE:-knowledge-gathering-agent}"  # Cloud Run service (var.service_name; bridge ingress + agent sidecar)
+SERVICE="${SERVICE:-mcp-gateway-v2}"          # Cloud Run service to proxy (the single MCP gateway)
 PORT="${PORT:-8080}"
-NAME="${NAME:-knowledge-gathering}"           # MCP server name to register with Claude
+NAME="${NAME:-testing-agent}"                 # MCP server name to register with Claude
 URL="http://localhost:${PORT}/mcp"
 
 # region: env override > terraform.tfvars > default (keeps this in sync with the deploy)
