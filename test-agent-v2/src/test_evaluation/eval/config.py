@@ -25,7 +25,7 @@ PLAN_METRICS = [
 
 # --- Native + judged metrics available in ADK (wired in the nightly tier with a judge model) ---
 # Deterministic (no judge): PrebuiltMetrics.TOOL_TRAJECTORY_AVG_SCORE  (replaces v1 trajectory.py).
-# Judged (needs a judge model — Claude-via-LiteLlm or Gemini):
+# Judged (needs a judge model — Claude-via-LiteLlm via the ModelProvider):
 #   PrebuiltMetrics.HALLUCINATIONS_V1                         (unsupported-claim detection)
 #   PrebuiltMetrics.RUBRIC_BASED_FINAL_RESPONSE_QUALITY_V1    (runs the v1 SEMANTIC_RUBRICS catalog)
 #   PrebuiltMetrics.FINAL_RESPONSE_MATCH_V2                   (LLM-judged reference match)

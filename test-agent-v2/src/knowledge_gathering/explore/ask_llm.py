@@ -14,8 +14,9 @@ Discipline (mirrors `explore.hypothesize`):
 - The single Vertex call is BLOCKING by design so the async caller offloads it via
   `asyncio.to_thread` — a blocking Vertex call on the event loop starves Cloud Run's liveness
   probe (ERROR_TIMEOUT).
-- Ideally a DIFFERENT model family (e.g. Gemini) than the downstream scenario generator, to avoid
-  compounding one model's blind spots (§3.4). Currently reuses Claude-on-Vertex; Gemini is a TODO.
+- Ideally a DIFFERENT model than the downstream scenario generator, to avoid compounding one model's
+  blind spots (§3.4). Currently reuses Claude-on-Vertex; a second model via a different
+  `ModelProvider` (common/adk/providers) is a TODO.
 """
 
 from __future__ import annotations

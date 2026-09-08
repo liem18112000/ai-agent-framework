@@ -1,8 +1,14 @@
-"""E2 — the Config model-backend switch (Claude-via-LiteLlm default | Gemini-native)."""
+"""C1 — model access via the `ModelProvider` registry (Claude-on-Vertex the sole provider; D10/I8)."""
 
 from __future__ import annotations
 
-from common.adk import agent_model, get_config
+import pytest
+
+from common.adk import agent_model, get_config, get_provider
+from common.adk.providers import VertexClaudeProvider
+
+# vertex_config now lives in the provider (model.py only dispatches) — patch it there.
+_VC = "common.adk.providers.vertex_claude.vertex_config"
 
 
 def test_default_backend_is_claude(monkeypatch):
@@ -10,22 +16,26 @@ def test_default_backend_is_claude(monkeypatch):
     assert get_config().model_backend == "claude"
 
 
-def test_gemini_backend_via_env(monkeypatch):
-    monkeypatch.setenv("TESTAGENT_MODEL_BACKEND", "gemini")
-    monkeypatch.setenv("TESTAGENT_GEMINI_MODEL", "gemini-2.5-pro")
-    assert get_config().model_backend == "gemini"
-    assert agent_model() == "gemini-2.5-pro"  # ADK LlmAgent takes the Gemini model-id string
+def test_provider_registry_maps_claude(monkeypatch):
+    monkeypatch.delenv("TESTAGENT_MODEL_BACKEND", raising=False)
+    prov = get_provider()
+    assert isinstance(prov, VertexClaudeProvider) and prov.name == "claude"
 
 
-def test_agent_model_claude_none_without_vertex(monkeypatch):
-    monkeypatch.setenv("TESTAGENT_MODEL_BACKEND", "claude")
-    monkeypatch.setattr("common.adk.model.vertex_config", lambda: None)
+def test_unknown_backend_raises(monkeypatch):
+    monkeypatch.setenv("TESTAGENT_MODEL_BACKEND", "gemini")  # removed backend → no registry entry
+    with pytest.raises(KeyError):
+        get_provider()
+
+
+def test_agent_model_none_without_vertex(monkeypatch):
+    monkeypatch.delenv("TESTAGENT_MODEL_BACKEND", raising=False)
+    monkeypatch.setattr(_VC, lambda: None)
     assert agent_model() is None  # no Vertex → caller uses the heuristic path (I7)
 
 
-def test_agent_model_claude_litellm_when_configured(monkeypatch):
-    monkeypatch.setenv("TESTAGENT_MODEL_BACKEND", "claude")
-    monkeypatch.setattr("common.adk.model.vertex_config",
-                        lambda: ("proj", "europe-west6", "claude-sonnet-5"))
+def test_agent_model_litellm_when_configured(monkeypatch):
+    monkeypatch.delenv("TESTAGENT_MODEL_BACKEND", raising=False)
+    monkeypatch.setattr(_VC, lambda: ("proj", "europe-west6", "claude-sonnet-5"))
     llm = agent_model(max_tokens=1234)
     assert "claude-sonnet-5" in str(getattr(llm, "model", ""))

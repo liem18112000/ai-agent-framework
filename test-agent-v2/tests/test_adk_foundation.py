@@ -15,15 +15,17 @@ from common.adk import (
 )
 from common.memory import MemoryBank
 
+# --- model.py / providers (I5/I7/I8) — vertex_config lives in the provider now ---
+_VC = "common.adk.providers.vertex_claude.vertex_config"
 
-# --- model.py (I5/I7) ---
+
 def test_claude_llm_none_without_vertex(monkeypatch):
-    monkeypatch.setattr("common.adk.model.vertex_config", lambda: None)
+    monkeypatch.setattr(_VC, lambda: None)
     assert claude_llm() is None  # → callers use the heuristic path
 
 
 def test_claude_llm_builds_litellm_when_configured(monkeypatch):
-    monkeypatch.setattr("common.adk.model.vertex_config", lambda: ("proj", "europe-west6", "claude-sonnet-5"))
+    monkeypatch.setattr(_VC, lambda: ("proj", "europe-west6", "claude-sonnet-5"))
     llm = claude_llm(max_tokens=6000)
     assert llm is not None
     assert "claude-sonnet-5" in str(getattr(llm, "model", ""))
