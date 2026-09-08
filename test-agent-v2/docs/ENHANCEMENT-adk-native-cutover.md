@@ -376,3 +376,23 @@ C0 → C1 → C2 → C3 → C4 → C5 → C6
 5. `test-agent-v1` untouched; every `[verify @2.x]` item in §8 resolved during execution.
 ```
 ```
+
+---
+
+## 11. C3+C5+C4 execution checklist (grounded, from the Plan pass)
+
+Order keeps the tree import-consistent; delete (step 5) only after tests are repointed.
+
+**Step 1 — relocate (done):** `common/adk/auth.py` = BearerAuthMiddleware (open-paths broadened to allow `/a2a/*/.well-known/`); drop `serve` re-export from `common/adk/__init__.py`.
+
+**Step 2 — harness linchpin:** rewrite `tests/eval/harness.py` a2a-free — drop `_app`/`_send`/`_all_text` + the `a2a`/`a2a_card`/`executor` imports; drive the ADK KGA router via an in-process `Runner` (patch `knowledge_gathering.agents.gather_agent.{build_client,build_bank}`, `knowledge_gathering.agent.build_bank`, `common.adk.interrogation.build_bank`, `common.adk.tools.build_bank`), reply = joined event text. Keep RecordedAtlassianClient/recorded_client/env/derive_tiers/RunTrace/run_refine_offline.
+
+**Step 3 — conftest fixtures:** add `adk_a2a_app(build_root_agent)` = `to_a2a(root, runner=Runner(InMemorySessionService))` (RPC `/`, card `/.well-known/agent-card.json`) as the drop-in for deleted `_app`; + `patch_bank`/`patch_client` helpers.
+
+**Step 4 — repoint/rewrite tests** (see §3 table): DROP test_executor_a2a, test_refine_a2a, test_plan_a2a. REWRITE test_memory_read_a2a, test_auth, test_plan_scaffold, test_explore, test_hypothesize, test_ground_leads, eval/test_engine, eval/test_plan_engine, test_gateway (backend→adk_a2a_app; relax exact-question-id), test_common_bridge (backend swap + card). MINOR repoint: test_adk_eval (golden→test_evaluation.golden), test_adk_idioms (drop a2a_card lines), test_atlassian_search + test_loop (executor.gather→gather). `run_gather(ex,ctx,queue,text)` has NO neutral home → test the units (hypothesize_terms/ground_leads/expansion_round) directly or via GatherAgent.
+
+**Step 5 — delete (§1 list):** common/{card,taskstore,ops,executor}.py, common/middlewares/, common/adk/serve.py; per agent server.py + a2a_card.py + adk_app.py + executor/; AND testing_agent/adk_app.py (4th adk_app).
+
+**Step 6 — C4 wiring:** main.py += `app.add_middleware(BearerAuthMiddleware)`; Dockerfile CMD→`uvicorn main:app` + **`COPY main.py ./`**; pyproject drop the 3 `*-bridge` scripts (already broken) + add `gateway="gateway.__main__:main"` (wheel `packages` unchanged); .env.example gateway URLs→`/a2a/<pkg>/` (trailing slash).
+
+**Gates:** `uvicorn main:app` boots, `/list-apps`=agents; `python -m gateway` same tool names; bearer 401; full suite green (minus DROP set); `grep -ri gemini src/` empty. **R-a** deployed A2A mount = `/a2a/<app_name>/` (httpx concatenates base+path; trailing slash required) — verify card filename `agent-card.json` `[verify @2.x]`. **R-c** confirm DatabaseSessionService subsumes the retired a2a DatabaseTaskStore `[verify @2.x]`. Keep `GOOGLE_GENAI_USE_VERTEXAI` bootstrap (test_adk_idioms asserts it).
