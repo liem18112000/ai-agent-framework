@@ -282,12 +282,16 @@ bearer 401 without token on the A2A surface.
 Format: **Goal · Gate · DoD · Size.** Sequence is strict — each milestone's gate is the next one's
 safety net.
 
-> **Progress: C1 ✅ done (2026-09-08).** `common/adk/providers/{base,vertex_claude,__init__}.py` added;
-> `config.py`/`model.py`/`__init__.py` route through `get_provider()`; Gemini scrubbed
-> (`grep -ri gemini src/` empty); `.env.example` cleaned. Gates green: `test_adk_config` (provider
-> registry + unknown-backend error), `test_model_access_gate` (I8 — `LiteLlm(`/`google.adk.models` only
-> in `providers/`; Gemini-scrubbed), `test_adk_foundation` (I5/I7). Option A: the engine's
-> `common/llm/vertex.py` path is untouched. **Next: C2.**
+> **Progress: C1–C6 ✅ ALL DONE & DEPLOYED (2026-09-08).** C1 (`common/adk/providers/*`, Gemini
+> scrubbed) + C2 (neutral modules) committed (`b16402c`, `c45cac4`); **C3+C5+C4 committed (`7339955`)** —
+> a2a shells deleted, `BearerAuthMiddleware`→`common/adk/auth.py`, `main:app` = `to_a2a(agent by
+> $AGENT)` root-mounted (D11 refined — not `get_fast_api_app`), all a2a-shell tests dropped/rewritten.
+> Full offline suite **382 passed, 14 skipped**. **C6 deployed to klara-nonprod** (image
+> `test-agent-v2:7339955`): 3 A2A-only agents (`main:app`) + `mcp-gateway-v2`, v2 Cloud SQL. Verified
+> live: agent `/livez`=200, `/readyz`=ready, gateway `/mcp`=401 (bearer enforced, invoker IAM intact).
+> See §12 for the as-built deltas (D11 refined, D14 auto-card, offline-Vertex fixture). Also landed
+> beyond-plan: `common/` dead-code cleanup, inline of `atlassian_client`/`refine`, `SeedProbe`→`models/`.
+> **Cutover complete. Remaining: register the gateway with local Claude (`install-mcp`).**
 
 | # | Milestone | Gate | Size |
 |---|-----------|------|------|
