@@ -33,13 +33,15 @@ them. Each entry: *Decision · Why · Consequence · Status*. Invariants (I1–I
 - **Status:** permanent for the gated path.
 
 ## D3 — The autonomous pipeline is a `SequentialAgent`, not an `LlmAgent`+`AgentTool` coordinator (E7)
-- **Decision:** `testing_agent.root_agent = SequentialAgent([gather, refine_auto, define_auto,
-  approve_auto, implement])`. The original enhancement plan proposed an `LlmAgent`+`AgentTool` coordinator.
+- **Decision:** `testing_agent.root_agent = SequentialAgent([gather, refine, define, approve,
+  implement])`. The original enhancement plan proposed an `LlmAgent`+`AgentTool` coordinator.
 - **Why:** the step order is **fixed**, so the canonical + deterministic choice is a workflow agent
   (the `llm-auditor` idiom) — no LLM router needed, determinism preserved (I1). An LLM coordinator would
   only be warranted if it had to *decide* the order/steps, which it doesn't.
-- **Consequence:** the headless auto-agents wrap the reused `refine`/`define` drivers with
-  `accept_recommendation`. Opt-in; the gated path is untouched.
+- **Consequence:** the headless sub-agents (`RefineAgent`/`DefineAgent`/`ApproveAgent`, one class per
+  module under `testing_agent/subagents/`) wrap the reused `refine`/`define` drivers with
+  `accept_recommendation`. Opt-in; the gated path is untouched. (`SequentialAgent` now emits a
+  deprecation warning toward `Workflow`; migration is deferred — see D10.)
 - **Status:** adopted (supersedes the plan's E7 sketch).
 
 ## D4 — Cross-cutting logic lives in a Runner `Plugin` (`before_run`), not per-agent callbacks (E4)
@@ -113,6 +115,56 @@ them. Each entry: *Decision · Why · Consequence · Status*. Invariants (I1–I
 
 ---
 
+## D10–D13 — the ADK-native cutover (see [`ENHANCEMENT-adk-native-cutover.md`](ENHANCEMENT-adk-native-cutover.md))
+
+Recorded from the cutover enhancement (drop the a2a-sdk shells + Gemini + the dual model plumbing).
+Full rationale/milestones/gates live in that doc; the one-liners here keep the record coherent.
+
+## D10 — Model access via a `ModelProvider` interface; Gemini removed
+- **Decision:** model access goes through a small `common/adk/providers` interface;
+  `VertexClaudeProvider` is the **sole** concrete impl; the `gemini` backend + `gemini_model` are deleted.
+- **Why:** user decision — *abstract* Claude-on-Vertex behind an extension point, don't carry a second
+  backend. A future `LocalClaudeProvider` (e.g. `ANTHROPIC_BASE_URL`) becomes a one-line registry entry.
+- **Consequence:** the I5 thinking/max_tokens gotchas live in the provider (one place); the engine keeps
+  its own `common/llm/vertex.py` transport (Option A) — routing the engine through the provider is a
+  tracked follow-up (Option B). New invariant **I8** (model only via the provider).
+- **Status:** planned (supersedes **D5**'s "one-env-var Gemini switch").
+
+## D11 — One ADK-native entrypoint (`main:app`) + one MCP gateway
+- **Decision:** `main.py` (`get_fast_api_app`, `a2a=True`) is the single server; `src/gateway` is local
+  Claude's single MCP entry. Per-agent `adk_app.py` (`to_a2a`), `server.py`, `a2a_card.py`, and the
+  standalone per-agent bridge launchers are dropped; each agent's `bridge/mcp_server.register_tools`
+  (the MCP surface, I4) is kept and composed by the gateway.
+- **Why:** "collapse to ADK-native" — one well-supported native surface over three overlapping ones.
+- **Consequence:** the gateway, the **A2A-only agents**, and the deletion of the standalone per-agent
+  bridge launchers **already landed in the G-milestones** (see [`DESIGN-mcp-gateway.md`](DESIGN-mcp-gateway.md));
+  the remaining delta here is collapsing each per-agent `adk_app.py` (`to_a2a`) into `main:app` (C4).
+  Rollback = restore the Dockerfile CMD to `<agent>.adk_app:app`.
+- **Status:** partly done (gateway + A2A-only agents built in G2); the `main:app` collapse is **C4**.
+  Extends/supersedes **D8**.
+
+## D12 — Domain logic extracted from `executor/`; the a2a `*Executor` shells dropped
+- **Decision:** the framework-neutral functions trapped in each `executor/` package (`run_gather`,
+  `wants_refine`, `summarize_define`, `run_implement`, `golden_for`, …) move to neutral modules; the
+  `*Executor` classes + the a2a `reply`/`now` seam are deleted.
+- **Why:** the ADK agents already reuse those functions; extraction is the precondition for deleting the
+  shells without regressing the equivalence suite.
+- **Consequence:** completes the **D6/D9** transition; `build_bank` importers repoint to
+  `common/memory/factory.py`; `now()` moves to `common/adk/util.py`.
+- **Status:** planned.
+
+## D13 — Bearer auth is transport-neutral middleware on `main:app`; sessions subsume the task store
+- **Decision:** `BearerAuthMiddleware` is relocated (not deleted) to `common/adk/auth.py` and wraps
+  `main:app`; `DatabaseSessionService` (`SESSION_SERVICE_URI`) is the one durable store, retiring the
+  a2a `DatabaseTaskStore`.
+- **Why:** `get_fast_api_app` ships no auth and no separate task store — deleting the middleware outright
+  would leave the A2A surface open.
+- **Consequence:** verify `DatabaseSessionService` persists the A2A task lifecycle under get_fast_api_app
+  (`[verify @2.x]`, R-c in the enhancement doc).
+- **Status:** planned.
+
+---
+
 ## Open (not yet decided / deferred to the deploy milestone)
 - **Stable `context_id → session_id` mapping** across the gather→refine→… A2A calls when serving via
   `to_a2a` (the bridge must pass a stable ADK `session_id`, or `to_a2a` must derive it from the A2A
@@ -121,3 +173,8 @@ them. Each entry: *Decision · Why · Consequence · Status*. Invariants (I1–I
 - **Dropping the v1 shells** (server.py / executors / `a2a_card.py`) once v2 is deployed — unblocks the
   final cleanup.
 - **Judged eval tier** (`hallucinations_v1` / `rubric_based_*`) with a judge model.
+
+<!-- The single-MCP-gateway decision (built in the G-milestones: gateway + A2A-only agents, standalone
+per-agent bridges deleted) is recorded under D11 below and in DESIGN-mcp-gateway.md — it is NOT a
+separate D10 (that number is the ModelProvider decision above). -->
+

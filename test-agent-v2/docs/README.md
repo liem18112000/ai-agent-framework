@@ -22,6 +22,11 @@ Read in this order:
    `Config`, plain-function tools, canonical `eval/`+`adk eval`, Agent-Engine deploy, an optional
    autonomous `AgentTool` coordinator) and what to consciously keep (custom `BaseAgent` routers,
    client-driven gating, Claude-via-LiteLlm), each with rationale.
+5. [`ENHANCEMENT-adk-native-cutover.md`](ENHANCEMENT-adk-native-cutover.md) — the **next enhancement**
+   (milestones C0–C6, decisions D10–D13): finish the migration by going ADK-native end to end — remove
+   the a2a-sdk shells, drop the **Gemini** backend, and re-express model access as an extensible
+   `ModelProvider` interface (Claude-on-Vertex the sole impl). Collapses serving to one `main:app`
+   (`get_fast_api_app`) + one MCP gateway.
 
 **Start here:** milestone **A0 — the HITL pause/resume spike** (de-risks the one real unknown before
 any bulk porting). See `IMPLEMENTATION-PLAN.md` §4.
