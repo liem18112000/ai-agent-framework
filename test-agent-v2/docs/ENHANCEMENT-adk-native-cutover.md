@@ -393,6 +393,44 @@ Order keeps the tree import-consistent; delete (step 5) only after tests are rep
 
 **Step 5 — delete (§1 list):** common/{card,taskstore,ops,executor}.py, common/middlewares/, common/adk/serve.py; per agent server.py + a2a_card.py + adk_app.py + executor/; AND testing_agent/adk_app.py (4th adk_app).
 
-**Step 6 — C4 wiring:** main.py += `app.add_middleware(BearerAuthMiddleware)`; Dockerfile CMD→`uvicorn main:app` + **`COPY main.py ./`**; pyproject drop the 3 `*-bridge` scripts (already broken) + add `gateway="gateway.__main__:main"` (wheel `packages` unchanged); .env.example gateway URLs→`/a2a/<pkg>/` (trailing slash).
+**Step 6 — C4 wiring:** main.py += `app.add_middleware(BearerAuthMiddleware)`; Dockerfile CMD→`uvicorn main:app` + **`COPY main.py ./`**; pyproject drop the 3 `*-bridge` scripts (already broken) + add `testing-agent-gateway="gateway.__main__:main"` (wheel `packages` unchanged); services.tf agent `command`→`uvicorn main:app` + per-service `AGENT` env. **Correction (as-built §12):** A2A is root-mounted (`/`), NOT `/a2a/<pkg>/` — the gateway agent URLs are each service root; no `.env.example` URL change was needed.
 
 **Gates:** `uvicorn main:app` boots, `/list-apps`=agents; `python -m gateway` same tool names; bearer 401; full suite green (minus DROP set); `grep -ri gemini src/` empty. **R-a** deployed A2A mount = `/a2a/<app_name>/` (httpx concatenates base+path; trailing slash required) — verify card filename `agent-card.json` `[verify @2.x]`. **R-c** confirm DatabaseSessionService subsumes the retired a2a DatabaseTaskStore `[verify @2.x]`. Keep `GOOGLE_GENAI_USE_VERTEXAI` bootstrap (test_adk_idioms asserts it).
+
+---
+
+## 12. As-built — C3+C5+C4 outcome (executed)
+
+Executed as one combined pass. Two deliberate deviations from the plan above, both recorded here.
+
+- **D11 refined — `main:app` = `to_a2a(single agent selected by $AGENT)`, root-mounted at `/`; NOT
+  `get_fast_api_app`/`/a2a/<app>/`/`/list-apps`.** The gateway topology deploys three *separate*
+  agent Cloud Run services (+ the gateway), so each container serves exactly one agent over A2A at
+  `/`. `to_a2a` (the same seam `serve()` used pre-gateway) is the natural single-agent server; the
+  gateway's `KGA/TPD/TEV_A2A_URL` point at each service root. DoD item 3's "`get_fast_api_app`,
+  `/list-apps`" and the R-a `/a2a/<app_name>/` mount are **superseded** by this. `AGENT` env
+  (`knowledge_gathering`|`test_plan_definition`|`test_evaluation`|`testing_agent`) selects the agent;
+  services.tf sets it per service; the Dockerfile CMD defaults it to `knowledge_gathering`.
+- **D14 — A2A cards left to ADK auto-generation; hand-authored cards dropped.** *(Revised — an interim
+  step kept the rich cards via `to_a2a(agent_card=…)`; on review the user chose the leaner, fully
+  ADK-native surface.)* Deleted the 3 `src/<pkg>/a2a_card.py` **and** `common/card.py` (their only
+  importers), and dropped `main._agent_card()`; `main.build_app` calls `to_a2a(root, runner=…)` with no
+  `agent_card=`. The A2A card is now ADK's generic one (`name="knowledge_gathering"`, `"An ADK Agent"`,
+  auto skill ids) — fine for the internal agent-to-agent surface; the rich client-facing layer is the
+  gateway's MCP tool descriptions (I4), unchanged. `to_a2a(agent_card=…)` remains available if a real
+  card is wanted later. Everything else on the C3 delete list was removed.
+
+**A2A routing gotcha (test infra):** `to_a2a` attaches its routes (`POST /`, card) on ASGI *lifespan
+startup*; `httpx.ASGITransport` never fires lifespan, so in-process round-trips wrap calls in
+`async with app.router.lifespan_context(app)`. Pure routing tests inject a recording fake via
+`session.set_client()` instead. (conftest `adk_a2a_app`/`drive_adk`; `test_gateway`, `test_main`.)
+
+**A1 gap kept & fenced:** the KGA explore loop is not ported to the ADK `GatherAgent` (it warns +
+single-passes). `test_explore.test_explore_loop_flag_is_inert_in_adk_gather` is the canary that flips
+when the loop lands. **R-d** (stable `context_id → session_id` for gateway multi-turn) stays open.
+
+**Test reconciliation:** DROPPED test_executor_a2a/refine_a2a/plan_a2a; test_memory_read_a2a →
+`test_memory_read` (direct ADK read-tool unit tests). Wiring tests retargeted to the shared
+`expansion_round` (hypothesize/ground_leads) and to `drive_adk`/`adk_a2a_app` (gateway/eval/main).
+Added `test_main`. `main:app`, gateway tool-parity, bearer 401, and `grep -ri gemini src/` empty all
+hold; full suite green.

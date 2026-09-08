@@ -140,8 +140,11 @@ Full rationale/milestones/gates live in that doc; the one-liners here keep the r
   bridge launchers **already landed in the G-milestones** (see [`DESIGN-mcp-gateway.md`](DESIGN-mcp-gateway.md));
   the remaining delta here is collapsing each per-agent `adk_app.py` (`to_a2a`) into `main:app` (C4).
   Rollback = restore the Dockerfile CMD to `<agent>.adk_app:app`.
-- **Status:** partly done (gateway + A2A-only agents built in G2); the `main:app` collapse is **C4**.
-  Extends/supersedes **D8**.
+- **Refined as-built (C4):** `main:app` = **`to_a2a(single agent selected by $AGENT)`, root-mounted at
+  `/`** — NOT `get_fast_api_app`/`/a2a/<app>/`/`/list-apps`. The gateway topology runs three *separate*
+  agent Cloud Run services, so each container serves exactly one agent; `services.tf` sets `AGENT` per
+  service. See §12 of the enhancement doc.
+- **Status:** **DONE (C4).** Extends/supersedes **D8**.
 
 ## D12 — Domain logic extracted from `executor/`; the a2a `*Executor` shells dropped
 - **Decision:** the framework-neutral functions trapped in each `executor/` package (`run_gather`,
@@ -151,7 +154,7 @@ Full rationale/milestones/gates live in that doc; the one-liners here keep the r
   shells without regressing the equivalence suite.
 - **Consequence:** completes the **D6/D9** transition; `build_bank` importers repoint to
   `common/memory/factory.py`; `now()` moves to `common/adk/util.py`.
-- **Status:** planned.
+- **Status:** **DONE (C2 + C3).** Neutral modules landed in C2; the `executor/` packages deleted in C3.
 
 ## D13 — Bearer auth is transport-neutral middleware on `main:app`; sessions subsume the task store
 - **Decision:** `BearerAuthMiddleware` is relocated (not deleted) to `common/adk/auth.py` and wraps
@@ -159,9 +162,24 @@ Full rationale/milestones/gates live in that doc; the one-liners here keep the r
   a2a `DatabaseTaskStore`.
 - **Why:** `get_fast_api_app` ships no auth and no separate task store — deleting the middleware outright
   would leave the A2A surface open.
-- **Consequence:** verify `DatabaseSessionService` persists the A2A task lifecycle under get_fast_api_app
+- **Consequence:** verify `DatabaseSessionService` persists the A2A task lifecycle
   (`[verify @2.x]`, R-c in the enhancement doc).
-- **Status:** planned.
+- **Status:** **DONE (C3 + C4).** `common/adk/auth.py` in place, wrapped on `main:app` (`build_runner`
+  builds the DatabaseSessionService-backed Runner); live task-lifecycle persistence stays R-c/`[verify @2.x]`.
+
+## D14 — A2A cards left to ADK's auto-generation; hand-authored cards + `common/card.py` dropped
+- **Decision (revised):** delete the three `src/<pkg>/a2a_card.py` **and** `common/card.py`; `main.build_app`
+  calls `to_a2a(root, runner=…)` with **no** `agent_card=`, so ADK generates the A2A card. *(This reverses
+  the interim "keep the rich card via `agent_card=`" call after review — user chose the leaner, fully
+  ADK-native surface.)*
+- **Why:** the hand-authored cards + `common/card.py` + the dynamic `_agent_card()` seam in `main.py` were
+  ~4 files kept only to prettify an *internal* A2A surface. The rich, client-facing layer is the **MCP
+  gateway's** tool descriptions (I4), which are unchanged; the A2A card is agent-to-agent + the gateway's
+  `agent_cards` diagnostic, where ADK's generic card (`name="knowledge_gathering"`, `"An ADK Agent"`, auto
+  skill ids) is acceptable. `to_a2a`'s `agent_card=` override still exists if a real card is wanted later.
+- **Consequence:** `common/card.py` deleted (its only importers were the a2a_card files); `main.py` drops
+  `_agent_card()`; `test_main` asserts the ADK card (`name="knowledge_gathering"`, skills non-empty).
+- **Status:** **DONE (C4).**
 
 ---
 

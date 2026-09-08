@@ -6,7 +6,6 @@ from common.adk.model import agent_model, claude_llm
 from common.adk.plugins import LearnDrainPlugin, LessonRecallPlugin
 from common.adk.providers import ModelProvider, get_provider
 from common.adk.services import build_runner, build_session_service
-from common.adk.tools import memory_tools
 
 __all__ = [
     "Config",
@@ -20,5 +19,4 @@ __all__ = [
     "claude_llm",
     "get_config",
     "get_provider",
-    "memory_tools",
 ]

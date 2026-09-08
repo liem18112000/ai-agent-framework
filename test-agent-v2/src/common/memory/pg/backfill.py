@@ -33,17 +33,3 @@ async def backfill(bank, store, *, embedder=None, batch: int = 100, max_passes: 
         log.warning("backfill: ANN index build skipped (%s)", exc)
     log.info("backfill: %d node(s) in index, %d projected", total, projected)
     return total, projected
-
-
-async def run() -> int:
-    """CLI entrypoint: build the bank/store/embedder from env and backfill. 1 if no DB configured."""
-    from common.memory.factory import build_bank
-    from common.memory.pg import build_store
-    from common.memory.pg.embed import build_embedder
-
-    store = build_store()
-    if store is None:
-        log.error("backfill: no DB configured (set DB_* or TASK_DB_URL) — nothing to project")
-        return 1
-    await backfill(build_bank(), store, embedder=build_embedder())
-    return 0

@@ -1,29 +1,43 @@
-"""A2A bearer enforcement: card + health open, JSON-RPC gated when A2A_BEARER_TOKEN is set."""
+"""A2A bearer enforcement (common.adk.auth): health + card open, everything else gated when set."""
 
 from __future__ import annotations
 
-from starlette.testclient import TestClient
+import httpx
+from starlette.applications import Starlette
+from starlette.responses import PlainTextResponse
+from starlette.routing import Route
+
+from common.adk.auth import BearerAuthMiddleware
 
 
-def test_bearer_enforced_when_set(monkeypatch):
+def _app() -> Starlette:
+    async def ok(request):
+        return PlainTextResponse("ok")
+
+    app = Starlette(routes=[
+        Route("/", ok, methods=["POST"]),
+        Route("/livez", ok),
+        Route("/.well-known/agent-card.json", ok),
+    ])
+    app.add_middleware(BearerAuthMiddleware)
+    return app
+
+
+async def _req(app, path, method="GET", **kw):
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t/") as c:
+        return await c.request(method, path, **kw)
+
+
+async def test_bearer_enforced_when_set(monkeypatch):
     monkeypatch.setenv("A2A_BEARER_TOKEN", "secret")
-    from knowledge_gathering.server import app
-
-    c = TestClient(app)
-    assert c.get("/.well-known/agent-card.json").status_code == 200
-    assert c.get("/livez").status_code == 200
-
-    rpc = {"jsonrpc": "2.0", "id": 1, "method": "nope", "params": {}}
-    assert c.post("/", json=rpc).status_code == 401
-
-    ok = c.post("/", headers={"Authorization": "Bearer secret"}, json=rpc)
+    app = _app()
+    assert (await _req(app, "/.well-known/agent-card.json")).status_code == 200
+    assert (await _req(app, "/livez")).status_code == 200
+    assert (await _req(app, "/", "POST")).status_code == 401
+    ok = await _req(app, "/", "POST", headers={"Authorization": "Bearer secret"})
     assert ok.status_code != 401
 
 
-def test_no_enforcement_when_unset(monkeypatch):
+async def test_no_enforcement_when_unset(monkeypatch):
     monkeypatch.delenv("A2A_BEARER_TOKEN", raising=False)
-    from knowledge_gathering.server import app
-
-    c = TestClient(app)
-    rpc = {"jsonrpc": "2.0", "id": 1, "method": "nope", "params": {}}
-    assert c.post("/", json=rpc).status_code != 401
+    assert (await _req(_app(), "/", "POST")).status_code != 401

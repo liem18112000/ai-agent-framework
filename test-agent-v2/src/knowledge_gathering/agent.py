@@ -10,7 +10,19 @@ from common.adk import tools
 from common.adk.events import incoming_text, text_event
 from common.interrogate import present
 from common.memory.factory import build_bank
-from knowledge_gathering.refine import wants_refine
+
+
+def wants_refine(text: str) -> bool:
+    t = text.strip().lower()
+    if t.startswith("refine"):
+        return True
+    if t.startswith("{"):
+        try:
+            d = json.loads(text)
+        except json.JSONDecodeError:
+            return False
+        return "context_id" in d or "answers" in d
+    return False
 
 
 class KgaRouter(BaseAgent):

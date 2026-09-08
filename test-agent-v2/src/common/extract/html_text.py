@@ -63,11 +63,3 @@ def parse_html(html: str) -> tuple[str, str]:
     p.feed(html or "")
     p.close()
     return _collapse("".join(p.parts)), p.title
-
-
-def html_to_text(html: str) -> str:
-    return parse_html(html)[0]
-
-
-def html_title(html: str) -> str:
-    return parse_html(html)[1]

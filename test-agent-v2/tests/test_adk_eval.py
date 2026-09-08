@@ -9,7 +9,7 @@ from google.adk.evaluation.evaluator import EvaluationResult
 from test_evaluation.engine import evaluate_pack
 from test_evaluation.eval import adk_metrics
 from test_evaluation.eval.evalset import eval_case_for, pack_eval_set, plan_eval_set
-from test_evaluation.executor.base import golden_for
+from test_evaluation.golden import golden_for
 from test_evaluation.plan_engine import evaluate_plan
 from tests.eval.harness import recorded_client, run_gather_offline
 from tests.eval.harness_tpd import run_plan_offline
@@ -60,7 +60,7 @@ def test_tps_reproduces_via_adk_custom_metric():
 
     res = _run(adk_metrics.tps_score, seed, 0.70)
     assert isinstance(res, EvaluationResult)
-    from test_evaluation.executor.base import golden_plan_for
+    from test_evaluation.golden import golden_plan_for
     v1_matched = evaluate_plan(trace.bank, seed, golden_plan_for(seed))
     assert res.overall_score == v1_matched.tps
 

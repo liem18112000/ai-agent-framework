@@ -50,7 +50,4 @@ class LoggingToggle:
 
 
 _toggle = LoggingToggle("common", "COMMON")
-configure = _toggle.configure
-enable = _toggle.enable
-disable = _toggle.disable
 get_logger = _toggle.get_logger

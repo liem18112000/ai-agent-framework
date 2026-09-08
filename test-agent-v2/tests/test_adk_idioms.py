@@ -20,9 +20,6 @@ def test_root_agents_are_discoverable():
     assert ev.name == "test_evaluation"
     assert ta.name == "testing_agent"
     assert [a.name for a in ta.sub_agents] == ["gather", "refine", "define", "approve", "implement"]
-    from knowledge_gathering.a2a_card import AGENT_CARD
-
-    assert AGENT_CARD.name == "knowledge-gathering"
 
 
 def test_env_bootstrap_sets_vertexai_flag():

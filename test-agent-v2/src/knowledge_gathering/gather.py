@@ -6,13 +6,13 @@ import json
 import os
 import re
 from dataclasses import asdict
-from typing import NamedTuple
 
 from common import learn
 from common.extract import adf_text
 from common.models import CODEGRAPH
 from knowledge_gathering.loop import CrawlResult
 from knowledge_gathering.loop.seed import normalize_seed
+from knowledge_gathering.models import SeedProbe
 from knowledge_gathering.monitoring import get_logger
 
 log = get_logger("kga.gather")
@@ -43,18 +43,6 @@ def _follow_web_enabled() -> bool:
 def _explore_loop_enabled() -> bool:
     """G5 self-exploration controller — opt-in (default OFF). When off, gather takes the single"""
     return os.environ.get("KGA_EXPLORE_LOOP", "").lower() in ("1", "true", "yes", "on")
-
-
-class SeedProbe(NamedTuple):
-    """One best-effort seed fetch shared by the pre-crawl G0/G1/G2 phases (defaults = neutral)."""
-
-    terms: str = ""
-    thin: bool = False
-    project: str | None = None
-    title: str = ""
-    description: str = ""
-    labels: list[str] | None = None
-    parent: str | None = None
 
 
 async def _seed_probe(client, seed: str) -> SeedProbe:

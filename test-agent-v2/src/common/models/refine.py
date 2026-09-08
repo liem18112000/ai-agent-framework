@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 
 DECISION = "decision"
 ASSUMPTION = "assumption"
-CLARIFICATION = "clarification"
 GAP_SEED = "gap-seed"
 LESSON = "lesson"
 CORRECTION = "correction"

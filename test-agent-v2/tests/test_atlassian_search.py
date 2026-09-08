@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from knowledge_gathering.executor.gather import SeedProbe, _seed_probe
 from knowledge_gathering.explore.atlassian_search import _escape, atlassian_search_seeds
+from knowledge_gathering.gather import SeedProbe, _seed_probe
 
 
 class _FakeSearchClient:

@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import types
-
 from google.api_core.exceptions import PreconditionFailed
 
 from common.memory import MemoryBank
 from common.models import Note
-from knowledge_gathering.executor import gather as gather_mod
-from knowledge_gathering.executor.gather import SeedProbe
 from knowledge_gathering.explore import loop as explore_mod
+from knowledge_gathering.gather import SeedProbe
 from knowledge_gathering.loop import CrawlResult
 
 
@@ -42,10 +39,6 @@ class _Bucket:
 
     def get_blob(self, n):
         return _Blob(self, n) if n in self.store else None
-
-
-class _Ctx:
-    context_id = "run-ctx"
 
 
 class _IssueClient:
@@ -237,64 +230,17 @@ async def test_expansion_error_degrades_gracefully(monkeypatch):
     assert result.notes == [] and "Exploration:" in expl
 
 
-async def test_flag_off_uses_single_pass(monkeypatch):
-    monkeypatch.delenv("KGA_EXPLORE_LOOP", raising=False)
-    spy = {"loop": False}
-    seen = {}
+def test_explore_loop_flag_is_inert_in_adk_gather():
+    """A1 gap CANARY: KGA_EXPLORE_LOOP is recognized but the explore loop is NOT yet ported to the
+    ADK GatherAgent — gather stays single-pass even with the flag on (no 'Exploration:' section).
+    This flips (and must be reworked) the day the loop lands. Single-pass gather itself is covered by
+    the offline eval harness; here we assert only that the flag is currently inert."""
+    from tests.eval.harness import recorded_client, run_gather_offline
 
-    async def spy_loop(*a, **k):
-        spy["loop"] = True
-        return CrawlResult(), [], ""
-
-    async def fake_crawl(client, bank, seed, **k):
-        return CrawlResult(notes=[_note("jira:LUZ-1", "X")])
-
-    async def fake_reply(context, event_queue, text):
-        seen["reply"] = text
-
-    monkeypatch.setattr(explore_mod, "run_explore_loop", spy_loop)
-    monkeypatch.setattr(gather_mod, "crawl", fake_crawl)
-    monkeypatch.setattr(gather_mod, "reply", fake_reply)
-
-    ex = types.SimpleNamespace(_client=_IssueClient(), _bank=_bank(), _distiller=None)
-    await gather_mod.run_gather(ex, _Ctx(), object(), "gather LUZ-1 depth 1")
-
-    assert spy["loop"] is False
-    assert "Gather complete" in seen["reply"]
-    assert "Exploration:" not in seen["reply"]
-
-
-async def test_flag_on_enters_loop(monkeypatch):
-    monkeypatch.setenv("KGA_EXPLORE_LOOP", "1")
-    seen = {}
-    seeds_plan = [["jira:LUZ-2"], []]
-    calls = {"exp": 0}
-    crawls: list[str] = []
-
-    async def fake_exp(bank_, client_, *, seed, terms, **k):
-        i = calls["exp"]
-        calls["exp"] += 1
-        return (list(seeds_plan[i]) if i < len(seeds_plan) else []), []
-
-    async def fake_crawl(client_, bank_, seed, *, extra_seeds=None, **k):
-        crawls.append(seed)
-        if seed == "LUZ-158390":
-            return CrawlResult(notes=[_note("jira:LUZ-158390", "Export"), _note("jira:LUZ-2", "Bulk export")])
-        return CrawlResult()
-
-    async def fake_reply(context, event_queue, text):
-        seen["reply"] = text
-
-    monkeypatch.setattr(explore_mod, "expansion_round", fake_exp)
-    monkeypatch.setattr(explore_mod, "crawl", fake_crawl)
-    monkeypatch.setattr(gather_mod, "reply", fake_reply)
-
-    ex = types.SimpleNamespace(_client=_IssueClient(), _bank=_bank(), _distiller=None)
-    await gather_mod.run_gather(ex, _Ctx(), object(), "gather LUZ-158390 depth 1")
-
-    assert crawls == ["LUZ-158390"]
-    assert "Exploration:" in seen["reply"] and "converged" in seen["reply"]
-    assert "2 nodes" in seen["reply"]
+    trace = run_gather_offline("LUZ-501", client=recorded_client("eval_rich"),
+                               flags={"KGA_EXPLORE_LOOP": "1"})
+    assert "Gather complete" in trace.reply
+    assert "Exploration:" not in trace.reply
 
 
 async def test_thin_seed_climbs_to_parent_and_skips_memory_recall(monkeypatch):
@@ -351,7 +297,7 @@ async def test_non_thin_seed_does_not_climb(monkeypatch):
 async def test_codegraph_anchor_leads_every_round_focus(monkeypatch):
     """B2 Part A: once a codegraph note is attached, its code-vocabulary tokens lead every later"""
     from common.models import CODEGRAPH
-    from knowledge_gathering.executor.gather import SeedProbe
+    from knowledge_gathering.gather import SeedProbe
 
     async def fake_exp(bank_, client_, *, seed, terms, **k):
         return ["jira:NEXT"], []
@@ -381,7 +327,7 @@ async def test_codegraph_anchor_leads_every_round_focus(monkeypatch):
 async def test_codegraph_auto_resolves_devpanel_repo_when_enabled(monkeypatch):
     """B2 Part B (opt-in): a dev-panel codegraph the seed crawl only RECORDED is auto-promoted and"""
     from common.models import CODEGRAPH, LinkRecord
-    from knowledge_gathering.executor.gather import SeedProbe
+    from knowledge_gathering.gather import SeedProbe
 
     async def fake_exp(bank_, client_, *, seed, terms, **k):
         return [], []
@@ -412,7 +358,7 @@ async def test_codegraph_auto_resolves_devpanel_repo_when_enabled(monkeypatch):
 async def test_codegraph_auto_resolve_off_by_default(monkeypatch):
     """Without the flag, a recorded dev-panel codegraph is NOT auto-built (human confirms the repo)."""
     from common.models import CODEGRAPH, LinkRecord
-    from knowledge_gathering.executor.gather import SeedProbe
+    from knowledge_gathering.gather import SeedProbe
 
     async def fake_exp(bank_, client_, *, seed, terms, **k):
         return [], []
@@ -438,7 +384,7 @@ async def test_codegraph_auto_resolve_off_by_default(monkeypatch):
 
 async def test_off_seed_round_stops_the_loop(monkeypatch):
     """B3: round 1 discovers nodes sharing NO vocabulary with the seed's own neighborhood → the"""
-    from knowledge_gathering.executor.gather import SeedProbe
+    from knowledge_gathering.gather import SeedProbe
 
     async def fake_exp(bank_, client_, *, seed, terms, **k):
         return ["jira:NEXT"], []
@@ -464,7 +410,7 @@ async def test_off_seed_round_stops_the_loop(monkeypatch):
 
 async def test_coherence_gate_disabled_by_flag(monkeypatch):
     """KGA_EXPLORE_MIN_COHERENCE=0 turns B3 off — the off-seed round no longer stops the loop."""
-    from knowledge_gathering.executor.gather import SeedProbe
+    from knowledge_gathering.gather import SeedProbe
 
     async def fake_exp(bank_, client_, *, seed, terms, **k):
         return ["jira:NEXT"], []
@@ -491,7 +437,7 @@ async def test_coherence_gate_disabled_by_flag(monkeypatch):
 
 async def test_b5_gate_drops_ungrounded_promotions(monkeypatch):
     """B5 (opt-in): with grounding on, a round-1 promotion that does NOT connect to the seed's"""
-    from knowledge_gathering.executor.gather import SeedProbe
+    from knowledge_gathering.gather import SeedProbe
 
     promos = {0: ["jira:R0"], 1: ["jira:GOOD-1", "jira:BAD-1"]}
     calls = {"i": 0}
@@ -523,7 +469,7 @@ async def test_b5_gate_drops_ungrounded_promotions(monkeypatch):
 
 async def test_b6_exclude_prunes_rejected_cluster(monkeypatch):
     """B6: re-running with exclude='zip import' prunes matching nodes from the pack (and steers the"""
-    from knowledge_gathering.executor.gather import SeedProbe
+    from knowledge_gathering.gather import SeedProbe
 
     async def fake_exp(bank_, client_, *, seed, terms, **k):
         return ["jira:NEXT"], []

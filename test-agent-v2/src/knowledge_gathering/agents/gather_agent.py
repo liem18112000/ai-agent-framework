@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import os
+
 from google.adk.agents import BaseAgent
 
 from common.adk.events import incoming_text, text_event
+from common.atlassian import AtlassianClient
 from common.memory.factory import build_bank
 from common.models import Scope
-from knowledge_gathering.atlassian_client import build_client
 from knowledge_gathering.explore.expand import expansion_round
 from knowledge_gathering.gather import (
     _capture_gather,
@@ -21,6 +23,17 @@ from knowledge_gathering.loop import crawl
 from knowledge_gathering.monitoring import get_logger
 
 log = get_logger("adk.gather")
+
+
+def build_client() -> AtlassianClient:
+    bb_user = os.environ.get("ATLASSIAN_BITBUCKET_USERNAME")
+    bb_pass = os.environ.get("ATLASSIAN_BITBUCKET_APP_PASSWORD")
+    return AtlassianClient(
+        os.environ["ATLASSIAN_BASE_URL"],
+        os.environ["ATLASSIAN_EMAIL"],
+        os.environ["ATLASSIAN_API_TOKEN"],
+        bitbucket_auth=(bb_user, bb_pass) if bb_user and bb_pass else None,
+    )
 
 
 class GatherAgent(BaseAgent):

@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import json
-import types
 
 import pytest
 
-from knowledge_gathering.executor import gather as gather_mod
 from knowledge_gathering.explore import expand as expand_mod
 from knowledge_gathering.explore import hypothesize as hyp
-from knowledge_gathering.loop import CrawlResult
+from knowledge_gathering.gather import _seed_probe
 
 
 @pytest.fixture
@@ -101,10 +99,6 @@ def test_vertex_unconfigured_returns_empty_without_calling_llm(monkeypatch):
     assert calls["n"] == 0
 
 
-class _Ctx:
-    context_id = "run-x"
-
-
 class _IssueClient:
     """Returns one thin Jira issue (short body, no links/subtasks) → G1 fires."""
 
@@ -120,7 +114,8 @@ class _IssueClient:
 
 
 async def _run_gather(monkeypatch, *, flag_on, hyp_return="enriched export terms"):
-    """Drive run_gather with G0/G1/crawl/reply stubbed; return what each phase observed."""
+    """Drive the shared pre-crawl fan-out (expansion_round, as the ADK GatherAgent calls it) with
+    G0/G1 stubbed; return what each phase observed + the md_blocks the agent appends to its reply."""
     seen = {"hyp_calls": 0, "self_seed_terms": None, "search_terms": None, "reply": None}
 
     def fake_hyp(title, description="", labels=None):
@@ -135,24 +130,21 @@ async def _run_gather(monkeypatch, *, flag_on, hyp_return="enriched export terms
         seen["search_terms"] = terms
         return [], ""
 
-    async def fake_crawl(*a, **k):
-        return CrawlResult()
-
-    async def fake_reply(context, event_queue, text):
-        seen["reply"] = text
-
     monkeypatch.setattr(expand_mod, "hypothesize_terms", fake_hyp)
     monkeypatch.setattr(expand_mod, "memory_self_seed", fake_self_seed)
     monkeypatch.setattr(expand_mod, "atlassian_search_seeds", fake_search)
-    monkeypatch.setattr(gather_mod, "crawl", fake_crawl)
-    monkeypatch.setattr(gather_mod, "reply", fake_reply)
     if flag_on:
         monkeypatch.setenv("KGA_LLM_HYPOTHESIZE", "1")
     else:
         monkeypatch.delenv("KGA_LLM_HYPOTHESIZE", raising=False)
 
-    ex = types.SimpleNamespace(_client=_IssueClient(), _bank=object(), _distiller=None)
-    await gather_mod.run_gather(ex, _Ctx(), object(), "gather LUZ-158390 depth 1")
+    client = _IssueClient()
+    probe = await _seed_probe(client, "LUZ-158390")
+    _new_seeds, md_blocks = await expand_mod.expansion_round(
+        object(), client, seed="LUZ-158390", terms=probe.terms, thin=probe.thin,
+        project=probe.project, title=probe.title, description=probe.description,
+        labels=probe.labels, parent=probe.parent, exclude=set())
+    seen["reply"] = "\n\n".join(md_blocks)
     return seen
 
 

@@ -10,7 +10,6 @@ from common.adk import (
     LessonRecallPlugin,
     build_session_service,
     claude_llm,
-    memory_tools,
 )
 from common.memory import MemoryBank
 
@@ -32,12 +31,6 @@ def test_claude_llm_builds_litellm_when_configured(monkeypatch):
 def test_session_service_in_memory_without_db(monkeypatch):
     monkeypatch.setattr("common.adk.services.get_engine", lambda: None)
     assert type(build_session_service()).__name__ == "InMemorySessionService"
-
-
-def test_memory_tools_are_bare_callables():
-    tools = memory_tools()
-    assert all(callable(t) for t in tools)
-    assert {t.__name__ for t in tools} == {"search_memory", "get_note", "search_lessons", "veto_lesson"}
 
 
 def test_plugins_construct_with_callbacks():

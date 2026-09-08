@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import asdict, dataclass
 
 from common.memory import MemoryBank
 from test_plan_definition.define import define
 from test_plan_definition.implement import implement_plan
-from tests.eval.harness import recorded_client, run_gather_offline, run_refine_offline
+from tests.eval.harness import _run_sync, recorded_client, run_gather_offline, run_refine_offline
 
 
 @dataclass
@@ -53,7 +52,7 @@ class PlanTrace:
 
 def run_define_offline(bank: MemoryBank, ctx: str, *, seed: str = ""):
     """Run the define interrogation to completion headlessly (accept_recommendation, no LLM)."""
-    return asyncio.run(define(bank, ctx, seed=seed or ctx))
+    return _run_sync(define(bank, ctx, seed=seed or ctx))
 
 
 def run_implement_offline(bank: MemoryBank, ctx: str, *, detail: bool = False):

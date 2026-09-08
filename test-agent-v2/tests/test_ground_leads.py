@@ -1,14 +1,11 @@
-"""G4 GROUNDING GATE — `ground_leads` (unit) + its wiring into `run_gather`."""
+"""G4 GROUNDING GATE — `ground_leads` (unit) + its wiring into the pre-crawl fan-out."""
 
 from __future__ import annotations
 
-import types
-
 from common.models import Graph
-from knowledge_gathering.executor import gather as gather_mod
 from knowledge_gathering.explore import expand as expand_mod
 from knowledge_gathering.explore.ground_leads import ground_leads
-from knowledge_gathering.loop import CrawlResult
+from knowledge_gathering.gather import _seed_probe
 
 
 def _node(nid: str, ntype: str = "jira-issue", title: str = "") -> dict:
@@ -166,10 +163,6 @@ async def test_any_failure_degrades_to_empty():
     assert grounded == [] and unconfirmed == ["z"]
 
 
-class _Ctx:
-    context_id = "run-x"
-
-
 class _IssueClient:
     """One thin Jira issue (short body, no links/subtasks) so the probe yields a title."""
 
@@ -193,7 +186,9 @@ class _IssueClient:
 
 
 async def _run_gather(monkeypatch, *, flag_on, leads=None, grounded=None, unconfirmed=None):
-    """Drive run_gather with G0/G1/G4-internals/crawl/reply stubbed; return what each phase saw."""
+    """Drive the shared pre-crawl fan-out (expansion_round) with G0/G1/G4-internals stubbed; return
+    what each phase saw + the md_blocks the ADK GatherAgent appends to its reply. seen['extra_seeds']
+    is the new_seeds expansion_round hands the crawl."""
     seen = {"lead_calls": 0, "extra_seeds": None, "reply": None, "ground_calls": 0}
 
     def fake_ask_llm(title, description="", labels=None):
@@ -212,27 +207,24 @@ async def _run_gather(monkeypatch, *, flag_on, leads=None, grounded=None, unconf
     async def fake_search(client, terms, *, project=None, exclude=None, **kw):
         return [], ""
 
-    async def fake_crawl(*a, extra_seeds=None, **k):
-        seen["extra_seeds"] = list(extra_seeds or [])
-        return CrawlResult()
-
-    async def fake_reply(context, event_queue, text):
-        seen["reply"] = text
-
     monkeypatch.setattr(expand_mod, "ask_llm_leads", fake_ask_llm)
     monkeypatch.setattr(expand_mod, "ground_leads", fake_ground)
     monkeypatch.setattr(expand_mod, "memory_self_seed", fake_self_seed)
     monkeypatch.setattr(expand_mod, "atlassian_search_seeds", fake_search)
-    monkeypatch.setattr(gather_mod, "crawl", fake_crawl)
-    monkeypatch.setattr(gather_mod, "reply", fake_reply)
     monkeypatch.delenv("KGA_LLM_HYPOTHESIZE", raising=False)
     if flag_on:
         monkeypatch.setenv("KGA_LLM_LEADS", "1")
     else:
         monkeypatch.delenv("KGA_LLM_LEADS", raising=False)
 
-    ex = types.SimpleNamespace(_client=_IssueClient(), _bank=object(), _distiller=None)
-    await gather_mod.run_gather(ex, _Ctx(), object(), "gather LUZ-158390 depth 1")
+    client = _IssueClient()
+    probe = await _seed_probe(client, "LUZ-158390")
+    new_seeds, md_blocks = await expand_mod.expansion_round(
+        object(), client, seed="LUZ-158390", terms=probe.terms, thin=probe.thin,
+        project=probe.project, title=probe.title, description=probe.description,
+        labels=probe.labels, parent=probe.parent, exclude=set())
+    seen["extra_seeds"] = new_seeds
+    seen["reply"] = "\n\n".join(md_blocks)
     return seen
 
 

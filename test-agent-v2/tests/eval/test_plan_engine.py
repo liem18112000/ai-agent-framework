@@ -1,20 +1,10 @@
-"""Tests for the TPD evaluation surface — the plan_engine + the A2A executor's evaluate_plan."""
+"""Tests for the TPD evaluation surface — the plan_engine + the ADK EvaluatorAgent's plan path."""
 
 from __future__ import annotations
 
-import json
-
-from a2a.server.request_handlers import DefaultRequestHandler
-from a2a.server.routes import create_jsonrpc_routes
-from a2a.server.tasks import InMemoryTaskStore
-from a2a.utils import DEFAULT_RPC_URL
-from starlette.applications import Starlette
-from starlette.testclient import TestClient
-
-from test_evaluation.a2a_card import AGENT_CARD
-from test_evaluation.executor import TestEvaluationExecutor
 from test_evaluation.models import PlanEvalCase
 from test_evaluation.plan_engine import evaluate_plan
+from tests.conftest import drive_adk
 from tests.eval.harness_tpd import run_plan_offline
 
 
@@ -44,21 +34,10 @@ def test_evaluate_plan_flags_a_scope_leak():
     assert r.scope.leaked == [scoped]
 
 
-def _app(bank):
-    ex = TestEvaluationExecutor(bank=bank)
-    handler = DefaultRequestHandler(agent_executor=ex, task_store=InMemoryTaskStore(),
-                                    agent_card=AGENT_CARD)
-    return Starlette(routes=create_jsonrpc_routes(handler, DEFAULT_RPC_URL, enable_v0_3_compat=True))
+async def test_agent_evaluates_plan_by_ctx(monkeypatch):
+    import test_evaluation.agent as agent_mod
 
-
-def _send(tc, text, ctx):
-    payload = {"jsonrpc": "2.0", "id": 1, "method": "message/send",
-               "params": {"message": {"messageId": "m", "role": "user", "contextId": ctx,
-                                      "parts": [{"kind": "text", "text": text}]}}}
-    return tc.post("/", json=payload).json()
-
-
-def test_executor_evaluate_plan_over_a2a():
     t = run_plan_offline("LUZ-501", "eval_rich")
-    body = json.dumps(_send(TestClient(_app(t.bank)), f"evaluate plan {t.ctx}", t.ctx))
-    assert "Test-Plan Score" in body and "Components:" in body
+    monkeypatch.setattr(agent_mod, "build_bank", lambda: t.bank)
+    out = await drive_adk(agent_mod.build_root_agent, f"evaluate plan {t.ctx}", session_id=t.ctx)
+    assert "Test-Plan Score" in out and "Components:" in out

@@ -34,8 +34,3 @@ async def search_lessons(query: str = "") -> str:
 async def veto_lesson(insight_id: str) -> str:
     """Retract a wrong lesson so it is excluded from recall and never re-learned."""
     return learn.veto_lesson(build_bank(), insight_id)
-
-
-def memory_tools() -> list:
-    """The read-only tools shared by both agents — bare functions (ADK auto-wraps in `tools=[...]`)."""
-    return [search_memory, get_note, search_lessons, veto_lesson]

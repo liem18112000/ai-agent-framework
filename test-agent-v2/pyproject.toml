@@ -28,17 +28,15 @@ dependencies = [
 [project.optional-dependencies]
 # The A2A->MCP bridge (client-side, run next to Claude). The agent server does NOT need this.
 bridge = ["mcp>=2,<3"]
-dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6", "mcp>=2,<3"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "pytest-timeout>=2", "ruff>=0.6", "mcp>=2,<3"]
 # The LLM-judged eval tier (tests/eval, nightly / `eval:` label). The deterministic PR gate
 # (trajectory + node-overlap) needs NONE of these — install only for the judged job. Absent → the
 # RAGAS tests skip cleanly (see tests/eval/metrics/ragas_judge.available()).
 eval = ["ragas>=0.2", "pandas>=2", "datasets>=2", "google-adk>=1.22"]
 
-# Each `*-bridge` launches that agent's stdio MCP bridge (same as `python -m <pkg>.bridge`).
+# The single MCP gateway fronting all three A2A agents (the one endpoint local Claude connects to).
 [project.scripts]
-knowledge-gathering-bridge = "knowledge_gathering.bridge.__main__:main"
-test-plan-definition-bridge = "test_plan_definition.bridge.__main__:main"
-test-evaluation-bridge = "test_evaluation.bridge.__main__:main"
+testing-agent-gateway = "gateway.__main__:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -54,6 +52,7 @@ line-length = 100
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+pythonpath = ["."]
 # Domain models are named Test* (TestPlan, TestData, TestScenario, TestStep) and would
 # otherwise trip pytest's default `Test*` class-collection heuristic. The suite uses only
 # function-style tests, so require a `*Tests` suffix for class collection instead.

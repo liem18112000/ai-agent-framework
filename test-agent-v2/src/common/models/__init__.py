@@ -19,7 +19,6 @@ from common.models.graph import (
 from common.models.pack import Pack
 from common.models.refine import (
     ASSUMPTION,
-    CLARIFICATION,
     CORRECTION,
     DECISION,
     GAP_SEED,
@@ -39,7 +38,6 @@ __all__ = [
     "ASSUMPTION",
     "ATTACHMENT",
     "BITBUCKET",
-    "CLARIFICATION",
     "CODEGRAPH",
     "CONFLUENCE_PAGE",
     "CORRECTION",

@@ -1,19 +1,37 @@
-"""common/bridge unit tests — the A2A client + envelope parsing + inbound bearer gate."""
+"""common/bridge unit tests — the A2A client (envelope + normalization), extract_text, bearer gate."""
 
 from __future__ import annotations
 
 import httpx
-from a2a.server.routes import create_agent_card_routes
 from starlette.applications import Starlette
-from test_executor_a2a import _app as gather_app
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 
 from common.bridge import A2ABridgeClient, extract_text
 from common.bridge.asgi import _BearerASGIMiddleware
-from knowledge_gathering.a2a_card import AGENT_CARD
+
+_CARD = {"name": "knowledge-gathering", "version": "0.1.0",
+         "skills": [{"id": "gather-knowledge"}, {"id": "refine"}]}
+
+
+def _fake_a2a_app(reply: str = "2 nodes: jira:LUZ-1") -> Starlette:
+    """A minimal in-process A2A app: echoes one text message (with contextId) + serves a card."""
+
+    async def rpc(request):
+        body = await request.json()
+        msg = body["params"]["message"]
+        result = {"kind": "message", "messageId": "m1", "contextId": msg.get("contextId"),
+                  "parts": [{"kind": "text", "text": reply}]}
+        return JSONResponse({"jsonrpc": "2.0", "id": body.get("id"), "result": result})
+
+    async def card(request):
+        return JSONResponse(_CARD)
+
+    return Starlette(routes=[Route("/", rpc, methods=["POST"]),
+                             Route("/.well-known/agent-card.json", card, methods=["GET"])])
 
 
 def _client_for(app: Starlette) -> A2ABridgeClient:
-    """A bridge client whose transport is the given in-process ASGI app (no sockets)."""
     return A2ABridgeClient(base_url="http://agent.test/", transport=httpx.ASGITransport(app=app))
 
 
@@ -37,23 +55,17 @@ def test_extract_text_dedupes_and_joins():
     assert extract_text(result) == "x\ny"
 
 
-async def test_client_gather_returns_message():
-    async with _client_for(gather_app()) as c:
+async def test_client_send_normalizes_message_and_propagates_context():
+    async with _client_for(_fake_a2a_app()) as c:
         res = await c.send('{"seed": "LUZ-1", "depth": 1}', context_id="ctx-g")
         assert res.kind == "message"
         assert res.state is None and res.is_complete
-        assert "2 nodes" in res.text and "jira:LUZ-1" in res.text
-
-
-async def test_client_missing_seed_replies_helpfully():
-    async with _client_for(gather_app()) as c:
-        res = await c.send("hello there")
-        assert "Provide a seed" in res.text
+        assert res.context_id == "ctx-g"
+        assert "jira:LUZ-1" in res.text
 
 
 async def test_client_fetch_card():
-    app = Starlette(routes=create_agent_card_routes(AGENT_CARD))
-    async with _client_for(app) as c:
+    async with _client_for(_fake_a2a_app()) as c:
         card = await c.fetch_card()
         assert card["name"] == "knowledge-gathering"
         assert any(s["id"] == "gather-knowledge" for s in card["skills"])

@@ -12,6 +12,7 @@ WORKDIR /app
 # agent (default CMD below) OR the A2A->MCP bridge service (override the command — see README).
 COPY pyproject.toml ./
 COPY src ./src
+COPY main.py ./
 RUN pip install ".[bridge]"
 
 # Run as non-root.
@@ -19,5 +20,7 @@ RUN useradd -m -u 10001 appuser
 USER appuser
 
 EXPOSE 8080
-# Cloud Run injects $PORT; the A2A ASGI app is knowledge_gathering.server:app (M0).
-CMD ["sh", "-c", "uvicorn knowledge_gathering.adk_app:app --host 0.0.0.0 --port ${PORT}"]
+# Cloud Run injects $PORT. One image, one A2A entrypoint: main:app serves the agent named by $AGENT
+# (knowledge_gathering | test_plan_definition | test_evaluation | testing_agent). The gateway service
+# overrides this with `python -m gateway` (see deployments/test-agent-v2/services.tf).
+CMD ["sh", "-c", "AGENT=${AGENT:-knowledge_gathering} uvicorn main:app --host 0.0.0.0 --port ${PORT}"]

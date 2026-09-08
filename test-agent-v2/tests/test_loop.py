@@ -148,7 +148,7 @@ async def test_extra_seeds_are_crawled_at_depth_zero():
 
 
 def test_parse_input_extracts_seed_depth_repo_and_exclude():
-    from knowledge_gathering.executor.gather import parse_input
+    from knowledge_gathering.gather import parse_input
     assert parse_input('{"seed": "LUZ-1", "depth": 3, "repo": "ws/r"}') == ("LUZ-1", 3, "ws/r", None)
     assert parse_input("gather LUZ-1 depth 2 repo axonivy-prod/luz_docs_import") == \
         ("LUZ-1", 2, "axonivy-prod/luz_docs_import", None)

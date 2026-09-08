@@ -27,9 +27,9 @@ Claude ──MCP/HTTPS──▶ mcp-gateway-v2 (ingress :8080, /mcp) ──┬�
   `$PORT`=8080). It exposes every tool and routes each call to the right agent over A2A. Gated by
   `GATEWAY_BEARER_TOKEN`; holds the per-agent multi-turn task maps in memory → `session_affinity`,
   `min=max=1`.
-- Each **agent** is a single-container A2A service (`uvicorn <pkg>.adk_app:app` on :8080), public but
-  gated by the shared `A2A_BEARER_TOKEN`; the gateway calls it with that bearer. (Was a 2-container
-  agent+bridge sidecar before G2; the per-agent bridges were removed.)
+- Each **agent** is a single-container A2A service (`uvicorn main:app` on :8080, agent chosen by the
+  `AGENT` env), public but gated by the shared `A2A_BEARER_TOKEN`; the gateway calls it with that
+  bearer. (Was a 2-container agent+bridge sidecar before G2; the per-agent bridges were removed.)
 - All containers share **one** runtime SA (`kga-v2-runtime`): Vertex + bucket + Cloud SQL + Atlassian
   + the bearer secrets.
 
@@ -111,8 +111,8 @@ Cloud SQL — it talks only A2A. Toggle with `deploy_cloudsql` (off → in-memor
 ## Notes
 
 - **One image, four services.** The Dockerfile installs `.[bridge]`; each container overrides the
-  command (gateway → `python -m gateway`; agents → uvicorn `<pkg>.adk_app:app`). Bump `image` once and
-  one `terraform apply -var=image=` rolls all four (in-place).
+  command (gateway → `python -m gateway`; agents → `uvicorn main:app` with a per-service `AGENT` env).
+  Bump `image` once and one `terraform apply -var=image=` rolls all four (in-place).
 - **Vertex AI** isn't "provisioned" beyond enabling the API + `roles/aiplatform.user`; the app calls
   **Claude on Vertex** in `VERTEX_LOCATION` using `VERTEX_MODEL` (default `claude-sonnet-5`, which
   requires `vertex_region = global`).

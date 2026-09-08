@@ -49,7 +49,7 @@ module "kga" {
     {
       name                     = "agent"
       image                    = var.image
-      command                  = ["sh", "-c", "uvicorn knowledge_gathering.adk_app:app --host 0.0.0.0 --port 8080"]
+      command                  = ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port 8080"]
       ingress_port             = 8080
       cpu                      = var.cpu
       memory                   = var.memory
@@ -68,6 +68,7 @@ module "kga" {
           { name = "DB_PASSWORD", secret = google_secret_manager_secret.db_password[0].secret_id },
         ] : [],
         [
+          { name = "AGENT", value = "knowledge_gathering" },
           { name = "GCS_BUCKET", value = google_storage_bucket.memory.name },
           { name = "VERTEX_PROJECT", value = var.project_id },
           { name = "VERTEX_LOCATION", value = var.vertex_region },
@@ -127,7 +128,7 @@ module "tpd" {
     {
       name                     = "agent"
       image                    = var.image
-      command                  = ["sh", "-c", "uvicorn test_plan_definition.adk_app:app --host 0.0.0.0 --port 8080"]
+      command                  = ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port 8080"]
       ingress_port             = 8080
       cpu                      = var.cpu
       memory                   = var.memory
@@ -146,6 +147,7 @@ module "tpd" {
           { name = "DB_PASSWORD", secret = google_secret_manager_secret.db_password[0].secret_id },
         ] : [],
         [
+          { name = "AGENT", value = "test_plan_definition" },
           { name = "GCS_BUCKET", value = google_storage_bucket.memory.name },
           { name = "VERTEX_PROJECT", value = var.project_id },
           { name = "VERTEX_LOCATION", value = var.vertex_region },
@@ -192,7 +194,7 @@ module "tev" {
     {
       name                     = "agent"
       image                    = var.image
-      command                  = ["sh", "-c", "uvicorn test_evaluation.adk_app:app --host 0.0.0.0 --port 8080"]
+      command                  = ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port 8080"]
       ingress_port             = 8080
       cpu                      = var.cpu
       memory                   = var.memory
@@ -211,6 +213,7 @@ module "tev" {
           { name = "DB_PASSWORD", secret = google_secret_manager_secret.db_password[0].secret_id },
         ] : [],
         [
+          { name = "AGENT", value = "test_evaluation" },
           { name = "GCS_BUCKET", value = google_storage_bucket.memory.name },
           { name = "VERTEX_PROJECT", value = var.project_id },
           { name = "VERTEX_LOCATION", value = var.vertex_region },
