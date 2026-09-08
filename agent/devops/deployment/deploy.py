@@ -20,25 +20,20 @@ Usage:
 """
 
 import argparse
+import tomllib
+from pathlib import Path
 
 import vertexai
 from vertexai import agent_engines
 from vertexai.preview import reasoning_engines
 
 from devops_3f9a.agent import root_agent
+from mcp_bridge.config import LOCATION, PROJECT_ID
 
-PROJECT_ID = "klara-nonprod"
-LOCATION = "us-central1"
 STAGING_BUCKET = "gs://klara-nonprod-agent-engine-staging-us-central1"
 
-REQUIREMENTS = [
-    "google-adk==1.28.0",
-    "mcp==1.26.0",
-    "google-cloud-aiplatform[agent-engines,evaluation]>=1.93.0",
-    "google-cloud-container>=2.55.0",
-    "kubernetes>=31.0.0",
-    "python-dotenv>=1.1.0",
-]
+_PYPROJECT = tomllib.loads((Path(__file__).parent.parent / "pyproject.toml").read_text())
+REQUIREMENTS = _PYPROJECT["project"]["dependencies"]
 
 
 def main() -> None:

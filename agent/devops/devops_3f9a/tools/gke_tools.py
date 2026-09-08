@@ -36,10 +36,12 @@ Two layers, matching two different GCP access paths:
 from __future__ import annotations
 
 import base64
+import datetime
 import tempfile
 from typing import Optional
 
 import google.auth
+import google.auth.credentials
 import google.auth.transport.requests
 from google.cloud import container_v1
 from kubernetes import client as k8s_client
@@ -47,6 +49,10 @@ from kubernetes import client as k8s_client
 from ..config import assert_project_allowed
 
 _container_client: Optional[container_v1.ClusterManagerClient] = None
+_credentials: Optional[google.auth.credentials.Credentials] = None
+# cluster resource name -> (endpoint, ca_cert_path), both static for the
+# cluster's lifetime
+_k8s_cluster_info: dict[str, tuple[str, str]] = {}
 
 
 def _get_container_client() -> container_v1.ClusterManagerClient:
@@ -54,6 +60,21 @@ def _get_container_client() -> container_v1.ClusterManagerClient:
     if _container_client is None:
         _container_client = container_v1.ClusterManagerClient()
     return _container_client
+
+
+def _get_credentials() -> google.auth.credentials.Credentials:
+    global _credentials
+    if _credentials is None:
+        _credentials, _ = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+    if not _credentials.valid:
+        _credentials.refresh(google.auth.transport.requests.Request())
+    return _credentials
+
+
+def _cluster_name(project_id: str, location: str, cluster_id: str) -> str:
+    return f"projects/{project_id}/locations/{location}/clusters/{cluster_id}"
 
 
 # --------------------------------------------------------------------------
@@ -86,9 +107,7 @@ def list_clusters(project_id: str) -> dict:
                 "current_node_count": c.current_node_count,
                 "initial_cluster_version": c.initial_cluster_version,
                 "endpoint": c.endpoint,
-                "private_cluster": c.private_cluster_config.enable_private_nodes
-                if c.private_cluster_config
-                else False,
+                "private_cluster": c.private_cluster_config.enable_private_nodes,
             }
             for c in resp.clusters
         ]
@@ -106,7 +125,7 @@ def get_cluster(project_id: str, location: str, cluster_id: str) -> dict:
     """
     assert_project_allowed(project_id)
     client = _get_container_client()
-    name = f"projects/{project_id}/locations/{location}/clusters/{cluster_id}"
+    name = _cluster_name(project_id, location, cluster_id)
     c = client.get_cluster(name=name)
     return {
         "name": c.name,
@@ -123,7 +142,7 @@ def list_node_pools(project_id: str, location: str, cluster_id: str) -> dict:
     """Lists node pools in a GKE cluster with their current size and machine type."""
     assert_project_allowed(project_id)
     client = _get_container_client()
-    parent = f"projects/{project_id}/locations/{location}/clusters/{cluster_id}"
+    parent = _cluster_name(project_id, location, cluster_id)
     resp = client.list_node_pools(parent=parent)
     return {
         "node_pools": [
@@ -131,16 +150,10 @@ def list_node_pools(project_id: str, location: str, cluster_id: str) -> dict:
                 "name": np.name,
                 "status": np.status.name,
                 "initial_node_count": np.initial_node_count,
-                "machine_type": np.config.machine_type if np.config else None,
-                "autoscaling_enabled": np.autoscaling.enabled
-                if np.autoscaling
-                else False,
-                "min_node_count": np.autoscaling.min_node_count
-                if np.autoscaling
-                else None,
-                "max_node_count": np.autoscaling.max_node_count
-                if np.autoscaling
-                else None,
+                "machine_type": np.config.machine_type,
+                "autoscaling_enabled": np.autoscaling.enabled,
+                "min_node_count": np.autoscaling.min_node_count,
+                "max_node_count": np.autoscaling.max_node_count,
             }
             for np in resp.node_pools
         ]
@@ -161,10 +174,7 @@ def resize_node_pool(
     """
     assert_project_allowed(project_id)
     client = _get_container_client()
-    name = (
-        f"projects/{project_id}/locations/{location}/clusters/{cluster_id}"
-        f"/nodePools/{node_pool_id}"
-    )
+    name = f"{_cluster_name(project_id, location, cluster_id)}/nodePools/{node_pool_id}"
     op = client.set_node_pool_size(name=name, node_count=node_count)
     return {
         "operation_name": op.name,
@@ -182,21 +192,22 @@ def _build_k8s_api_client(
     project_id: str, location: str, cluster_id: str
 ) -> k8s_client.ApiClient:
     assert_project_allowed(project_id)
-    container_client = _get_container_client()
-    name = f"projects/{project_id}/locations/{location}/clusters/{cluster_id}"
-    cluster = container_client.get_cluster(name=name)
+    name = _cluster_name(project_id, location, cluster_id)
 
-    creds, _ = google.auth.default(
-        scopes=["https://www.googleapis.com/auth/cloud-platform"]
-    )
-    creds.refresh(google.auth.transport.requests.Request())
+    info = _k8s_cluster_info.get(name)
+    if info is None:
+        cluster = _get_container_client().get_cluster(name=name)
+        ca_cert_path = tempfile.NamedTemporaryFile(delete=False, suffix=".pem").name
+        with open(ca_cert_path, "wb") as f:
+            f.write(base64.b64decode(cluster.master_auth.cluster_ca_certificate))
+        info = (cluster.endpoint, ca_cert_path)
+        _k8s_cluster_info[name] = info
+    endpoint, ca_cert_path = info
 
-    ca_cert_path = tempfile.NamedTemporaryFile(delete=False, suffix=".pem").name
-    with open(ca_cert_path, "wb") as f:
-        f.write(base64.b64decode(cluster.master_auth.cluster_ca_certificate))
+    creds = _get_credentials()
 
     configuration = k8s_client.Configuration()
-    configuration.host = f"https://{cluster.endpoint}"
+    configuration.host = f"https://{endpoint}"
     configuration.api_key["authorization"] = creds.token
     configuration.api_key_prefix["authorization"] = "Bearer"
     configuration.ssl_ca_cert = ca_cert_path
@@ -261,8 +272,6 @@ def restart_deployment(
     """Triggers a rolling restart of a Deployment (equivalent to
     `kubectl rollout restart`). MUTATING -- requires confirmation.
     """
-    import datetime
-
     api_client = _build_k8s_api_client(project_id, location, cluster_id)
     apps_v1 = k8s_client.AppsV1Api(api_client)
     now = datetime.datetime.utcnow().isoformat() + "Z"

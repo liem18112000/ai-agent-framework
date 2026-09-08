@@ -40,11 +40,7 @@ import contextlib
 import json
 import sys
 
-PROJECT_ID = "klara-nonprod"
-LOCATION = "us-central1"
-RESOURCE_NAME = "projects/335505349498/locations/us-central1/reasoningEngines/5955858224837033984"
-
-CONFIRMATION_FUNCTION_NAME = "adk_request_confirmation"
+from config import CONFIRMATION_FUNCTION_NAME, LOCATION, PROJECT_ID, RESOURCE_NAME
 
 
 def main() -> None:

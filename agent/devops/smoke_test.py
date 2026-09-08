@@ -1,10 +1,10 @@
 import vertexai
 from vertexai import agent_engines
 
-vertexai.init(project="klara-nonprod", location="us-central1")
-engine = agent_engines.get(
-    "projects/335505349498/locations/us-central1/reasoningEngines/5955858224837033984"
-)
+from mcp_bridge.config import LOCATION, PROJECT_ID, RESOURCE_NAME
+
+vertexai.init(project=PROJECT_ID, location=LOCATION)
+engine = agent_engines.get(RESOURCE_NAME)
 
 for event in engine.stream_query(
     user_id="smoke-test", message="List GKE clusters in klara-nonprod"

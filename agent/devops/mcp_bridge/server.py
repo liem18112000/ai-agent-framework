@@ -49,8 +49,9 @@ from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
+from config import CONFIRMATION_FUNCTION_NAME
+
 WORKER_SCRIPT = str(Path(__file__).parent / "vertex_worker.py")
-CONFIRMATION_FUNCTION_NAME = "adk_request_confirmation"
 USER_ID = "claude-code-local"
 
 mcp = FastMCP("devops-3f9a-bridge")
@@ -79,32 +80,27 @@ async def _call_worker(payload: dict) -> dict:
     return json.loads(stdout.decode())
 
 
-def _extract_confirmation_request(events: list[dict]) -> Optional[dict]:
-    """Looks for an `adk_request_confirmation` function call in the events
-    from this turn, and returns its id + hint + original tool call if found.
+def _extract_confirmation_and_text(events: list[dict]) -> tuple[Optional[dict], str]:
+    """Walks the events from this turn once, returning the pending
+    `adk_request_confirmation` call (id + hint + original tool call) if
+    any, and the concatenated text response.
     """
-    for event in events:
-        parts = event.get("content", {}).get("parts", [])
-        for part in parts:
-            fc = part.get("function_call")
-            if fc and fc.get("name") == CONFIRMATION_FUNCTION_NAME:
-                args = fc.get("args", {})
-                return {
-                    "confirmation_fc_id": fc.get("id"),
-                    "hint": args.get("hint", ""),
-                    "original_call": args.get("originalFunctionCall", {}),
-                }
-    return None
-
-
-def _extract_text(events: list[dict]) -> str:
+    confirmation = None
     chunks = []
     for event in events:
         parts = event.get("content", {}).get("parts", [])
         for part in parts:
-            if "text" in part and part["text"]:
+            fc = part.get("function_call")
+            if confirmation is None and fc and fc.get("name") == CONFIRMATION_FUNCTION_NAME:
+                args = fc.get("args", {})
+                confirmation = {
+                    "confirmation_fc_id": fc.get("id"),
+                    "hint": args.get("hint", ""),
+                    "original_call": args.get("originalFunctionCall", {}),
+                }
+            elif part.get("text"):
                 chunks.append(part["text"])
-    return "\n".join(chunks)
+    return confirmation, "\n".join(chunks)
 
 
 @mcp.tool()
@@ -133,7 +129,7 @@ async def ask_devops_agent(message: str, session_id: str = "") -> str:
     session_id = result["session_id"]
     events = result["events"]
 
-    pending = _extract_confirmation_request(events)
+    pending, text = _extract_confirmation_and_text(events)
     if pending:
         _pending_confirmations[session_id] = pending
         original = pending["original_call"]
@@ -146,7 +142,6 @@ async def ask_devops_agent(message: str, session_id: str = "") -> str:
             "or approve=False to reject it."
         )
 
-    text = _extract_text(events)
     return f"[session_id={session_id}] {text}"
 
 
@@ -176,7 +171,7 @@ async def confirm_devops_agent_action(session_id: str, approve: bool) -> str:
             "approve": approve,
         }
     )
-    text = _extract_text(result["events"])
+    _, text = _extract_confirmation_and_text(result["events"])
     verdict = "approved" if approve else "rejected"
     return f"[session_id={session_id}] Action {verdict}.\n{text}"
 

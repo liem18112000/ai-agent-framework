@@ -143,7 +143,7 @@ engine.stream_query(user_id="smoke-test", session_id=session_id, message=resume_
 
 ## 6. Wire it into Claude Code via MCP (local machine only)
 
-1. Edit `mcp_bridge/server.py` and replace `RESOURCE_NAME =
+1. Edit `mcp_bridge/config.py` and replace `RESOURCE_NAME =
    "REPLACE_WITH_DEPLOYED_RESOURCE_NAME"` with the resource name from
    step 4.
 2. Register it as a project-scoped MCP server by adding to this repo's
