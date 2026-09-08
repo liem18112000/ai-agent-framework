@@ -18,12 +18,14 @@ async def test_autonomous_pipeline_end_to_end(monkeypatch):
 
     import knowledge_gathering.agents.gather_agent as ga
     import test_plan_definition.agents.implement_agent as ia
-    import testing_agent.autonomous as au
+    import testing_agent.subagents.approve_agent as approve_mod
+    import testing_agent.subagents.define_agent as define_mod
+    import testing_agent.subagents.refine_agent as refine_mod
     from testing_agent.agent import build_root_agent
 
     bank = MemoryBank(FakeBucket())
     monkeypatch.setattr(ga, "build_client", lambda: recorded_client("eval_rich"))
-    for target in (ga, ia, au):
+    for target in (ga, ia, refine_mod, define_mod, approve_mod):
         monkeypatch.setattr(target, "build_bank", lambda: bank)
 
     ctx_id = "run-auto"

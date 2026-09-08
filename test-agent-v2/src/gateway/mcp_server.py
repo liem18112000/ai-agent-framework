@@ -1,0 +1,111 @@
+"""Single MCP gateway — one endpoint that fronts the three A2A agents (design G1–G3).
+
+Local Claude connects here (ONE MCP server). Each tool routes to its agent over A2A via a per-agent
+`BridgeSession`. The domain tools are composed from each agent's `bridge.mcp_server.register_tools`
+(defined once, DRY); the gateway only adds unified `agent_cards` + `send_raw_*` + one `test` prompt —
+the per-agent `agent_card`/`send_raw`/`test` would otherwise collide across the three agents.
+
+Inter-agent traffic (the coordinator, deferred G4) is A2A too; this gateway is purely Claude→agents.
+
+Config (env):
+  KGA_A2A_URL / TPD_A2A_URL / TEV_A2A_URL   the three agents' A2A base URLs
+  A2A_BEARER_TOKEN                          bearer the agents enforce (the gateway is their A2A client)
+  GATEWAY_BEARER_TOKEN                      inbound gate for Claude → gateway (see common.bridge)
+
+Run:  python -m gateway        (stdio; set GATEWAY_TRANSPORT=http for Streamable-HTTP on $PORT)
+"""
+
+from __future__ import annotations
+
+import os
+
+from mcp.server.mcpserver import MCPServer
+
+from common.bridge import BridgeSession, build_http_app
+from common.bridge.prompts import TRIGGER_INSTRUCTIONS, test_prompt
+from knowledge_gathering.bridge.mcp_server import register_tools as register_kga
+from test_evaluation.bridge.mcp_server import register_tools as register_tev
+from test_plan_definition.bridge.mcp_server import register_tools as register_tpd
+
+TOKEN = os.environ.get("A2A_BEARER_TOKEN")
+KGA_URL = os.environ.get("KGA_A2A_URL", "http://localhost:8081/")
+TPD_URL = os.environ.get("TPD_A2A_URL", "http://localhost:8082/")
+TEV_URL = os.environ.get("TEV_A2A_URL", "http://localhost:8083/")
+
+INSTRUCTIONS = (
+    "Single MCP gateway for the Testing Agent — ONE endpoint fronting three A2A agents "
+    "(knowledge-gathering, test-plan-definition, test-evaluation). Pipeline: gather_knowledge -> "
+    "refine -> approve -> [evaluate_pack] -> define_plan -> approve_plan -> implement_plan -> "
+    "get_scenarios -> [evaluate_plan]. Reuse the one context_id gather_knowledge returns for every "
+    "later call. YOU (the client) own the confirm gates: before starting refine, approve, "
+    "define_plan, approve_plan, and implement_plan, ask the user Yes/No yourself and call the tool "
+    "only on yes. evaluate_pack / evaluate_plan are read-only quality gates and never block."
+)
+
+# One A2A client session per agent (the gateway is the A2A client to each).
+kga_session = BridgeSession(KGA_URL, TOKEN)
+tpd_session = BridgeSession(TPD_URL, TOKEN)
+tev_session = BridgeSession(TEV_URL, TOKEN)
+
+mcp = MCPServer(
+    "testing-agent-gateway", version="0.1.0",
+    instructions=INSTRUCTIONS + "\n\n" + TRIGGER_INSTRUCTIONS,
+)
+
+# Domain tools — unique names, so the three sets compose on one server with no collision.
+_tools = {
+    **register_kga(mcp, kga_session),
+    **register_tpd(mcp, tpd_session),
+    **register_tev(mcp, tev_session),
+}
+globals().update(_tools)  # expose gather_knowledge, define_plan, evaluate_pack, ... as module attrs
+
+_CARDS = (("knowledge-gathering", kga_session), ("test-plan-definition", tpd_session),
+          ("test-evaluation", tev_session))
+
+
+@mcp.tool()
+async def agent_cards() -> str:
+    """Fetch all three agents' A2A cards (name, version, advertised skills)."""
+    out = []
+    for name, session in _CARDS:
+        try:
+            out.append(f"## {name}\n{await session.card()}")
+        except Exception as exc:  # noqa: BLE001 — one unreachable agent must not hide the others
+            out.append(f"## {name}\n(unreachable: {exc})")
+    return "\n\n".join(out)
+
+
+async def _raw(session: BridgeSession, text: str, context_id: str | None, task_id: str | None) -> str:
+    res = await session.ask(text, context_id=context_id, task_id=task_id)
+    return (f"[state: {res.state or 'message'}] [context_id: {res.context_id}] "
+            f"[task_id: {res.task_id}]\n{res.text}")
+
+
+@mcp.tool()
+async def send_raw_kga(text: str, context_id: str | None = None, task_id: str | None = None) -> str:
+    """Escape hatch: send a raw message to the knowledge-gathering agent; return reply + ids + state."""
+    return await _raw(kga_session, text, context_id, task_id)
+
+
+@mcp.tool()
+async def send_raw_tpd(text: str, context_id: str | None = None, task_id: str | None = None) -> str:
+    """Escape hatch: send a raw message to the test-plan-definition agent; return reply + ids + state."""
+    return await _raw(tpd_session, text, context_id, task_id)
+
+
+@mcp.tool()
+async def send_raw_tev(text: str, context_id: str | None = None, task_id: str | None = None) -> str:
+    """Escape hatch: send a raw message to the test-evaluation agent; return reply + ids + state."""
+    return await _raw(tev_session, text, context_id, task_id)
+
+
+@mcp.prompt()
+def test(jira_key: str = "", depth: str = "2") -> str:
+    """Run the full Testing-Agent pipeline for a Jira ticket (gather -> ... -> implement)."""
+    return test_prompt(jira_key, depth)
+
+
+def http_app():
+    """Streamable-HTTP ASGI app, gated by GATEWAY_BEARER_TOKEN when set (see common.bridge)."""
+    return build_http_app(mcp, "GATEWAY")

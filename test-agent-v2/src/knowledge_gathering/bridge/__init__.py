@@ -1,17 +1,5 @@
-"""A2A -> MCP bridge for the knowledge-gathering agent.
+"""KGA MCP tool definitions for the single gateway — see `mcp_server.register_tools`.
 
-`a2a_client` (the A2A half) has no `mcp` dependency and is importable on its own.
-`mcp_server` (the MCP half) requires the optional `mcp` package (`pip install .[bridge]`)
-and is imported lazily by `__main__`, so importing this package never forces `mcp`.
+The per-agent standalone A2A->MCP bridge was removed in G2; the gateway (`gateway.mcp_server`) is the
+one MCP endpoint and reaches this agent over A2A.
 """
-
-from __future__ import annotations
-
-from common.bridge.a2a_client import (
-    A2ABridgeClient,
-    A2AError,
-    A2AResult,
-    extract_text,
-)
-
-__all__ = ["A2ABridgeClient", "A2AError", "A2AResult", "extract_text"]

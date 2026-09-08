@@ -21,7 +21,7 @@ def test_root_agents_are_discoverable():
     assert tpd.name == "test_plan_definition"
     assert ev.name == "test_evaluation"
     assert ta.name == "testing_agent"
-    assert [a.name for a in ta.sub_agents] == ["gather", "refine_auto", "define_auto", "approve_auto", "implement"]
+    assert [a.name for a in ta.sub_agents] == ["gather", "refine", "define", "approve", "implement"]
     # the v1 A2A card now lives in a2a_card.py (skill parity preserved), not agent.py
     from knowledge_gathering.a2a_card import AGENT_CARD
 

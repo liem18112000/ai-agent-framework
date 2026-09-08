@@ -14,7 +14,7 @@ from google.adk.agents import SequentialAgent
 
 from knowledge_gathering.agents.gather_agent import GatherAgent
 from test_plan_definition.agents.implement_agent import ImplementAgent
-from testing_agent.autonomous import AutoApproveAgent, DefineAutoAgent, RefineAutoAgent
+from testing_agent.subagents import ApproveAgent, DefineAgent, RefineAgent
 
 
 def build_root_agent() -> SequentialAgent:
@@ -27,9 +27,9 @@ def build_root_agent() -> SequentialAgent:
         ),
         sub_agents=[
             GatherAgent(name="gather"),
-            RefineAutoAgent(name="refine_auto"),
-            DefineAutoAgent(name="define_auto"),
-            AutoApproveAgent(name="approve_auto"),
+            RefineAgent(name="refine"),
+            DefineAgent(name="define"),
+            ApproveAgent(name="approve"),
             ImplementAgent(name="implement"),
         ],
     )
