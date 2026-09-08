@@ -1,8 +1,4 @@
-"""Liveness / readiness route builder shared by both agent servers.
-
-Each agent's ops.py calls make_health_routes with its own agent name/version and the env keys
-it needs before it's ready; the /livez + /readyz behaviour is identical, so it lives here.
-"""
+"""Liveness / readiness route builder shared by both agent servers."""
 
 from __future__ import annotations
 
@@ -16,12 +12,7 @@ from starlette.routing import Route
 def make_health_routes(
     agent_name: str, agent_version: str, required_env: tuple[str, ...]
 ) -> list[Route]:
-    """Return [/livez, /readyz] routes.
-
-    /livez always 200 (the process is up). Path is /livez NOT /healthz: the Google Front End
-    reserves /healthz on Cloud Run and 404s it before it reaches the container.
-    /readyz returns 200 when every key in `required_env` is set, else 503 listing the gaps.
-    """
+    """Return [/livez, /readyz] routes."""
 
     async def livez(_: Request) -> JSONResponse:
         return JSONResponse({"status": "ok"})

@@ -1,9 +1,4 @@
-"""Render a CodeGraphResult into the markdown a crawl Note carries into the pack.
-
-Front-loads the highest-value facts (API surface, enums, hubs) so that even if a downstream
-distiller truncates the synopsis, the endpoints/statuses that ground a test plan survive. The
-full graph lives in GCS (see store.py) for deeper queries.
-"""
+"""Render a CodeGraphResult into the markdown a crawl Note carries into the pack."""
 
 from __future__ import annotations
 

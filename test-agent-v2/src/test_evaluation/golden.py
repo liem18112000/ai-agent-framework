@@ -1,8 +1,4 @@
-"""Golden case loaders — one JSON per seed, the spec of "good" (kept in git).
-
-`golden/` holds pack EvalCases (KGA scoring); `golden_plans/` holds plan PlanEvalCases (TPD scoring).
-Both are plain dict loaders — the engines wrap them in the typed EvalCase / PlanEvalCase.
-"""
+"""Golden case loaders — one JSON per seed, the spec of "good" (kept in git)."""
 
 from __future__ import annotations
 

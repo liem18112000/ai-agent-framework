@@ -1,9 +1,4 @@
-"""TPD root agent (ADK) — a deterministic text-dispatch router (mirrors v1 executor.base).
-
-Order (like v1): reads → approve (wins over a live define) → live/started define → implement → help.
-The LLM never chooses the branch (I1). Reads + approve run inline (deterministic); define/implement
-delegate to sub-agents.
-"""
+"""TPD root agent (ADK) — a deterministic text-dispatch router (mirrors v1 executor.base)."""
 
 from __future__ import annotations
 
@@ -46,7 +41,6 @@ class TpdRouter(BaseAgent):
         yield text_event(self.name, "Provide: define <ctx> | approve <ctx> | implement <ctx> | "
                                     "get-test-plan <ctx> | get-scenarios <ctx>.")
 
-    # --- deterministic inline commands (no sub-agent, no LLM) --- #
     def _read_helper(self, text: str) -> str:
         ctx_id = present.extract_ctx(text, ("get-test-plan", "get-scenarios"))
         if not ctx_id:
@@ -65,7 +59,7 @@ class TpdRouter(BaseAgent):
         if plan.status != CONFIRMED:
             plan.status = CONFIRMED
             store.write_plan(bank, plan)
-        store.write_plan_state(bank, ctx_id, {"done": True})  # close any lingering define session
+        store.write_plan_state(bank, ctx_id, {"done": True})
         brief = store.read_plan_brief(bank, ctx_id) or ""
         return f"APPROVED {ctx_id} (status: confirmed)\n\n{brief}"
 
@@ -76,7 +70,6 @@ def build_root_agent() -> TpdRouter:
 
     define = build_define_agent()
     implement = ImplementAgent(name="implement")
-    # ADK agent names must be valid Python identifiers; card name stays "test-plan-definition".
     return TpdRouter(name="test_plan_definition", define=define, implement=implement,
                      sub_agents=[define, implement])
 

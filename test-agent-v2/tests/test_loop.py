@@ -10,7 +10,6 @@ from knowledge_gathering.loop import crawl, normalize_seed
 BASE = "https://axonivy.atlassian.net"
 
 
-# --- fakes --- #
 class FakeBlob:
     def __init__(self, bucket, name):
         self._b, self.name = bucket, name
@@ -44,7 +43,7 @@ class FakeBucket:
 def _issue(key, links_to=(), bitbucket=False):
     content = []
     for lk in links_to:
-        pass  # issue links carried in issuelinks, not description
+        pass
     if bitbucket:
         content.append({"type": "paragraph", "content": [
             {"type": "inlineCard", "attrs": {"url": "https://bitbucket.org/acme/r/src/main/F.java"}}]})
@@ -63,7 +62,7 @@ class FakeClient:
 
     def __init__(self, issues, fail=(), files=None):
         self.issues, self.fail = issues, set(fail)
-        self.files = files or {}  # (ws, repo, ref, path) -> content
+        self.files = files or {}
         self.gets: list[str] = []
 
     async def get_issue(self, key):
@@ -88,15 +87,14 @@ def test_normalize_seed():
 async def test_two_hop_crawl_with_dedup_and_record_only():
     issues = {
         "LUZ-1": _issue("LUZ-1", links_to=["LUZ-2"], bitbucket=True),
-        "LUZ-2": _issue("LUZ-2", links_to=["LUZ-1"]),  # links back → must dedup
+        "LUZ-2": _issue("LUZ-2", links_to=["LUZ-1"]),
     }
     client = FakeClient(issues)
     result = await crawl(client, MemoryBank(FakeBucket()), "LUZ-1", depth=2, run_id="t")
 
     got = {n.id for n in result.notes}
     assert got == {"jira:LUZ-1", "jira:LUZ-2"}
-    assert client.gets.count("LUZ-1") == 1  # visited dedup → fetched once
-    # bitbucket link recorded in inventory but NOT followed (not a node)
+    assert client.gets.count("LUZ-1") == 1
     canons = {lr.canonical_url for lr in result.inventory}
     assert "bitbucket:acme/r/src/main/F.java" in canons
     assert not any(n.id.startswith("bitbucket") for n in result.notes)
@@ -105,7 +103,7 @@ async def test_two_hop_crawl_with_dedup_and_record_only():
 async def test_depth_zero_only_seed():
     issues = {"LUZ-1": _issue("LUZ-1", links_to=["LUZ-2"]), "LUZ-2": _issue("LUZ-2")}
     result = await crawl(FakeClient(issues), MemoryBank(FakeBucket()), "LUZ-1", depth=0, run_id="t")
-    assert {n.id for n in result.notes} == {"jira:LUZ-1"}  # no expansion
+    assert {n.id for n in result.notes} == {"jira:LUZ-1"}
 
 
 async def test_max_nodes_budget():
@@ -113,7 +111,7 @@ async def test_max_nodes_budget():
     issues["LUZ-10"] = _issue("LUZ-10")
     result = await crawl(FakeClient(issues), MemoryBank(FakeBucket()), "LUZ-0",
                          depth=99, max_nodes=3, run_id="t")
-    assert len(result.notes) == 3  # stopped at budget
+    assert len(result.notes) == 3
 
 
 async def test_fetch_failure_becomes_gap():
@@ -121,16 +119,15 @@ async def test_fetch_failure_becomes_gap():
     client = FakeClient(issues, fail=["LUZ-2"])
     result = await crawl(client, MemoryBank(FakeBucket()), "LUZ-1", depth=2, run_id="t")
     assert {n.id for n in result.notes} == {"jira:LUZ-1"}
-    assert result.gaps == ["jira:LUZ-2"]  # flagged, not dropped
+    assert result.gaps == ["jira:LUZ-2"]
 
 
 async def test_follows_bitbucket_file_only_when_in_scope():
     from common.models import BITBUCKET, CONFLUENCE_PAGE, JIRA_ISSUE, Scope
 
-    issues = {"LUZ-1": _issue("LUZ-1", bitbucket=True)}  # inlineCard → bitbucket:acme/r/src/main/F.java
+    issues = {"LUZ-1": _issue("LUZ-1", bitbucket=True)}
     src = {("acme", "r", "main", "F.java"): "class F { void extractAllZipFile() {} }"}
 
-    # in scope → the file is fetched and its content captured
     scope = Scope(follow_types=(JIRA_ISSUE, CONFLUENCE_PAGE, BITBUCKET))
     result = await crawl(FakeClient(issues, files=src), MemoryBank(FakeBucket()),
                          "LUZ-1", depth=1, scope=scope, run_id="t")
@@ -138,19 +135,16 @@ async def test_follows_bitbucket_file_only_when_in_scope():
     bb = next(n for n in result.notes if n.type == BITBUCKET)
     assert "extractAllZipFile" in bb.synopsis
 
-    # default scope → bitbucket is recorded, NOT followed
     default = await crawl(FakeClient(issues, files=src), MemoryBank(FakeBucket()),
                           "LUZ-1", depth=1, run_id="t")
     assert not any(n.type == BITBUCKET for n in default.notes)
 
 
 async def test_extra_seeds_are_crawled_at_depth_zero():
-    # A recommended repo is threaded in via extra_seeds (normalized to a codegraph: node in prod);
-    # here we use a jira extra-seed so no real graph is built — proving the frontier seeding.
     issues = {"LUZ-1": _issue("LUZ-1"), "LUZ-3": _issue("LUZ-3")}
     result = await crawl(FakeClient(issues), MemoryBank(FakeBucket()), "LUZ-1",
                          depth=0, run_id="t", extra_seeds=["LUZ-3"])
-    assert {n.id for n in result.notes} == {"jira:LUZ-1", "jira:LUZ-3"}  # both seeded, no expansion
+    assert {n.id for n in result.notes} == {"jira:LUZ-1", "jira:LUZ-3"}
 
 
 def test_parse_input_extracts_seed_depth_repo_and_exclude():
@@ -158,8 +152,7 @@ def test_parse_input_extracts_seed_depth_repo_and_exclude():
     assert parse_input('{"seed": "LUZ-1", "depth": 3, "repo": "ws/r"}') == ("LUZ-1", 3, "ws/r", None)
     assert parse_input("gather LUZ-1 depth 2 repo axonivy-prod/luz_docs_import") == \
         ("LUZ-1", 2, "axonivy-prod/luz_docs_import", None)
-    assert parse_input("gather LUZ-1") == ("LUZ-1", 2, None, None)  # no repo/exclude → None
-    # B6 negative-signal phrase, via JSON and via text
+    assert parse_input("gather LUZ-1") == ("LUZ-1", 2, None, None)
     assert parse_input('{"seed": "LUZ-1", "exclude": "zip import"}') == ("LUZ-1", 2, None, "zip import")
     assert parse_input("gather LUZ-1 exclude zip import") == ("LUZ-1", 2, None, "zip import")
 

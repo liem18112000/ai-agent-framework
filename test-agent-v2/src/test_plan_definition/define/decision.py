@@ -1,9 +1,4 @@
-"""Distill answers (and self-answers) into provenance-carrying PlanDecision records.
-
-Mirrors common.interrogate.insight: a human answer -> a `decision` (high
-confidence); an agent self-answer -> a vetoable `assumption` (low confidence). The chosen
-value and round are stored structurally so plan assembly needn't parse prose.
-"""
+"""Distill answers (and self-answers) into provenance-carrying PlanDecision records."""
 
 from __future__ import annotations
 

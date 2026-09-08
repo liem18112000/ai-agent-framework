@@ -6,13 +6,7 @@ import os
 
 
 class _BearerASGIMiddleware:
-    """Bearer gate for a bridge's Streamable-HTTP endpoint.
-
-    Pure ASGI on purpose — NOT Starlette's BaseHTTPMiddleware, which buffers responses
-    and would break the MCP SSE stream. Unauthorized HTTP requests are rejected with 401
-    before reaching the app; authorized ones (and non-HTTP scopes like lifespan) pass
-    through untouched.
-    """
+    """Bearer gate for a bridge's Streamable-HTTP endpoint."""
 
     def __init__(self, app, token: str) -> None:
         self.app, self.token = app, token
@@ -29,16 +23,7 @@ class _BearerASGIMiddleware:
 
 
 def build_http_app(mcp, env_prefix: str):
-    """Streamable-HTTP ASGI app for a bridge's `mcp`, gated by `<env_prefix>_BEARER_TOKEN`.
-
-    Shared by both bridges (env_prefix = "KGA_BRIDGE" / "TPD_BRIDGE"). Env is read here (not at
-    import) so it's configurable just before serving and testable. Reads:
-      <PREFIX>_STATELESS      run the MCP HTTP transport statelessly
-      <PREFIX>_ALLOWED_HOSTS  comma-list for the SDK's DNS-rebinding guard; if empty the guard is
-                              disabled (safe: a public run.app domain gated by the bearer below,
-                              not a browser-reachable localhost)
-      <PREFIX>_BEARER_TOKEN   unset = open (dev); set = every HTTP request needs Bearer <it>
-    """
+    """Streamable-HTTP ASGI app for a bridge's `mcp`, gated by `<env_prefix>_BEARER_TOKEN`."""
     from mcp.server.transport_security import TransportSecuritySettings
 
     stateless = os.environ.get(f"{env_prefix}_STATELESS", "").lower() in ("1", "true", "yes", "on")

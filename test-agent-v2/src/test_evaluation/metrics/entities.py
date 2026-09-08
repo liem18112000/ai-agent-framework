@@ -1,10 +1,4 @@
-"""Context Entities Recall (deterministic tier) — did the pack surface the right domain entities?
-
-Node-overlap counts CONTAINERS (which tickets/pages); this counts the concrete named things the
-pack must mention — Jira keys, repo/component names, endpoints, enums. Code identifiers and issue
-keys are exact-match-friendly, so substring matching catches most cases with no LLM. Reach for
-`ragas.metrics.ContextEntitiesRecall` only for fuzzy variants. `missing` names the dropped referent.
-"""
+"""Context Entities Recall (deterministic tier) — did the pack surface the right domain entities?"""
 
 from __future__ import annotations
 

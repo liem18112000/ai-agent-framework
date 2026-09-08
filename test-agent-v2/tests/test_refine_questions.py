@@ -6,7 +6,6 @@ from common.interrogate import Pack, generate_round, load_pack
 from common.memory import MemoryBank
 from common.models import Question
 
-# phrasing that would mean a question dropped below module/service altitude
 _IMPL_DETAIL = ["field name", "call order", "config format", "method signature", "payload", "column name"]
 
 
@@ -15,7 +14,6 @@ def test_load_pack_from_bank(pack_bucket):
     ids = {n.id for n in pack.grounded}
     assert ids == {"jira:LUZ-158390", "confluence:49662787598"}
     assert not pack.is_empty()
-    # the bitbucket link on the issue was recorded, not followed
     assert "bitbucket" in pack.recorded_only_types()
 
 
@@ -31,9 +29,9 @@ def test_heuristic_business_round_asks_done_semantics_and_gaps(pack_bucket):
     pack.gaps = ["confluence:99999999"]
     qs = generate_round(pack, "business")
     assert all(q.round == "business" for q in qs)
-    assert any("done" in q.question.lower() for q in qs)  # pass/fail semantics
-    assert any("99999999" in q.question for q in qs)  # the gap became a question
-    for q in qs:  # every surfaced question is a real fork with options + a recommendation
+    assert any("done" in q.question.lower() for q in qs)
+    assert any("99999999" in q.question for q in qs)
+    for q in qs:
         assert q.options and q.recommendation
 
 
@@ -41,7 +39,7 @@ def test_heuristic_technical_round_env_and_recorded_only(pack_bucket):
     pack = load_pack(MemoryBank(pack_bucket), "run-6f2a")
     qs = generate_round(pack, "technical")
     assert any("environment" in q.question.lower() or "tenant" in q.question.lower() for q in qs)
-    assert any("bitbucket" in q.question.lower() for q in qs)  # recorded-only → scope question
+    assert any("bitbucket" in q.question.lower() for q in qs)
 
 
 def test_heuristic_qa_round_coverage_bar(pack_bucket):
@@ -63,7 +61,7 @@ def test_ranking_orders_dependencies_first():
     q1 = Question(id="Q-biz-1", round="business", question="root")
     q2 = Question(id="Q-biz-2", round="business", question="depends", depends_on=["Q-biz-1"])
     pack = Pack(context_id="x")
-    out = generate_round(pack, "business", generator=lambda p, r: [q2, q1])  # given out of order
+    out = generate_round(pack, "business", generator=lambda p, r: [q2, q1])
     assert [q.id for q in out] == ["Q-biz-1", "Q-biz-2"]
 
 
@@ -72,5 +70,5 @@ def test_cap_defers_excess_open_questions():
     pack = Pack(context_id="x")
     out = generate_round(pack, "business", max_questions=7, generator=lambda p, r: many)
     assert sum(q.status == "open" for q in out) == 7
-    assert sum(q.status == "deferred" for q in out) == 2  # excess deferred, not dropped
-    assert len(out) == 9  # nothing dropped
+    assert sum(q.status == "deferred" for q in out) == 2
+    assert len(out) == 9

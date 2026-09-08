@@ -1,9 +1,4 @@
-"""A2A bearer-token enforcement (Starlette middleware).
-
-Card + health endpoints stay open (discovery + probes); everything else requires
-`Authorization: Bearer <A2A_BEARER_TOKEN>`. Token read per-request; unset = no
-enforcement (dev).
-"""
+"""A2A bearer-token enforcement (Starlette middleware)."""
 
 from __future__ import annotations
 
@@ -18,7 +13,7 @@ _OPEN_PREFIXES = ("/.well-known/", "/livez", "/readyz")
 
 class BearerAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        token = os.environ.get("A2A_BEARER_TOKEN")  # unset → no enforcement (dev)
+        token = os.environ.get("A2A_BEARER_TOKEN")
         if (
             token
             and not request.url.path.startswith(_OPEN_PREFIXES)

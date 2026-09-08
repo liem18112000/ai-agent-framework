@@ -1,8 +1,4 @@
-"""Memory-bank read handlers — the `search-memory` and `get-note` skills.
-
-Read-only over the GCS knowledge index + distilled notes (no crawl/LLM/Atlassian).
-`search-memory <query>` filters index nodes; `get-note <id>` returns a node's rendered note.
-"""
+"""Memory-bank read handlers — the `search-memory` and `get-note` skills."""
 
 from __future__ import annotations
 
@@ -43,7 +39,7 @@ async def run_veto_lesson(ex, context: RequestContext, event_queue: EventQueue, 
 async def run_search_memory(ex, context: RequestContext, event_queue: EventQueue, bank, text: str) -> None:
     """Search the knowledge index (link graph): list nodes whose id / title / type match the query."""
     q = _arg(text, "search-memory").lower()
-    nodes = await retrieve.search_nodes(bank, q)  # backend-dispatched (gcs graph by default)
+    nodes = await retrieve.search_nodes(bank, q)
     if not nodes:
         return await reply(
             context, event_queue,
@@ -52,7 +48,7 @@ async def run_search_memory(ex, context: RequestContext, event_queue: EventQueue
     if q:
         header = f"{len(nodes)} node(s) matching '{q}'"
     else:
-        graph, _ = bank.load_index()  # only the empty-query summary needs the edge count
+        graph, _ = bank.load_index()
         header = f"{len(nodes)} node(s), {len(graph.edges)} edge(s) in the index"
     lines = [header + ":", ""]
     for n in sorted(nodes, key=lambda n: n.get("id", "")):
@@ -80,7 +76,6 @@ async def run_get_note(ex, context: RequestContext, event_queue: EventQueue, ban
     note_type = node.get("type", "")
     if md := bank.read_note_md(note_id, note_type):
         return await reply(context, event_queue, md)
-    # Sidecar rendered inline if the md blob is missing but the json note exists.
     note = bank.read_note(note_id, note_type)
     if note is None:
         return await reply(context, event_queue, f"Note '{note_id}' is indexed but its content is missing.")

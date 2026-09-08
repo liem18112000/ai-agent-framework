@@ -1,14 +1,8 @@
-"""Fetch + extract a single node into (links, note, text).
-
-A node id is ``"<kind>:<ident>"``; the prefix selects a per-kind NodeFetcher (see base.py).
-Adding a source = add a module here + import it below; ``fetch_node`` never changes (Open/Closed).
-"""
+"""Fetch + extract a single node into (links, note, text)."""
 
 from __future__ import annotations
 
 from common.models import LinkRecord, Note, Scope
-
-# Import the concrete fetchers so they self-register with NodeFetcher.registry.
 from knowledge_gathering.loop.fetch import (  # noqa: F401  (registration)
     bitbucket,
     codegraph,

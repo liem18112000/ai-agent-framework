@@ -1,9 +1,4 @@
-"""Human Markdown rendering for the Test-Plan artifacts (plan, run-log).
-
-The document shapes live in template.py; each renderer computes the dynamic parts (bullet
-bodies) and fills the matching template. Write-only/presentational — read-back goes through
-the JSON sidecar (writers.read_plan), never this output. Mirrors common.memory.render.
-"""
+"""Human Markdown rendering for the Test-Plan artifacts (plan, run-log)."""
 
 from __future__ import annotations
 

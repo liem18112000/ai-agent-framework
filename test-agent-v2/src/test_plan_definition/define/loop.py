@@ -1,16 +1,4 @@
-"""The Test Plan definition loop — a resumable, multi-turn reconfirm state machine.
-
-`PlanSession` advances one round at a time over (methodology, scope, metrics): it generates
-questions, persists agent self-answers as vetoable assumptions, and pauses on the open ones.
-The caller submits human answers; each is distilled into a PlanDecision. When the rounds are
-exhausted it assembles the confirmed TestPlan and restates a brief. Single-pass by design —
-unlike refine there is no in-loop re-seed (the implement->define loop-back is a cross-stage
-edge handled by the executor).
-
-`PlanSession` is what the A2A executor drives (pause = input-required). `define()` is a thin
-synchronous driver over it for offline runs and tests. Generic parts — answer ingest, question
-rank/cap, headless recommendation answers — are reused from common.interrogate.
-"""
+"""The Test Plan definition loop — a resumable, multi-turn reconfirm state machine."""
 
 from __future__ import annotations
 
@@ -82,7 +70,7 @@ class PlanSession:
             qs = generate_round(
                 self.plan_pack.pack, rnd, max_questions=self.max_questions, generator=self.generator
             )
-            for q in qs:  # persist agent self-answers as vetoable assumptions right away
+            for q in qs:
                 if q.status == "self-answered":
                     self._record(assumption_from_self_answer(
                         q, self.plan_pack, run_id=self.run_id, now=self.now))
@@ -100,7 +88,6 @@ class PlanSession:
         res = ingest(self._current, raw, now=self.now, answered_by=self.answered_by)
         store.write_answers(self.bank, self.context_id, res.answers)
         self._answered += len(res.answered)
-        # carried (unanswered) + deferred (set aside) -> declared gaps; nothing dropped silently
         self._open_carried += res.carried + res.deferred
         by_id = {q.id: q for q in self._current}
         for ans in res.answers:
@@ -128,7 +115,6 @@ class PlanSession:
                  len(self.decisions), len(gaps), conf)
         return PlanResult(plan, brief, self.decisions, gaps, conf, run)
 
-    # --- resumable state (persisted so a stateless A2A turn can rehydrate) --- #
     def save(self) -> None:
         store.write_plan_state(self.bank, self.context_id, self._state())
 
@@ -160,13 +146,13 @@ class PlanSession:
         self._open_carried = [question_from_dict(d) for d in st.get("open_carried", [])]
         self._raised = st.get("raised", 0)
         self._answered = st.get("answered", 0)
-        self.decisions = store.read_decisions(bank, context_id)  # provenance trail so far
-        self._current = store.read_questions(bank, context_id)  # the round awaiting answers
+        self.decisions = store.read_decisions(bank, context_id)
+        self._current = store.read_questions(bank, context_id)
         return self
 
     def _record(self, decision: PlanDecision) -> None:
         self.decisions.append(decision)
-        store.write_decisions(self.bank, self.context_id, self.decisions)  # survive a pause
+        store.write_decisions(self.bank, self.context_id, self.decisions)
 
 
 async def define(

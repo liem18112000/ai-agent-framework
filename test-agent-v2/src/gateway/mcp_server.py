@@ -1,19 +1,4 @@
-"""Single MCP gateway — one endpoint that fronts the three A2A agents (design G1–G3).
-
-Local Claude connects here (ONE MCP server). Each tool routes to its agent over A2A via a per-agent
-`BridgeSession`. The domain tools are composed from each agent's `bridge.mcp_server.register_tools`
-(defined once, DRY); the gateway only adds unified `agent_cards` + `send_raw_*` + one `test` prompt —
-the per-agent `agent_card`/`send_raw`/`test` would otherwise collide across the three agents.
-
-Inter-agent traffic (the coordinator, deferred G4) is A2A too; this gateway is purely Claude→agents.
-
-Config (env):
-  KGA_A2A_URL / TPD_A2A_URL / TEV_A2A_URL   the three agents' A2A base URLs
-  A2A_BEARER_TOKEN                          bearer the agents enforce (the gateway is their A2A client)
-  GATEWAY_BEARER_TOKEN                      inbound gate for Claude → gateway (see common.bridge)
-
-Run:  python -m gateway        (stdio; set GATEWAY_TRANSPORT=http for Streamable-HTTP on $PORT)
-"""
+"""Single MCP gateway — one endpoint that fronts the three A2A agents (design G1–G3)."""
 
 from __future__ import annotations
 
@@ -42,7 +27,6 @@ INSTRUCTIONS = (
     "only on yes. evaluate_pack / evaluate_plan are read-only quality gates and never block."
 )
 
-# One A2A client session per agent (the gateway is the A2A client to each).
 kga_session = BridgeSession(KGA_URL, TOKEN)
 tpd_session = BridgeSession(TPD_URL, TOKEN)
 tev_session = BridgeSession(TEV_URL, TOKEN)
@@ -52,13 +36,12 @@ mcp = MCPServer(
     instructions=INSTRUCTIONS + "\n\n" + TRIGGER_INSTRUCTIONS,
 )
 
-# Domain tools — unique names, so the three sets compose on one server with no collision.
 _tools = {
     **register_kga(mcp, kga_session),
     **register_tpd(mcp, tpd_session),
     **register_tev(mcp, tev_session),
 }
-globals().update(_tools)  # expose gather_knowledge, define_plan, evaluate_pack, ... as module attrs
+globals().update(_tools)
 
 _CARDS = (("knowledge-gathering", kga_session), ("test-plan-definition", tpd_session),
           ("test-evaluation", tev_session))

@@ -1,10 +1,4 @@
-"""RefineAgent — the autonomous refine step of the Testing-Agent pipeline.
-
-Auto-answers each interrogation round with the agent's own recommendations
-(`accept_recommendation`) — the opt-in autonomous path (no human gate). Wraps the reused headless
-`interrogate.refine` driver; determinism + B0–B6 unchanged. Keys on `ctx.session.id` (the shared
-SequentialAgent session), so it lines up with gather's pack under one context id.
-"""
+"""RefineAgent — the autonomous refine step of the Testing-Agent pipeline."""
 
 from __future__ import annotations
 

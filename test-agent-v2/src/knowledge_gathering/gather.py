@@ -1,9 +1,4 @@
-"""Knowledge-gathering domain logic — framework-neutral (C2).
-
-The gather helpers the ADK `GatherAgent` reuses: seed parsing, the pre-crawl seed probe, the crawl
-summary, the self-learning capture, and the feature-flag gates. Extracted from the a2a `executor/`
-shell (which C3 deletes) so nothing ADK-side imports `…executor`. No a2a-sdk dependency here.
-"""
+"""Knowledge-gathering domain logic — framework-neutral (C2)."""
 
 from __future__ import annotations
 
@@ -26,9 +21,7 @@ _JIRA_KEY = re.compile(r"[A-Z][A-Z0-9]+-\d+")
 
 
 def _capture_gather(bank, *, context_id: str, seed: str, result) -> None:
-    """L3: enqueue an async capture of which repo the seed's code lives in. Only BUILT codegraph
-    nodes qualify — their titles are resolved `<ws>/<repo>` slugs; dev-panel-recorded repos stay
-    UUID-masked (`{}/{uuid}`) so they're skipped rather than captured as noise."""
+    """L3: enqueue an async capture of which repo the seed's code lives in. Only BUILT codegraph"""
     if not learn.capture_enabled("KGA"):
         return
     try:
@@ -43,29 +36,17 @@ def _capture_gather(bank, *, context_id: str, seed: str, result) -> None:
 
 
 def _follow_web_enabled() -> bool:
-    """G3 external-web following — opt-in (default OFF). When off, external-web links stay
-    recorded-not-fetched and gather is unchanged."""
+    """G3 external-web following — opt-in (default OFF). When off, external-web links stay"""
     return os.environ.get("KGA_FOLLOW_WEB", "").lower() in ("1", "true", "yes", "on")
 
 
 def _explore_loop_enabled() -> bool:
-    """G5 self-exploration controller — opt-in (default OFF). When off, gather takes the single
-    pre-crawl fan-out path, unchanged."""
+    """G5 self-exploration controller — opt-in (default OFF). When off, gather takes the single"""
     return os.environ.get("KGA_EXPLORE_LOOP", "").lower() in ("1", "true", "yes", "on")
 
 
 class SeedProbe(NamedTuple):
-    """One best-effort seed fetch shared by the pre-crawl G0/G1/G2 phases (defaults = neutral).
-
-    - `terms`: summary + labels + components — so a bare key (no words to match) still finds
-      prior work in G0/G1.
-    - `thin`: little to expand from (short description AND no issuelinks AND no subtasks) — the
-      G1 trigger.
-    - `project`: key prefix (LUZ-158390 -> LUZ) scoping the G1 JQL, or None.
-    - `title` / `description` / `labels`: raw fields the G2 hypothesize step reasons over.
-    - `parent`: the seed's structural parent key (epic/story carrying the real AC), or None —
-      the B1 climb anchor for a thin container ticket (LUZ-159312 -> LUZ-156281).
-    """
+    """One best-effort seed fetch shared by the pre-crawl G0/G1/G2 phases (defaults = neutral)."""
 
     terms: str = ""
     thin: bool = False
@@ -77,8 +58,7 @@ class SeedProbe(NamedTuple):
 
 
 async def _seed_probe(client, seed: str) -> SeedProbe:
-    """Best-effort single `get_issue` probe of a Jira seed, feeding the pre-crawl expansion phases.
-    Any error / non-Jira seed → a neutral `SeedProbe()`; never fails gather."""
+    """Best-effort single `get_issue` probe of a Jira seed, feeding the pre-crawl expansion phases."""
     if not _JIRA_KEY.fullmatch(seed):
         return SeedProbe()
     try:
@@ -101,9 +81,7 @@ async def _seed_probe(client, seed: str) -> SeedProbe:
 
 
 def parse_input(text: str) -> tuple[str | None, int, str | None, str | None]:
-    """Return (seed, depth, repo, exclude). `repo` is an optional "<ws>/<repo>" whose graphify code
-    graph grounds the technical interrogation; `exclude` is an optional B6 negative-signal phrase
-    ("zip import") that prunes that bled cluster from the explore loop and re-anchors the focus."""
+    """Return (seed, depth, repo, exclude). `repo` is an optional "<ws>/<repo>" whose graphify code"""
     text = text.strip()
     if text.startswith("{"):
         d = json.loads(text)
@@ -130,8 +108,6 @@ def summarize_gather(result: CrawlResult) -> str:
         ),
         "Nodes: " + ", ".join(n.id for n in result.notes),
     ]
-    # Dev-panel repos are recorded, not auto-built (a graphify build can blow the time budget).
-    # Surface them so the client re-gathers with repo=<ws>/<repo> (wider budget, real code).
     repos = sorted({
         lr.canonical_url.split(":", 1)[1]
         for lr in result.inventory

@@ -1,9 +1,4 @@
-"""M6 tests: the Claude-on-Vertex seams — selection by VERTEX_* + JSON parsing.
-
-No real Vertex call: `complete` is monkeypatched in each llm module to return canned JSON, so
-the whole Claude path (prompt build is exercised, parse, dataclass build) runs offline and
-deterministically. When VERTEX_* is unset the heuristic path is selected.
-"""
+"""M6 tests: the Claude-on-Vertex seams — selection by VERTEX_* + JSON parsing."""
 
 from __future__ import annotations
 
@@ -37,21 +32,16 @@ def _plan() -> TestPlan:
                     scope=["jira:LUZ-1"], metrics=["End-state verified", "+ negative for risk"])
 
 
-# --- parse helper --- #
-
 def test_loads_array_strips_fence_and_rejects_non_arrays():
     assert loads_array('```json\n[{"a":1}]\n```') == [{"a": 1}]
     assert loads_array("not json") is None
-    assert loads_array('{"a": 1}') is None  # object, not array
+    assert loads_array('{"a": 1}') is None
 
-
-# --- selection: heuristic when VERTEX_* unset --- #
 
 def test_make_generator_defaults_to_heuristic(monkeypatch):
     monkeypatch.delenv("VERTEX_PROJECT", raising=False)
     gen = make_generator("understanding")
     qs = gen(_plan_pack().pack, "methodology")
-    # identical to calling the heuristic directly (no LLM involved)
     assert qs and qs[0].round == "methodology"
     assert [q.id for q in qs] == [q.id for q in heuristic_questions(_plan_pack().pack, "u", "methodology")]
 
@@ -60,8 +50,6 @@ def test_make_restater_defaults_to_heuristic(monkeypatch):
     monkeypatch.delenv("VERTEX_PROJECT", raising=False)
     assert make_restater().__name__ == "heuristic_brief"
 
-
-# --- Claude path (complete monkeypatched) --- #
 
 def test_make_generator_uses_claude_when_configured(vertex_env, monkeypatch):
     canned = json.dumps([{"id": "Q-mth-1", "question": "Which methodology?",
@@ -74,8 +62,6 @@ def test_make_generator_uses_claude_when_configured(vertex_env, monkeypatch):
 
 
 def test_claude_question_coerces_list_applies_to(vertex_env, monkeypatch):
-    # The LLM sometimes returns applies_to as a list; left as-is it becomes an unhashable
-    # source_ref that crashes assemble_plan (the define_plan run-990d0017 regression).
     canned = json.dumps([{"id": "Q-sco-1", "question": "Scope?", "applies_to": ["LUZ-1", "LUZ-2"],
                           "options": [{"label": "In", "implication": "x"}],
                           "recommendation": "In", "status": "open"}])
@@ -85,11 +71,9 @@ def test_claude_question_coerces_list_applies_to(vertex_env, monkeypatch):
 
 
 def test_make_generator_falls_back_to_heuristic_when_claude_empty(vertex_env, monkeypatch):
-    # unparseable LLM output -> claude_plan_questions returns [] -> heuristic fills the round,
-    # so a define round is never silently blank (define-side mirror of the refine fallback).
     monkeypatch.setattr("test_plan_definition.llm.questions.complete", lambda *a, **k: "oops")
     qs = make_generator("understanding")(_plan_pack().pack, "methodology")
-    assert qs and qs[0].round == "methodology"  # not empty — fallback fired
+    assert qs and qs[0].round == "methodology"
     assert [q.id for q in qs] == [
         q.id for q in heuristic_questions(_plan_pack().pack, "understanding", "methodology")]
 
@@ -107,13 +91,10 @@ def test_generate_scenarios_uses_claude_then_falls_back(vertex_env, monkeypatch)
     scs = generate_scenarios(_plan(), _plan_pack(), [TestData(id="td", kind="mock-data")])
     assert len(scs) == 1 and scs[0].id == "scenario:run-x:a" and scs[0].plan_id == "plan:run-x"
 
-    # garbage output -> None -> heuristic fallback (still returns scenarios)
     monkeypatch.setattr("test_plan_definition.llm.scenarios.complete", lambda *a, **k: "oops")
     scs2 = generate_scenarios(_plan(), _plan_pack(), [TestData(id="td", kind="mock-data")])
     assert scs2 == heuristic_scenarios(_plan(), _plan_pack(), [TestData(id="td", kind="mock-data")])
 
-
-# --- pass-metric polish --- #
 
 def test_pass_metric_prefers_the_non_coverage_metric():
     assert _pass_metric(_plan()) == "End-state verified"

@@ -1,10 +1,4 @@
-"""Topic Adherence — does the G5 explore loop stay on-seed round over round?
-
-The loop derives round-N focus from round N-1's node titles, which can drift into the memory
-gravity well. Given each round's focus terms and the seed's own topic terms, `adherence` is the
-fraction of focus terms still on-topic; `adherence_curve` plots it per round — a monotone decline
-is drift, and the round where it falls off a cliff is where to cap KGA_EXPLORE_MAX_ROUNDS.
-"""
+"""Topic Adherence — does the G5 explore loop stay on-seed round over round?"""
 
 from __future__ import annotations
 

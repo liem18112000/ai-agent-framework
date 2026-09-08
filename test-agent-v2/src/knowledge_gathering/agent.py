@@ -1,13 +1,4 @@
-"""KGA root agent (ADK) — a deterministic text-dispatch router (mirrors v1 executor.base).
-
-Routes by message text, exactly like v1: read helpers → memory/lesson tools → live/started refine →
-gather. The LLM does NOT choose the branch (invariant I1). Read commands run inline (deterministic);
-gather/refine delegate to the sub-agents. Head-of-request drain/recall are the Runner plugins (§6).
-
-This is the canonical `agent.py:root_agent` (adk web/run discoverable). The v1 A2A card + skills now
-live in `a2a_card.py` (still used by the copied a2a shells + `adk_app`/`serve` for exact skill
-parity, invariant I4).
-"""
+"""KGA root agent (ADK) — a deterministic text-dispatch router (mirrors v1 executor.base)."""
 
 from __future__ import annotations
 
@@ -47,7 +38,6 @@ class KgaRouter(BaseAgent):
         async for ev in self.gather.run_async(ctx):
             yield ev
 
-    # --- deterministic read commands (no sub-agent, no LLM) --- #
     def _read_helper(self, text: str) -> str:
         ctx_id = present.extract_ctx(text, ("get-questions", "get-understanding"))
         if not ctx_id:

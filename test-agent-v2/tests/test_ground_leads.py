@@ -1,10 +1,4 @@
-"""G4 GROUNDING GATE — `ground_leads` (unit) + its wiring into `run_gather`.
-
-Pure in-memory: a fake bank returns a real Graph index (memory grounding) and a fake client exposes
-`search_jql`/`search_cql` (Atlassian grounding) — no GCS, no network, no LLM. Proves the gate turns
-only RESOLVED leads into seeds and keeps unconfirmed leads OUT of seeds/pack, and that run_gather
-makes zero LLM calls when the flag is off.
-"""
+"""G4 GROUNDING GATE — `ground_leads` (unit) + its wiring into `run_gather`."""
 
 from __future__ import annotations
 
@@ -17,7 +11,6 @@ from knowledge_gathering.explore.ground_leads import ground_leads
 from knowledge_gathering.loop import CrawlResult
 
 
-# --- fakes --- #
 def _node(nid: str, ntype: str = "jira-issue", title: str = "") -> dict:
     return {"id": nid, "type": ntype, "title": title}
 
@@ -67,35 +60,30 @@ class _FakeSearchClient:
         return self._lookup(self._conf_by_q, cql)
 
 
-# --- ground_leads unit --- #
-
 async def test_lead_grounded_in_memory_becomes_seed():
-    # a lead matching a real index node → its id in grounded_seeds; memory hit → NO atlassian call
     bank = _FakeBank(_graph(_node("jira:LUZ-500", title="audit log retention")))
     client = _FakeSearchClient()
     grounded, unconfirmed, md = await ground_leads(
         client, bank, ["audit log"], project="LUZ", exclude=set())
     assert grounded == ["jira:LUZ-500"]
     assert unconfirmed == []
-    assert client.jql_calls == 0 and client.cql_calls == 0  # memory hit → no search spent
+    assert client.jql_calls == 0 and client.cql_calls == 0
     assert "grounded 1, unconfirmed 0" in md and "jira:LUZ-500" in md
 
 
 async def test_lead_grounded_in_atlassian_when_memory_misses():
-    # memory empty → fall through to Atlassian; a hit there also grounds the lead
     bank = _FakeBank(Graph())
     client = _FakeSearchClient(jira_by_q={"bulk export": ["LUZ-77"]})
     grounded, unconfirmed, _ = await ground_leads(
         client, bank, ["bulk export"], project="LUZ", exclude=set())
     assert grounded == ["jira:LUZ-77"]
     assert unconfirmed == []
-    assert client.jql_calls == 1  # atlassian used only because memory missed
+    assert client.jql_calls == 1
 
 
 async def test_unconfirmed_lead_is_not_a_seed():
-    # a lead resolving to NOTHING (memory + atlassian) → unconfirmed, never a seed
     bank = _FakeBank(Graph())
-    client = _FakeSearchClient()  # every search returns []
+    client = _FakeSearchClient()
     grounded, unconfirmed, md = await ground_leads(
         client, bank, ["ghost feature"], project="LUZ", exclude=set())
     assert grounded == []
@@ -110,19 +98,18 @@ async def test_memory_then_atlassian_grounding_mixed():
     grounded, unconfirmed, _ = await ground_leads(
         client, bank, ["audit log", "bulk export", "ghost feature"],
         project="LUZ", exclude=set())
-    assert grounded == ["jira:LUZ-500", "jira:LUZ-77"]  # deduped + stable sorted
+    assert grounded == ["jira:LUZ-500", "jira:LUZ-77"]
     assert unconfirmed == ["ghost feature"]
-    assert client.jql_calls == 2  # only the two memory-missing leads hit Atlassian
+    assert client.jql_calls == 2
 
 
 async def test_excluded_ids_are_dropped_from_seeds():
-    # a lead grounds to an id that is already a seed → confirmed, but adds no NEW seed
     bank = _FakeBank(_graph(_node("jira:LUZ-500", title="audit log")))
     grounded, unconfirmed, _ = await ground_leads(
         _FakeSearchClient(), bank, ["audit log"],
         project="LUZ", exclude={"jira:LUZ-500"})
-    assert grounded == []          # excluded → not re-seeded
-    assert unconfirmed == []       # still counts as grounded (resolved to a real node)
+    assert grounded == []
+    assert unconfirmed == []
 
 
 async def test_max_seeds_cap_and_stable_sort():
@@ -130,20 +117,18 @@ async def test_max_seeds_cap_and_stable_sort():
     bank = _FakeBank(_graph(*nodes))
     grounded, _, _ = await ground_leads(
         _FakeSearchClient(), bank, ["export"], project="LUZ", exclude=set(), max_seeds=3)
-    assert grounded == ["jira:LUZ-1", "jira:LUZ-2", "jira:LUZ-3"]  # sorted then capped
+    assert grounded == ["jira:LUZ-1", "jira:LUZ-2", "jira:LUZ-3"]
 
 
 async def test_max_searches_budget_honored():
-    # 3 memory-missing leads but budget of 1 → only 1 Atlassian search; the rest go unconfirmed.
-    # Tokens must be len>=3 or atlassian_search_seeds skips the query before it counts.
     bank = _FakeBank(Graph())
     client = _FakeSearchClient(
         jira_by_q={"alpha": ["LUZ-1"], "beta": ["LUZ-2"], "gamma": ["LUZ-3"]})
     grounded, unconfirmed, _ = await ground_leads(
         client, bank, ["alpha", "beta", "gamma"], project="LUZ", exclude=set(), max_searches=1)
-    assert client.jql_calls == 1  # budget spent after the first search
+    assert client.jql_calls == 1
     assert grounded == ["jira:LUZ-1"]
-    assert unconfirmed == ["beta", "gamma"]  # never searched (budget spent) → unconfirmed
+    assert unconfirmed == ["beta", "gamma"]
 
 
 async def test_empty_leads_yields_blank():
@@ -152,13 +137,11 @@ async def test_empty_leads_yields_blank():
 
 
 async def test_blank_leads_are_deduped_away():
-    # only whitespace/dupe leads → nothing to ground → blank result (no noisy note)
     assert await ground_leads(_FakeSearchClient(), _FakeBank(Graph()), ["  ", "", "  "],
                               project=None, exclude=set()) == ([], [], "")
 
 
 async def test_broken_bank_never_raises_but_atlassian_still_works():
-    # index load fails → memory grounding disabled, but Atlassian grounding still runs
     client = _FakeSearchClient(jira_by_q={"export": ["LUZ-9"]})
     grounded, unconfirmed, _ = await ground_leads(
         client, _BrokenBank(), ["export"], project="LUZ", exclude=set())
@@ -178,14 +161,10 @@ async def test_any_failure_degrades_to_empty():
         async def search_cql(self, *a, **k):
             raise RuntimeError("y")
 
-    # atlassian_search_seeds swallows its own errors, so a lead just goes unconfirmed here;
-    # ground_leads itself never raises regardless.
     grounded, unconfirmed, _ = await ground_leads(
         _BoomClient(), _Boom(), ["z"], project=None, exclude=set())
     assert grounded == [] and unconfirmed == ["z"]
 
-
-# --- run_gather wiring (G4) --- #
 
 class _Ctx:
     context_id = "run-x"
@@ -246,7 +225,6 @@ async def _run_gather(monkeypatch, *, flag_on, leads=None, grounded=None, unconf
     monkeypatch.setattr(expand_mod, "atlassian_search_seeds", fake_search)
     monkeypatch.setattr(gather_mod, "crawl", fake_crawl)
     monkeypatch.setattr(gather_mod, "reply", fake_reply)
-    # keep G2 off so it doesn't add its own LLM call to the count under test
     monkeypatch.delenv("KGA_LLM_HYPOTHESIZE", raising=False)
     if flag_on:
         monkeypatch.setenv("KGA_LLM_LEADS", "1")
@@ -260,7 +238,7 @@ async def _run_gather(monkeypatch, *, flag_on, leads=None, grounded=None, unconf
 
 async def test_flag_off_makes_no_lead_call(monkeypatch):
     seen = await _run_gather(monkeypatch, flag_on=False)
-    assert seen["lead_calls"] == 0 and seen["ground_calls"] == 0  # disabled → no LLM, no gate
+    assert seen["lead_calls"] == 0 and seen["ground_calls"] == 0
     assert "External-LLM leads" not in (seen["reply"] or "")
 
 
@@ -269,14 +247,14 @@ async def test_flag_on_grounded_leads_reach_extra_seeds(monkeypatch):
         monkeypatch, flag_on=True,
         leads=["audit log", "ghost feature"],
         grounded=["jira:LUZ-77"], unconfirmed=["ghost feature"])
-    assert seen["lead_calls"] == 1  # exactly one LLM call
-    assert "jira:LUZ-77" in seen["extra_seeds"]           # grounded lead promoted to a seed
-    assert "ghost feature" not in seen["extra_seeds"]     # unconfirmed lead is NEVER a seed
-    assert "External-LLM leads" in seen["reply"]          # surfaced in the reply text only
+    assert seen["lead_calls"] == 1
+    assert "jira:LUZ-77" in seen["extra_seeds"]
+    assert "ghost feature" not in seen["extra_seeds"]
+    assert "External-LLM leads" in seen["reply"]
 
 
 async def test_flag_on_all_unconfirmed_adds_no_seeds(monkeypatch):
     seen = await _run_gather(
         monkeypatch, flag_on=True, leads=["ghost"], grounded=[], unconfirmed=["ghost"])
     assert seen["lead_calls"] == 1
-    assert seen["extra_seeds"] == []  # nothing grounded → no seeds added
+    assert seen["extra_seeds"] == []

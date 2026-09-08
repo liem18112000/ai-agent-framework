@@ -1,11 +1,4 @@
-"""Rank and cap the clarifying questions for one interrogation round.
-
-`generate_round` calls a generator (Claude-on-Vertex when configured — see `common.llm.questions`
-— else the no-LLM heuristic: `build_round_questions` dispatches to the per-round strategies in
-`common.interrogate.round`), then ranks by dependency and caps the *open* set per round (excess
-open questions are deferred, never dropped). Self-answered items pass through un-capped — they
-become assumption insights, not surfaced questions.
-"""
+"""Rank and cap the clarifying questions for one interrogation round."""
 
 from __future__ import annotations
 
@@ -20,7 +13,6 @@ from common.monitoring import get_logger
 
 log = get_logger("interrogate.questions")
 
-# A generator turns a pack + round name into candidate questions.
 Generator = Callable[[Pack, str], list[Question]]
 
 
@@ -41,7 +33,6 @@ def generate_round(
     return questions
 
 
-# --- ranking / capping --- #
 def _rank(questions: list[Question]) -> list[Question]:
     """Stable topological-ish order: a question follows the ones it depends on."""
     by_id = {q.id: q for q in questions}
@@ -56,7 +47,7 @@ def _rank(questions: list[Question]) -> list[Question]:
                 seen.add(q.id)
                 remaining.remove(q)
                 progressed = True
-        if not progressed:  # dependency cycle / missing — append the rest as-is
+        if not progressed:
             placed.extend(remaining)
             break
     return placed
@@ -72,15 +63,12 @@ def _defer_excess_open(questions: list[Question], cap: int) -> None:
                 q.status = "deferred"
 
 
-# --- generator selection: Claude on Vertex if configured, else heuristic --- #
 def make_generator() -> Generator:
     cfg = vertex_config()
     if cfg:
         proj, loc, model = cfg
 
         def generator(pack: Pack, round_name: str) -> list[Question]:
-            # LLM first; if it yields nothing (parse failure / truncation / a genuinely empty
-            # round) fall back to the heuristic strategy so a round is never silently blank.
             qs = claude_questions(pack, round_name, project=proj, location=loc, model=model)
             if not qs:
                 log.warning("round %s: LLM returned no questions — using heuristic fallback", round_name)
@@ -91,15 +79,8 @@ def make_generator() -> Generator:
     return heuristic_questions
 
 
-# --- heuristic (no-LLM) generator: dispatch to the per-round strategies in .round --- #
 def build_round_questions(pack: Pack, round_name: str, *, id_prefix: str) -> list[Question]:
-    """Dispatch to the registered RoundQuestions strategy with a q-factory that stamps ids.
-
-    Shared scaffolding for BOTH agents' heuristic generators: it builds the pack preamble +
-    the id/round-stamping factory, then delegates to whichever strategy is registered for
-    `round_name` (see common.interrogate.round). Callers supply `id_prefix` (KGA passes
-    round_name[:3]; TPD passes its ROUND_PREFIX). Returns [] if no strategy is registered.
-    """
+    """Dispatch to the registered RoundQuestions strategy with a q-factory that stamps ids."""
     primary = pack.grounded[0] if pack.grounded else None
     title = primary.title if primary else (pack.seed or pack.context_id)
     n = 0

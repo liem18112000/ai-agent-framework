@@ -1,9 +1,4 @@
-"""Knowledge-graph data contracts — links, scope, notes, run-logs, and the index.
-
-The gather side of the shared model: a `LinkRecord` edge, the `Scope` that decides what
-to follow, a distilled `Note`, the `RunLog` for one crawl, and the `Graph` index that
-stitches notes (and refine insights) into nodes + edges.
-"""
+"""Knowledge-graph data contracts — links, scope, notes, run-logs, and the index."""
 
 from __future__ import annotations
 
@@ -15,7 +10,6 @@ from common.models.refine import INSIGHT
 if TYPE_CHECKING:
     from common.models.refine import Insight
 
-# Link types.
 JIRA_ISSUE = "jira-issue"
 CONFLUENCE_PAGE = "confluence-page"
 BITBUCKET = "bitbucket"
@@ -23,7 +17,7 @@ FIGMA = "figma"
 GOOGLE_DOC = "google-doc"
 ATTACHMENT = "attachment"
 EXTERNAL_WEB = "external-web"
-CODEGRAPH = "codegraph"  # a whole Bitbucket repo, distilled by graphify into a code graph
+CODEGRAPH = "codegraph"
 
 
 @dataclass
@@ -33,7 +27,7 @@ class LinkRecord:
     source_id: str
     url: str
     type: str
-    origin: str  # description | comment | remotelink | issuelink | body-storage | child | attachment | regex
+    origin: str
     anchor_text: str = ""
     canonical_url: str = ""
     in_scope: bool = False
@@ -47,15 +41,11 @@ class Scope:
     """What counts as *follow* (pushed to the frontier) vs *record-only*."""
 
     follow_types: tuple[str, ...] = (JIRA_ISSUE, CONFLUENCE_PAGE)
-    follow_web: bool = False  # G3: promote already-linked external-web URLs from recorded → fetchable
-    max_web: int = 8  # G3 sub-budget: cap external-web GETs one link-heavy ticket can spawn
+    follow_web: bool = False
+    max_web: int = 8
 
     def follows(self, typ: str) -> bool:
-        """True if a link of ``typ`` should be pushed to the frontier (vs recorded-only).
-
-        external-web is followable ONLY when web-following is explicitly enabled — default OFF
-        keeps external-web recorded-not-fetched, byte-for-byte as before.
-        """
+        """True if a link of ``typ`` should be pushed to the frontier (vs recorded-only)."""
         return typ in self.follow_types or (typ == EXTERNAL_WEB and self.follow_web)
 
 
@@ -63,7 +53,7 @@ class Scope:
 class Note:
     """A distilled memory note for one node (persisted as md + json sidecar)."""
 
-    id: str  # canonical id, e.g. "jira:LUZ-158390"
+    id: str
     type: str
     source_url: str = ""
     title: str = ""
@@ -96,8 +86,8 @@ class RunLog:
 class Graph:
     """The knowledge index — nodes + edges, keyed for cheap merge."""
 
-    nodes: dict[str, dict] = field(default_factory=dict)  # id -> {id, type, title}
-    edges: dict[str, dict] = field(default_factory=dict)  # "src->target" -> edge
+    nodes: dict[str, dict] = field(default_factory=dict)
+    edges: dict[str, dict] = field(default_factory=dict)
 
     def add_note(self, note: Note) -> None:
         self.nodes[note.id] = {"id": note.id, "type": note.type, "title": note.title}

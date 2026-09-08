@@ -11,8 +11,8 @@ class _Store:
     """Records upserts + embed calls; embedding_fresh mirrors the real meta->>'emb_hash' check."""
 
     def __init__(self):
-        self.rows: dict = {}         # id -> {"vec", "emb_hash"}
-        self.embeds: list = []       # (id, emb_hash) per set_embedding
+        self.rows: dict = {}
+        self.embeds: list = []
 
     async def upsert_node(self, row):
         self.rows.setdefault(row["id"], {})
@@ -29,7 +29,7 @@ class _Store:
         self.embeds.append((node_id, emb_hash))
 
 
-async def _stub_embed(texts):  # batch embedder: list[str] -> list[list[float]]
+async def _stub_embed(texts):
     return [[0.1, 0.2, 0.3] for _ in texts]
 
 
@@ -49,7 +49,6 @@ async def test_drain_embeds_then_skips_unchanged(fake_bucket, monkeypatch):
     await project.drain_index(bank, store, embedder=_stub_embed)
     assert store.rows["jira:LUZ-1"]["vec"] == [0.1, 0.2, 0.3]
     assert len(store.embeds) == 1
-    # re-project the SAME unchanged node → content-hash fresh → no second embed call
     project.enqueue_index(bank, "jira:LUZ-1", "jira-issue")
     await project.drain_index(bank, store, embedder=_stub_embed)
     assert len(store.embeds) == 1
@@ -61,9 +60,9 @@ async def test_drain_reembeds_on_changed_text(fake_bucket, monkeypatch):
     store = _Store()
     bank.upsert_note(_note("login flow"))
     await project.drain_index(bank, store, embedder=_stub_embed)
-    bank.upsert_note(_note("login flow — reworded"))   # merge_notes keeps the newer synopsis
+    bank.upsert_note(_note("login flow — reworded"))
     await project.drain_index(bank, store, embedder=_stub_embed)
-    assert len(store.embeds) == 2                       # text changed → re-embedded
+    assert len(store.embeds) == 2
 
 
 async def test_no_embedder_projects_metadata_only(fake_bucket, monkeypatch):
@@ -71,7 +70,7 @@ async def test_no_embedder_projects_metadata_only(fake_bucket, monkeypatch):
     bank = _bank(fake_bucket)
     store = _Store()
     bank.upsert_note(_note())
-    await project.drain_index(bank, store, embedder=None)   # M2 behaviour
+    await project.drain_index(bank, store, embedder=None)
     assert "jira:LUZ-1" in store.rows and store.embeds == []
 
 
@@ -81,7 +80,7 @@ def test_build_embedder_gated_on_vertex_env(monkeypatch):
     assert embed.build_embedder() is None
     monkeypatch.setenv("VERTEX_PROJECT", "p")
     monkeypatch.setenv("VERTEX_LOCATION", "us-central1")
-    assert callable(embed.build_embedder())     # callable, but not invoked (would need vertexai)
+    assert callable(embed.build_embedder())
 
 
 async def test_drain_batches_embed_calls(fake_bucket, monkeypatch):
@@ -97,8 +96,8 @@ async def test_drain_batches_embed_calls(fake_bucket, monkeypatch):
         return [[0.1, 0.2, 0.3] for _ in texts]
 
     await project.drain_index(bank, store, embedder=_batch)
-    assert calls == [3]                   # ONE Vertex call for all 3 nodes (not 3 calls)
-    assert len(store.embeds) == 3         # each node still embedded
+    assert calls == [3]
+    assert len(store.embeds) == 3
 
 
 async def test_drain_embed_batch_size_splits_calls(fake_bucket, monkeypatch):
@@ -114,5 +113,5 @@ async def test_drain_embed_batch_size_splits_calls(fake_bucket, monkeypatch):
         return [[0.1, 0.2, 0.3] for _ in texts]
 
     await project.drain_index(bank, store, embedder=_batch, embed_batch=2)
-    assert calls == [2, 2, 1]             # 5 nodes at batch=2 → three calls, tail flush of 1
+    assert calls == [2, 2, 1]
     assert len(store.embeds) == 5

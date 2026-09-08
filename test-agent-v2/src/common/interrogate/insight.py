@@ -1,8 +1,4 @@
-"""Distill answers (and self-answers) into provenance-carrying Insight records.
-
-A human answer → a `decision` (or `gap-seed` when it names a new source), high
-confidence. A self-answered question → an `assumption`, low confidence, vetoable.
-"""
+"""Distill answers (and self-answers) into provenance-carrying Insight records."""
 
 from __future__ import annotations
 

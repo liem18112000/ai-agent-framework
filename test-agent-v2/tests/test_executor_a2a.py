@@ -15,7 +15,6 @@ from knowledge_gathering.a2a_card import AGENT_CARD
 from knowledge_gathering.executor import KnowledgeGatheringExecutor
 
 
-# --- minimal fakes (self-contained) --- #
 class _Blob:
     def __init__(self, b, n):
         self._b, self.name = b, n

@@ -8,8 +8,6 @@ from common.models import Answer, Insight, LinkRecord, Note, Question
 
 
 def note_from_dict(d: dict) -> Note:
-    # Schema-drift tolerant (like `_from` below): drop unknown keys so a non-note sidecar
-    # (e.g. an insight, which carries `kind`) can't crash a cold pack load.
     names = {f.name for f in fields(Note)} - {"links"}
     links = [LinkRecord(**lr) for lr in d.get("links", [])]
     return Note(**{k: v for k, v in d.items() if k in names}, links=links)

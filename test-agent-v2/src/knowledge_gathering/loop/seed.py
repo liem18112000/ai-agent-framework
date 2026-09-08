@@ -14,6 +14,6 @@ def normalize_seed(seed: str) -> str:
         return f"confluence:{seed}"
     if seed.startswith("http"):
         return classify_url(seed)[1]
-    if re.fullmatch(r"[\w.-]+/[\w.-]+", seed):  # "<ws>/<repo>" → build its code graph
+    if re.fullmatch(r"[\w.-]+/[\w.-]+", seed):
         return f"codegraph:{seed}"
     return seed

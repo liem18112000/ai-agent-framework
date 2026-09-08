@@ -1,8 +1,4 @@
-"""ApproveAgent — the autonomous approve step of the Testing-Agent pipeline.
-
-Confirms the plan with no human gate (the opt-in autonomous path): marks the plan CONFIRMED and
-closes the define session. Keys on `ctx.session.id` (the shared SequentialAgent session).
-"""
+"""ApproveAgent — the autonomous approve step of the Testing-Agent pipeline."""
 
 from __future__ import annotations
 

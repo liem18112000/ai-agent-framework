@@ -1,8 +1,4 @@
-"""Tests for the test_evaluation agent surface — the engine + the A2A executor.
-
-Gathers + refines a pack offline (harness), then scores it through the runtime engine (which reads
-the pack from the bank, not the harness), and drives the executor end-to-end over the real A2A stack.
-"""
+"""Tests for the test_evaluation agent surface — the engine + the A2A executor."""
 
 from __future__ import annotations
 
@@ -36,7 +32,6 @@ def _refined(seed, fixture, ctx, *, client=None):
     return t.bank
 
 
-# --- engine --- #
 def test_evaluate_pack_scores_a_clean_pack():
     bank = _refined("LUZ-501", "eval_rich", "LUZ-501")
     case = EvalCase.from_dict({"seed": "LUZ-501",
@@ -49,17 +44,16 @@ def test_evaluate_pack_scores_a_clean_pack():
 
 
 def test_evaluate_pack_flags_a_leak():
-    data = load_atlassian_fixture("eval_bleed")          # link the hard-negative into the pack
+    data = load_atlassian_fixture("eval_bleed")
     data["issues"]["LUZ-701"]["fields"]["issuelinks"].append(
         {"type": {"name": "Relates"}, "outwardIssue": {"key": "LUZ-799"}})
     bank = _refined("LUZ-701", "eval_bleed", "LUZ-701", client=RecordedAtlassianClient(data))
     case = EvalCase.from_dict({"seed": "LUZ-701", "relevant_node_ids": ["jira:LUZ-701", "jira:LUZ-702"],
                                "must_not_retrieve_ids": ["jira:LUZ-799"]})
     r = evaluate_pack(bank, "LUZ-701", case)
-    assert r.retrieval.leaked == ["jira:LUZ-799"]        # the engine surfaces the bleed
+    assert r.retrieval.leaked == ["jira:LUZ-799"]
 
 
-# --- A2A executor --- #
 def _app(bank):
     ex = TestEvaluationExecutor(bank=bank)
     handler = DefaultRequestHandler(agent_executor=ex, task_store=InMemoryTaskStore(),

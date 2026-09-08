@@ -1,13 +1,4 @@
-"""PgMemoryStore (M0/M1 skeleton) — the pgvector recall tier behind the MemoryBank.
-
-Writes (upsert_node/upsert_edges/set_embedding) are driven by the async projector (M2); reads
-(search/grounded/recall) back the retrieval facade (`common.memory.retrieve`). GCS stays the
-source of truth — every method here is best-effort and a projection of what GCS already holds.
-
-Embeddings are bound as a text literal cast to `vector` (`CAST(:emb AS vector)`) so no asyncpg
-pgvector codec registration is needed for the first slices; M4 may switch to the registered
-codec for throughput. Schema is applied idempotently on first use (lazy, like DatabaseTaskStore).
-"""
+"""PgMemoryStore (M0/M1 skeleton) — the pgvector recall tier behind the MemoryBank."""
 
 from __future__ import annotations
 
@@ -23,9 +14,7 @@ def _vec_literal(vec: list[float]) -> str:
 
 
 def rrf_fuse(*ranked_lists: list[str], k0: int = 60, limit: int = 40) -> list[str]:
-    """Reciprocal-rank fusion of ranked id lists → ids by descending fused score (id-asc tie-break).
-    Score of an id = Σ 1/(k0 + rank) over the lists it appears in (rank 1-based). Pure — the one
-    piece of the hybrid path unit-tested offline; the SQL arms feed it two id lists."""
+    """Reciprocal-rank fusion of ranked id lists → ids by descending fused score (id-asc tie-break)."""
     scores: dict[str, float] = {}
     for ids in ranked_lists:
         for rank, node_id in enumerate(ids, start=1):
@@ -39,9 +28,7 @@ class PgMemoryStore:
         self._ready = False
 
     async def _ensure(self) -> None:
-        """Apply the schema once per process (idempotent CREATE … IF NOT EXISTS). SCHEMA_SQL is
-        split into individual statements: asyncpg's extended protocol rejects multiple commands in
-        one execute() ('cannot insert multiple commands into a prepared statement')."""
+        """Apply the schema once per process (idempotent CREATE … IF NOT EXISTS). SCHEMA_SQL is"""
         if self._ready:
             return
         from sqlalchemy import text
@@ -51,7 +38,6 @@ class PgMemoryStore:
                     await conn.execute(text(stmt))
         self._ready = True
 
-    # --- writes (projector, M2) --- #
     async def upsert_node(self, node: dict) -> None:
         """INSERT … ON CONFLICT (id) DO UPDATE — a note/insight projection (no embedding here)."""
         from sqlalchemy import text
@@ -70,7 +56,7 @@ class PgMemoryStore:
             "source_url=EXCLUDED.source_url, content_uri=EXCLUDED.content_uri, run_id=EXCLUDED.run_id, "
             "context_id=EXCLUDED.context_id, scope=EXCLUDED.scope, status=EXCLUDED.status, "
             "confidence=EXCLUDED.confidence, meta=memory_node.meta || EXCLUDED.meta"
-        )  # meta MERGED (not replaced) so set_embedding's emb_hash survives a re-project
+        )
         import json
         params["meta"] = json.dumps(params["meta"])
         async with self._engine.begin() as conn:
@@ -97,13 +83,12 @@ class PgMemoryStore:
         await self._ensure()
         sql = text("UPDATE memory_node SET embedding = CAST(:emb AS vector), "
                    "meta = coalesce(meta, '{}'::jsonb) || jsonb_build_object('emb_hash', CAST(:h AS text)) "
-                   "WHERE id = :id")  # CAST(:h AS text): asyncpg can't infer the type of a jsonb_build_object arg
+                   "WHERE id = :id")
         async with self._engine.begin() as conn:
             await conn.execute(sql, {"emb": _vec_literal(vec), "h": emb_hash, "id": node_id})
 
     async def embedding_fresh(self, node_id: str, emb_hash: str) -> bool:
-        """True if the row already has an embedding computed from this exact text (content-hash
-        skip) — lets the projector avoid a redundant Vertex call on an unchanged re-project."""
+        """True if the row already has an embedding computed from this exact text (content-hash"""
         from sqlalchemy import text
         await self._ensure()
         sql = text("SELECT (embedding IS NOT NULL AND meta->>'emb_hash' = :h) "
@@ -112,21 +97,16 @@ class PgMemoryStore:
             return bool((await conn.execute(sql, {"h": emb_hash, "id": node_id})).scalar())
 
     async def ensure_ann_index(self) -> None:
-        """Build the HNSW ANN index (idempotent). Kept out of the lazy `_ensure` DDL because its
-        build cost scales with the corpus — call it after a backfill, once embeddings are populated.
-        (At small corpus sizes the planner still seq-scans, which is correct; HNSW wins at scale.)"""
+        """Build the HNSW ANN index (idempotent). Kept out of the lazy `_ensure` DDL because its"""
         from sqlalchemy import text
         await self._ensure()
         async with self._engine.begin() as conn:
             await conn.execute(text(HNSW_INDEX_SQL))
 
-    # --- reads (retrieval facade) --- #
     async def search(self, *, q_text: str = "", q_embed: list[float] | None = None,
                      types: list[str] | None = None, scopes: list[str] | None = None,
                      k: int = 40) -> list[dict]:
-        """Hybrid recall (M4): vector-nearest `embedding <=> q` ∪ full-text `tsv @@ q`, RRF-fused,
-        filtered to active + scope (+ optional type). Empty query → most-recent active nodes. Each
-        arm is one small query; fusion is `rrf_fuse` (pure, unit-tested). Best-effort."""
+        """Hybrid recall (M4): vector-nearest `embedding <=> q` ∪ full-text `tsv @@ q`, RRF-fused,"""
         await self._ensure()
         scopes = scopes or ["context", "shared"]
         vec_ids = await self._vector_ids(q_embed, types, scopes, k) if q_embed else []
@@ -176,7 +156,7 @@ class PgMemoryStore:
         sql = text("SELECT id, type, title FROM memory_node WHERE id = ANY(:ids)")
         async with self._engine.connect() as conn:
             by_id = {r["id"]: dict(r) for r in (await conn.execute(sql, {"ids": ids})).mappings().all()}
-        return [by_id[i] for i in ids if i in by_id]  # preserve the fused order
+        return [by_id[i] for i in ids if i in by_id]
 
     async def grounded(self, candidate: str, anchors: set[str]) -> bool:
         """B5 structural gate as SQL: candidate IS an anchor or shares an edge with one."""
@@ -191,13 +171,7 @@ class PgMemoryStore:
 
     async def recall(self, *, seed_refs: set[str], q_embed: list[float] | None = None,
                      limit: int = 10) -> list[str]:
-        """Prior-lesson recall (M4b): structural ∪ semantic, deduped, structural-first.
-
-        1. STRUCTURAL — lessons whose `source_refs ∩ seed_refs` is non-empty (a `memory_edge` to a
-           seed anchor). Always safe; human-confidence first. Mirrors the GCS structural recall.
-        2. SEMANTIC — vector-nearest lessons, but ONLY `scope='shared'` (the de-bias: a `context`
-           lesson never leaks cross-run; §9). Appended after the grounded ones, up to `limit`.
-        Returns statements. Best-effort."""
+        """Prior-lesson recall (M4b): structural ∪ semantic, deduped, structural-first."""
         from sqlalchemy import text
         await self._ensure()
         out: list[str] = []

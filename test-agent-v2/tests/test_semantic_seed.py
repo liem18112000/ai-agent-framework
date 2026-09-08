@@ -1,7 +1,4 @@
-"""M4c: semantic self-seed — vector-nearest fetchable seeds, B5-grounded, opt-in + DB-gated.
-
-Fully faked (fake bank/store + stubbed embed) — the important behaviour is the grounding gate and
-the gates, not the vector SQL (that's covered by the pg integration tests)."""
+"""M4c: semantic self-seed — vector-nearest fetchable seeds, B5-grounded, opt-in + DB-gated."""
 
 from __future__ import annotations
 
@@ -51,17 +48,17 @@ def _wire(monkeypatch, store):
 
 async def test_promotes_only_grounded_candidates(monkeypatch):
     sid, anchor, c, d = normalize_seed("LUZ-1"), "jira:EPIC", "jira:LUZ-2", "jira:LUZ-3"
-    g = _graph([sid, anchor, c, d], [(sid, anchor), (c, anchor)])  # C→EPIC grounds C; D floats
+    g = _graph([sid, anchor, c, d], [(sid, anchor), (c, anchor)])
     _wire(monkeypatch, _Store([{"id": c, "type": "jira-issue", "title": "C"},
                                {"id": d, "type": "jira-issue", "title": "D"}]))
     seeds, md = await semantic_self_seed(_Bank(g), "LUZ-1", "credit card dunning")
-    assert seeds == [c]          # vector hit C is grounded → promoted; D is off-graph → dropped
+    assert seeds == [c]
     assert c in md
 
 
 async def test_cold_seed_promotes_nothing(monkeypatch):
     sid = normalize_seed("LUZ-1")
-    g = _graph([sid, "jira:LUZ-2"], [])  # seed has no edges → no anchors
+    g = _graph([sid, "jira:LUZ-2"], [])
     _wire(monkeypatch, _Store([{"id": "jira:LUZ-2", "type": "jira-issue", "title": "C"}]))
     seeds, md = await semantic_self_seed(_Bank(g), "LUZ-1", "x")
     assert seeds == [] and md == ""
@@ -73,7 +70,7 @@ async def test_excludes_self_and_already_promoted(monkeypatch):
     _wire(monkeypatch, _Store([{"id": sid, "type": "jira-issue", "title": "self"},
                                {"id": c, "type": "jira-issue", "title": "C"}]))
     seeds, _ = await semantic_self_seed(_Bank(g), "LUZ-1", "x", exclude={c})
-    assert seeds == []           # self filtered, C excluded
+    assert seeds == []
 
 
 async def test_disabled_flag_is_noop(monkeypatch):
@@ -86,7 +83,7 @@ async def test_disabled_flag_is_noop(monkeypatch):
 
 async def test_gcs_backend_is_noop(monkeypatch):
     monkeypatch.setenv("MEMORY_SEMANTIC_SEED", "1")
-    monkeypatch.delenv("MEMORY_BACKEND", raising=False)  # default gcs
+    monkeypatch.delenv("MEMORY_BACKEND", raising=False)
     monkeypatch.setattr(pg, "build_store", lambda: (_ for _ in ()).throw(AssertionError("built")))
     g = _graph([normalize_seed("LUZ-1"), "jira:EPIC"], [(normalize_seed("LUZ-1"), "jira:EPIC")])
     assert await semantic_self_seed(_Bank(g), "LUZ-1", "x") == ([], "")

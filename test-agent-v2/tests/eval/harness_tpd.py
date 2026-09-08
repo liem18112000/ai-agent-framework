@@ -1,13 +1,4 @@
-"""Offline TPD harness — drive gather -> refine -> define -> implement in-process (no net, no LLM).
-
-Builds on the KGA harness (`harness.py`): reuse its recorded-Atlassian gather + heuristic refine to
-produce a real approved pack, then run the Test-Plan agent's `define` (headless, accept_recommendation)
-and `implement_plan` over the SAME FakeBucket bank. Imports test_plan_definition, so it stays test-side
-(keeps `test_evaluation` free of cross-agent deps — like harness.py imports knowledge_gathering).
-
-A `PlanTrace` exposes the persisted suite in the dict form the metrics read (`dataclasses.asdict`),
-so the harness and the runtime engine score the SAME shapes.
-"""
+"""Offline TPD harness — drive gather -> refine -> define -> implement in-process (no net, no LLM)."""
 
 from __future__ import annotations
 
@@ -27,8 +18,8 @@ class PlanTrace:
     seed: str
     ctx: str
     bank: MemoryBank
-    plan_result: object  # test_plan_definition PlanResult
-    result: object       # test_plan_definition ImplementResult
+    plan_result: object
+    result: object
 
     @property
     def plan(self):
@@ -70,10 +61,7 @@ def run_implement_offline(bank: MemoryBank, ctx: str, *, detail: bool = False):
 
 
 def run_plan_offline(seed: str, fixture: str, *, ctx: str | None = None, depth: int = 1) -> PlanTrace:
-    """Full offline pipeline for one golden seed: gather -> refine -> define -> implement.
-
-    The crawl stamps each note with run_id == ctx (B0 run-scoping), so define/implement/the engine
-    all key off the SAME ctx."""
+    """Full offline pipeline for one golden seed: gather -> refine -> define -> implement."""
     ctx = ctx or f"eval-{seed}"
     t = run_gather_offline(seed, client=recorded_client(fixture),
                            text=f"gather {seed} depth {depth}", context_id=ctx)

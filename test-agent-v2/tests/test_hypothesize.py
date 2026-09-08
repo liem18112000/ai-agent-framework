@@ -1,10 +1,4 @@
-"""G2 hypothesize step — `hypothesize_terms` (unit) + its wiring into `run_gather`.
-
-No real Vertex: `complete` is monkeypatched in the hypothesize module to return canned JSON,
-so the whole call path (flag gate, config select, parse, coerce, join) runs offline. The
-run_gather test spies on `memory_self_seed` / `atlassian_search_seeds` to prove the enriched
-terms reach G0/G1, and that a disabled gather makes ZERO LLM calls and behaves as before.
-"""
+"""G2 hypothesize step — `hypothesize_terms` (unit) + its wiring into `run_gather`."""
 
 from __future__ import annotations
 
@@ -28,8 +22,6 @@ def vertex_on(monkeypatch):
     monkeypatch.setenv("VERTEX_MODEL", "claude-sonnet-5")
 
 
-# --- hypothesize_terms unit --- #
-
 def test_returns_union_terms_string(vertex_on, monkeypatch):
     canned = json.dumps({
         "key_phrases": ["restricted folder export"],
@@ -38,12 +30,10 @@ def test_returns_union_terms_string(vertex_on, monkeypatch):
     })
     monkeypatch.setattr(hyp, "complete", lambda *a, **k: canned)
     out = hyp.hypothesize_terms("Export fails for restricted folders", "a body", ["earchive"])
-    # order-stable union of key_phrases + entities + subsystems
     assert out == "restricted folder export Folder Document luz-docs export"
 
 
 def test_dedup_and_scalar_field_coercion(vertex_on, monkeypatch):
-    # a repeated term is dropped; a scalar-typed field (entities as a str) is coerced to a list
     canned = json.dumps({"key_phrases": ["export", "export"], "entities": "Folder",
                          "subsystems": ["export"]})
     monkeypatch.setattr(hyp, "complete", lambda *a, **k: canned)
@@ -58,7 +48,7 @@ def test_tolerates_json_code_fence(vertex_on, monkeypatch):
 @pytest.mark.parametrize("bad", ["not json at all", "{}", '{"key_phrases":[]}', '[{"a":1}]', ""])
 def test_malformed_or_empty_json_returns_empty(vertex_on, monkeypatch, bad):
     monkeypatch.setattr(hyp, "complete", lambda *a, **k: bad)
-    assert hyp.hypothesize_terms("Export fails") == ""  # → caller keeps raw terms
+    assert hyp.hypothesize_terms("Export fails") == ""
 
 
 def test_llm_raises_returns_empty_never_propagates(vertex_on, monkeypatch):
@@ -81,7 +71,7 @@ def test_flag_off_returns_empty_without_calling_llm(monkeypatch):
 
     monkeypatch.setattr(hyp, "complete", spy)
     assert hyp.hypothesize_terms("Export fails") == ""
-    assert calls["n"] == 0  # flag off → ZERO LLM calls
+    assert calls["n"] == 0
 
 
 def test_empty_title_returns_empty_without_calling_llm(vertex_on, monkeypatch):
@@ -107,11 +97,9 @@ def test_vertex_unconfigured_returns_empty_without_calling_llm(monkeypatch):
         return "{}"
 
     monkeypatch.setattr(hyp, "complete", spy)
-    assert hyp.hypothesize_terms("Export fails") == ""  # flag on but no Vertex → no call
+    assert hyp.hypothesize_terms("Export fails") == ""
     assert calls["n"] == 0
 
-
-# --- run_gather wiring --- #
 
 class _Ctx:
     context_id = "run-x"
@@ -170,8 +158,7 @@ async def _run_gather(monkeypatch, *, flag_on, hyp_return="enriched export terms
 
 async def test_flag_off_no_llm_call_and_raw_terms_flow(monkeypatch):
     seen = await _run_gather(monkeypatch, flag_on=False)
-    assert seen["hyp_calls"] == 0  # disabled → not even the thread offload
-    # G0 + G1 (thin) both receive the RAW probe terms, exactly as before G2 existed
+    assert seen["hyp_calls"] == 0
     assert "Export fails" in seen["self_seed_terms"] and "earchive" in seen["self_seed_terms"]
     assert seen["search_terms"] == seen["self_seed_terms"]
     assert "enriched" not in (seen["self_seed_terms"] or "")
@@ -180,16 +167,14 @@ async def test_flag_off_no_llm_call_and_raw_terms_flow(monkeypatch):
 
 async def test_flag_on_enriched_terms_reach_g0_and_g1(monkeypatch):
     seen = await _run_gather(monkeypatch, flag_on=True)
-    assert seen["hyp_calls"] == 1  # exactly one hypothesize (one LLM call) per gather
-    # the enriched terms REPLACE the raw ones into both G0 self-seed and G1 search
+    assert seen["hyp_calls"] == 1
     assert seen["self_seed_terms"] == "enriched export terms"
     assert seen["search_terms"] == "enriched export terms"
     assert "Hypothesized focus: enriched export terms" in seen["reply"]
 
 
 async def test_flag_on_but_empty_hyp_keeps_raw_terms(monkeypatch):
-    # LLM returned junk → hypothesize_terms yields "" → caller falls back to raw probe terms
     seen = await _run_gather(monkeypatch, flag_on=True, hyp_return="")
     assert seen["hyp_calls"] == 1
-    assert "Export fails" in seen["self_seed_terms"]  # raw terms, not the enriched string
+    assert "Export fails" in seen["self_seed_terms"]
     assert "Hypothesized focus" not in seen["reply"]

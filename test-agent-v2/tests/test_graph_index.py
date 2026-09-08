@@ -17,7 +17,6 @@ def _g(nodes, edges=()):
 
 
 def test_shim_reexports_the_same_objects():
-    # existing imports + test monkeypatches keep working precisely because these are the same objects
     assert shim.match_index_nodes is graph_index.match_index_nodes
     assert shim.rank_promotions is graph_index.rank_promotions
     assert shim.graph_grounded is graph_index.graph_grounded
@@ -36,7 +35,7 @@ def test_graph_grounded_structural_gate():
         [{"id": "jira:LUZ-1", "type": "jira-issue", "title": ""}],
         edges=[{"source_id": "jira:LUZ-1", "target": "jira:EPIC-1"}],
     )
-    assert graph_index.graph_grounded(g, "jira:EPIC-1", {"jira:EPIC-1"}) is True   # is an anchor
-    assert graph_index.graph_grounded(g, "jira:LUZ-1", {"jira:EPIC-1"}) is True    # shares an edge
-    assert graph_index.graph_grounded(g, "jira:FLOAT", {"jira:EPIC-1"}) is False   # disconnected
-    assert graph_index.graph_grounded(g, "jira:FLOAT", set()) is True              # nothing to gate
+    assert graph_index.graph_grounded(g, "jira:EPIC-1", {"jira:EPIC-1"}) is True
+    assert graph_index.graph_grounded(g, "jira:LUZ-1", {"jira:EPIC-1"}) is True
+    assert graph_index.graph_grounded(g, "jira:FLOAT", {"jira:EPIC-1"}) is False
+    assert graph_index.graph_grounded(g, "jira:FLOAT", set()) is True

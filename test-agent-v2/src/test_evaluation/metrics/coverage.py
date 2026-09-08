@@ -1,10 +1,4 @@
-"""Coverage adequacy — did the suite cover the behaviours and their partitions? (deterministic)
-
-Over the scenarios (dicts with `kind` + `source_refs`) vs the golden `behaviours`
-({id, expected_partitions}): AC-Coverage Recall (behaviours with >=1 tracing scenario — catches the
-silent-fallback drop), Coverage-Matrix Completeness (required partitions actually present, not the
-metric string), and Traceability (every source_ref resolves to a real pack node — IEEE 29119).
-"""
+"""Coverage adequacy — did the suite cover the behaviours and their partitions? (deterministic)"""
 
 from __future__ import annotations
 

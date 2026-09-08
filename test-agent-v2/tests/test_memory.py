@@ -13,7 +13,6 @@ from common.memory.serialize import note_from_dict
 from common.models import INSIGHT, LinkRecord, Note, RunLog
 
 
-# --- tiny in-memory fake of a GCS bucket (emulates generation + if_generation_match) --- #
 class FakeBlob:
     def __init__(self, bucket, name):
         self._bucket, self.name = bucket, name
@@ -79,7 +78,7 @@ def test_note_upsert_merges_links():
     bank.upsert_note(_note(links=[extra]))
     got = bank.read_note("jira:LUZ-158390", "jira-issue")
     canons = {lr.canonical_url for lr in got.links}
-    assert canons == {"confluence:49662787598", "https://bitbucket.org/x"}  # merged, not clobbered
+    assert canons == {"confluence:49662787598", "https://bitbucket.org/x"}
 
 
 def test_index_cas_roundtrip():
@@ -87,7 +86,7 @@ def test_index_cas_roundtrip():
     bank.update_index(lambda g: g.add_note(_note()))
     graph, gen = bank.load_index()
     assert "jira:LUZ-158390" in graph.nodes
-    assert gen == 1  # one write
+    assert gen == 1
     data = json.loads(bank._bucket.store[INDEX_JSON])
     assert data["edges"][0]["target"] == "confluence:49662787598"
 
@@ -95,19 +94,18 @@ def test_index_cas_roundtrip():
 def test_index_cas_retries_on_concurrent_write():
     bucket = FakeBucket()
     bank = MemoryBank(bucket)
-    bank.update_index(lambda g: g.add_note(_note("jira:A")))  # gen -> 1
+    bank.update_index(lambda g: g.add_note(_note("jira:A")))
 
     calls = {"n": 0}
 
     def mutate(g):
-        # On the first attempt, sneak in a concurrent write so if_generation_match fails once.
         if calls["n"] == 0:
-            bucket.gens[INDEX_JSON] += 1  # simulate another run bumping the generation
+            bucket.gens[INDEX_JSON] += 1
         calls["n"] += 1
         g.add_note(_note("jira:B"))
 
     bank.update_index(mutate)
-    assert calls["n"] == 2  # first attempt hit PreconditionFailed, retried once
+    assert calls["n"] == 2
     graph, _ = bank.load_index()
     assert "jira:B" in graph.nodes
 
@@ -119,7 +117,7 @@ def test_run_log_and_redactor():
     path = bank.append_run_log(run)
     assert path == "memory/runs/2026-08-27T09-40-00Z_run-6f2a.md"
     body = bank._bucket.store[path]
-    assert "SECRET" not in body and "<redacted>" in body  # redactor applied
+    assert "SECRET" not in body and "<redacted>" in body
 
 
 def test_read_missing_note_returns_none():
@@ -127,12 +125,10 @@ def test_read_missing_note_returns_none():
 
 
 def test_load_pack_skips_insight_nodes():
-    """A cold load_pack over the shared index must skip INSIGHT nodes: their JSON sidecar
-    deserializes to an Insight (fields like `kind`), not a Note — reading it as a Note crashed
-    define_plan on run-990d0017."""
+    """A cold load_pack over the shared index must skip INSIGHT nodes: their JSON sidecar"""
     bank = MemoryBank(FakeBucket())
-    bank.upsert_note(_note(run_id="run-990d"))            # crawl note sidecar (this context's run)
-    bank.update_index(lambda g: g.add_note(_note()))      # register it in the index
+    bank.upsert_note(_note(run_id="run-990d"))
+    bank.update_index(lambda g: g.add_note(_note()))
 
     insight_id = "insight:run-990d:Q-bus-001"
     insight_json = {
@@ -146,26 +142,23 @@ def test_load_pack_skips_insight_nodes():
         lambda g: g.nodes.__setitem__(insight_id, {"id": insight_id, "type": INSIGHT, "title": "Q"})
     )
 
-    pack = load_pack(bank, "run-990d")                    # must not raise
+    pack = load_pack(bank, "run-990d")
     ids = {n.id for n in pack.notes}
-    assert "jira:LUZ-158390" in ids                       # crawl note kept
-    assert insight_id not in ids                          # insight skipped, not read as a Note
+    assert "jira:LUZ-158390" in ids
+    assert insight_id not in ids
 
 
 def test_load_pack_scopes_to_own_context_run():
-    """B0 de-bias: the shared index merges every run's nodes, but load_pack must return ONLY the
-    queried context's own run — else a saturated unrelated domain bleeds into refine/define and
-    they interrogate the wrong ticket. See RESEARCH §7.3 B0."""
+    """B0 de-bias: the shared index merges every run's nodes, but load_pack must return ONLY the"""
     bank = MemoryBank(FakeBucket())
-    mine = _note("jira:LUZ-159312", run_id="run-mine")            # this context's node
-    other = _note("jira:LUZ-158390", run_id="run-other")          # a different (saturated) run
+    mine = _note("jira:LUZ-159312", run_id="run-mine")
+    other = _note("jira:LUZ-158390", run_id="run-other")
     for n in (mine, other):
         bank.upsert_note(n)
         bank.update_index(lambda g, n=n: g.add_note(n))
 
     ids = {n.id for n in load_pack(bank, "run-mine").notes}
-    assert ids == {"jira:LUZ-159312"}                             # only my run — no cross-run bleed
-    # a context_id matching no gathered run scopes to empty (never falls back to the global bank)
+    assert ids == {"jira:LUZ-159312"}
     assert load_pack(bank, "run-nomatch").notes == []
 
 

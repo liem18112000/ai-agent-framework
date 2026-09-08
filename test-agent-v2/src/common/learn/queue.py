@@ -1,9 +1,4 @@
-"""Durable capture queue (L1): enqueue lesson-capture jobs, drain them OFF the request path.
-
-Handler enqueues a CaptureJob (O(1) CAS append) and returns; a background drain distils later, so
-capture never gates the step. Persisted on the bank's GCS via CAS → at-least-once (a job clears
-only after its capture runs; content-keyed ids make retries idempotent).
-"""
+"""Durable capture queue (L1): enqueue lesson-capture jobs, drain them OFF the request path."""
 
 from __future__ import annotations
 
@@ -26,7 +21,7 @@ class CaptureJob:
     context_id: str
     run_id: str = ""
     step: str = ""
-    signals: list[dict] = field(default_factory=list)  # each = asdict(LessonSignal)
+    signals: list[dict] = field(default_factory=list)
     created_at: str = ""
 
 
@@ -36,8 +31,7 @@ def enqueue(bank, job: CaptureJob) -> None:
 
 
 def drain(bank, *, distiller: Distiller | None = None, now: str = "", max_jobs: int = 50) -> int:
-    """Run pending capture jobs off the request path; return how many processed. At-least-once: a
-    job clears only after its capture runs; an unparseable job is left for retry, not blocking."""
+    """Run pending capture jobs off the request path; return how many processed. At-least-once: a"""
     pending = bank.get_json(QUEUE_PATH, []) or []
     done: list[str] = []
     for raw in pending[:max_jobs]:

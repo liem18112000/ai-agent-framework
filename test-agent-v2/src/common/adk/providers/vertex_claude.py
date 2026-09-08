@@ -1,11 +1,4 @@
-"""`VertexClaudeProvider` — Claude Sonnet 5 on Vertex, the sole concrete `ModelProvider` (C1/D10).
-
-This is the ONE place that constructs an ADK model (`LiteLlm`) — invariant I8. The v1 gotchas (I5)
-live here: thinking DISABLED so the whole `max_tokens` budget is output (tight JSON contracts truncate
-otherwise), and `max_tokens` set per call. `common/llm/vertex.py` is this provider's *transport* — the
-engine still calls it directly (Option A); `complete`/`agenerate` here delegate to it so a future
-provider can swap the transport behind the same `is_configured()` env signal.
-"""
+"""`VertexClaudeProvider` — Claude Sonnet 5 on Vertex, the sole concrete `ModelProvider` (C1/D10)."""
 
 from __future__ import annotations
 
@@ -16,7 +9,7 @@ from common.llm.vertex import vertex_config
 
 
 class VertexClaudeProvider:
-    name = "claude"  # Claude-on-Vertex
+    name = "claude"
 
     def is_configured(self) -> bool:
         """True when VERTEX_* is set (project/location/model resolvable)."""
@@ -35,7 +28,7 @@ class VertexClaudeProvider:
             vertex_project=project,
             vertex_location=location,
             max_tokens=max_tokens or get_config().default_max_tokens,
-            thinking={"type": "disabled"},  # I5: full budget is output, no truncated JSON
+            thinking={"type": "disabled"},
         )
 
     def complete(self, prompt: str, *, max_tokens: int) -> str:

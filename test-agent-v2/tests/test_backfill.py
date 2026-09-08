@@ -29,7 +29,7 @@ class _FakeStore:
 
 def _seeded_bank(fake_bucket) -> MemoryBank:
     """A bank whose GCS holds two note sidecars + one insight, all present in the index."""
-    bank = MemoryBank(fake_bucket)                       # gcs → no auto-enqueue on write
+    bank = MemoryBank(fake_bucket)
     note = Note(id="jira:LUZ-1", type="jira-issue", title="Login", synopsis="login flow")
     ins = Insight(id="insight:x", kind="lesson", context_id="run-1", question_id="",
                   statement="Dunning failCount is day-of-month", source_refs=["jira:LUZ-1"])
@@ -46,14 +46,13 @@ async def test_backfill_projects_every_index_node(fake_bucket):
     assert total == 2 and projected == 2
     assert set(store.nodes) == {"jira:LUZ-1", "insight:x"}
     assert store.nodes["insight:x"]["kind"] == "lesson"
-    assert bank.get_json(INDEX_QUEUE, []) == []          # queue fully drained
-    assert store.ann_built                                # ANN index built after populate
+    assert bank.get_json(INDEX_QUEUE, []) == []
+    assert store.ann_built
 
 
 async def test_backfill_is_idempotent(fake_bucket):
     bank = _seeded_bank(fake_bucket)
     await backfill(bank, _FakeStore())
-    # a second run re-enqueues + re-projects the same nodes without error (ON CONFLICT upserts)
     store2 = _FakeStore()
     total, projected = await backfill(bank, store2)
     assert total == 2 and projected == 2

@@ -13,22 +13,21 @@ from test_evaluation.a2a_card import AGENT_CARD, PORT
 from test_evaluation.executor import TestEvaluationExecutor
 from test_evaluation.monitoring import configure, get_logger
 
-configure()  # apply the TEV_LOG env toggle at startup
+configure()
 log = get_logger("server")
 
-# The evaluator only needs the memory bank (it scores packs already in GCS).
 _REQUIRED_ENV = ("GCS_BUCKET",)
 health_routes = make_health_routes(AGENT_CARD.name, AGENT_CARD.version, _REQUIRED_ENV)
 
 _handler = DefaultRequestHandler(
     agent_executor=TestEvaluationExecutor(),
-    task_store=build_task_store(),  # Cloud SQL (durable) if configured, else in-memory
+    task_store=build_task_store(),
     agent_card=AGENT_CARD,
 )
 
 app = FastAPI(
     title=AGENT_CARD.name, version=__version__,
-    docs_url=None, redoc_url=None, openapi_url=None,  # A2A / JSON-RPC service, not REST/OpenAPI
+    docs_url=None, redoc_url=None, openapi_url=None,
 )
 app.router.routes.extend(
     health_routes

@@ -1,14 +1,4 @@
-"""Run graphify over a source tree and parse its output into a CodeGraphResult.
-
-graphify is a local, tree-sitter code-intelligence tool (PyPI ``graphifyy``, CLI ``graphify``):
-``graphify update <dir> --force`` re-extracts the code graph with NO API key (only the optional
-community-naming / doc pass would use an LLM, which we never enable). It writes
-``<dir>/graphify-out/{graph.json,GRAPH_REPORT.md}``.
-
-This module is pure + synchronous so a fetcher can offload it with ``asyncio.to_thread``. The
-report (god-nodes, hubs, surprising connections) is graphify's own human-readable distillation;
-we parse that plus a light scan of graph.json for the API surface (endpoints / enums / clients).
-"""
+"""Run graphify over a source tree and parse its output into a CodeGraphResult."""
 
 from __future__ import annotations
 
@@ -36,12 +26,12 @@ class CodeGraphResult:
     nodes: int = 0
     edges: int = 0
     communities: int = 0
-    god_nodes: list[dict] = field(default_factory=list)  # [{name, edges}]
-    endpoints: list[str] = field(default_factory=list)  # REST resource/controller files
-    rest_clients: list[str] = field(default_factory=list)  # outbound dependency clients
-    enums: dict[str, list[str]] = field(default_factory=dict)  # enum file -> member labels
+    god_nodes: list[dict] = field(default_factory=list)
+    endpoints: list[str] = field(default_factory=list)
+    rest_clients: list[str] = field(default_factory=list)
+    enums: dict[str, list[str]] = field(default_factory=dict)
     report_md: str = ""
-    graph_json: dict = field(default_factory=dict)  # the raw graphify graph (nodes+edges)
+    graph_json: dict = field(default_factory=dict)
 
     def meta(self) -> dict:
         """The compact registry/meta row (no heavy graph_json / report_md)."""
@@ -52,11 +42,7 @@ class CodeGraphResult:
 
 
 def run_graphify(source_dir: Path, *, graphify_bin: str = GRAPHIFY_BIN, timeout: float = 300.0) -> Path:
-    """Build/refresh the graph in ``source_dir`` and return the graphify-out dir.
-
-    Raises CalledProcessError / TimeoutExpired / FileNotFoundError on failure, and
-    RuntimeError if graphify finished but produced no graph.json.
-    """
+    """Build/refresh the graph in ``source_dir`` and return the graphify-out dir."""
     subprocess.run(
         [graphify_bin, "update", str(source_dir), "--force"],
         check=True, capture_output=True, text=True, timeout=timeout,
@@ -79,11 +65,7 @@ def parse_report(md: str) -> dict:
 
 
 def scan_api_surface(graph: dict) -> dict:
-    """Heuristic API surface from graph.json node source-files (Java-aware, language-agnostic).
-
-    endpoints = REST resources/controllers; rest_clients = outbound dependency clients;
-    enums = enum files -> their member symbol labels. Non-matching repos just yield empties.
-    """
+    """Heuristic API surface from graph.json node source-files (Java-aware, language-agnostic)."""
     endpoints: set[str] = set()
     rest_clients: set[str] = set()
     enums: dict[str, set[str]] = {}
@@ -122,7 +104,6 @@ def build_code_graph(
     c = parsed["counts"]
     return CodeGraphResult(
         repo=repo, commit=commit, built_at=built_at, tool=tool,
-        # graph.json is NetworkX node-link JSON: edges are under "links", not "edges".
         files=c["files"], nodes=c["nodes"] or len(graph.get("nodes", [])),
         edges=c["edges"] or len(graph.get("links", [])), communities=c["communities"],
         god_nodes=parsed["god_nodes"], endpoints=api["endpoints"],

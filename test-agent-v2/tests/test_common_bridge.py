@@ -1,9 +1,4 @@
-"""common/bridge unit tests — the A2A client + envelope parsing + inbound bearer gate.
-
-These are the framework-neutral bridge pieces the single MCP gateway is built on (the per-agent
-standalone bridges were removed in G2; their tool routing is covered by test_gateway.py). Reuses the
-real in-process agent apps from the existing A2A tests over httpx.ASGITransport (no network).
-"""
+"""common/bridge unit tests — the A2A client + envelope parsing + inbound bearer gate."""
 
 from __future__ import annotations
 
@@ -21,8 +16,6 @@ def _client_for(app: Starlette) -> A2ABridgeClient:
     """A bridge client whose transport is the given in-process ASGI app (no sockets)."""
     return A2ABridgeClient(base_url="http://agent.test/", transport=httpx.ASGITransport(app=app))
 
-
-# --- pure translation: extract_text over the two real envelope shapes --- #
 
 def test_extract_text_message_shape():
     result = {"kind": "message", "parts": [{"kind": "text", "text": "hello"}]}
@@ -43,8 +36,6 @@ def test_extract_text_dedupes_and_joins():
                         {"kind": "text", "text": "y"}]}
     assert extract_text(result) == "x\ny"
 
-
-# --- A2A client round-trips against the real agent --- #
 
 async def test_client_gather_returns_message():
     async with _client_for(gather_app()) as c:
@@ -68,8 +59,6 @@ async def test_client_fetch_card():
         assert any(s["id"] == "gather-knowledge" for s in card["skills"])
 
 
-# --- inbound bearer gate on the HTTP transport (used by the gateway's http_app) --- #
-
 async def _ok_app(scope, receive, send):
     await send({"type": "http.response.start", "status": 200, "headers": []})
     await send({"type": "http.response.body", "body": b"ok"})
@@ -79,5 +68,5 @@ async def test_bearer_middleware_allows_correct_token_rejects_others():
     gated = _BearerASGIMiddleware(_ok_app, "sekret")
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=gated), base_url="http://t/") as c:
         assert (await c.get("/x", headers={"Authorization": "Bearer sekret"})).status_code == 200
-        assert (await c.get("/x")).status_code == 401                                  # missing
-        assert (await c.get("/x", headers={"Authorization": "Bearer nope"})).status_code == 401  # wrong
+        assert (await c.get("/x")).status_code == 401
+        assert (await c.get("/x", headers={"Authorization": "Bearer nope"})).status_code == 401

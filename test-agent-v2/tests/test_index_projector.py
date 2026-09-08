@@ -36,17 +36,17 @@ def _bank(fake_bucket) -> MemoryBank:
 
 
 def test_on_write_noop_under_gcs(fake_bucket, monkeypatch):
-    monkeypatch.delenv("MEMORY_BACKEND", raising=False)  # default gcs
+    monkeypatch.delenv("MEMORY_BACKEND", raising=False)
     bank = _bank(fake_bucket)
     bank.upsert_note(_note())
-    assert bank.get_json(INDEX_QUEUE, []) == []          # nothing enqueued
+    assert bank.get_json(INDEX_QUEUE, []) == []
 
 
 def test_on_write_enqueues_and_dedups(fake_bucket, monkeypatch):
     monkeypatch.setenv("MEMORY_BACKEND", "hybrid")
     bank = _bank(fake_bucket)
     bank.upsert_note(_note())
-    bank.upsert_note(_note())                            # same id again → still one job
+    bank.upsert_note(_note())
     q = bank.get_json(INDEX_QUEUE, [])
     assert len(q) == 1 and q[0]["node_id"] == "jira:LUZ-1"
 
@@ -60,8 +60,8 @@ async def test_drain_projects_note_and_edges(fake_bucket, monkeypatch):
     assert store.nodes["jira:LUZ-1"]["title"] == "Login"
     assert store.nodes["jira:LUZ-1"]["synopsis"] == "login flow"
     assert {e["target"] for e in store.edges} == {"https://c/9"}
-    assert bank.get_json(INDEX_QUEUE, []) == []          # cleared after projection
-    assert await drain_index(bank, store) == 0           # idempotent — nothing pending
+    assert bank.get_json(INDEX_QUEUE, []) == []
+    assert await drain_index(bank, store) == 0
 
 
 async def test_drain_projects_insight(fake_bucket, monkeypatch):
@@ -84,10 +84,9 @@ async def test_drain_survives_a_missing_node(fake_bucket, monkeypatch):
     monkeypatch.setenv("MEMORY_BACKEND", "hybrid")
     bank = _bank(fake_bucket)
     bank.upsert_note(_note())
-    # wipe the GCS sidecar so the queued node can't be read back — the job should drop, not hang
     fake_bucket.store.pop("memory/notes/jira-issue/jira_LUZ-1.json", None)
     store = _FakeStore()
-    assert await drain_index(bank, store) == 1           # job consumed (node gone → dropped)
+    assert await drain_index(bank, store) == 1
     assert store.nodes == {}
     assert bank.get_json(INDEX_QUEUE, []) == []
 
@@ -98,9 +97,9 @@ async def test_drain_time_budget_stops_early(fake_bucket, monkeypatch):
     for i in (1, 2, 3):
         bank.upsert_note(Note(id=f"jira:LUZ-{i}", type="jira-issue", title=f"n{i}", synopsis="x"))
     store = _FakeStore()
-    n = await drain_index(bank, store, budget_s=0)        # 0s budget → one job, then stop
+    n = await drain_index(bank, store, budget_s=0)
     assert n == 1
-    assert len(bank.get_json(INDEX_QUEUE, [])) == 2        # the rest stay queued for the next drain
+    assert len(bank.get_json(INDEX_QUEUE, [])) == 2
 
 
 async def test_drain_projects_test_scenario_from_index(fake_bucket, monkeypatch):
@@ -108,17 +107,17 @@ async def test_drain_projects_test_scenario_from_index(fake_bucket, monkeypatch)
     bank = _bank(fake_bucket)
     sid = "scenario:run-x:jira_LUZ-1:happy"
 
-    def _add(g):  # test-scenario nodes live only in the index (no Note sidecar)
+    def _add(g):
         g.nodes[sid] = {"id": sid, "type": "test-scenario", "title": "Import a ZIP — happy path"}
         g.edges[f"{sid}->jira:LUZ-1"] = {"source_id": sid, "target": "jira:LUZ-1",
                                          "type": "test-scenario", "origin": "happy", "in_scope": True}
 
-    bank.update_index(_add)                                # update_index does NOT fire on_write
+    bank.update_index(_add)
     enqueue_index(bank, sid, "test-scenario")
     store = _FakeStore()
     assert await drain_index(bank, store) == 1
     row = store.nodes[sid]
     assert row["type"] == "test-scenario"
-    assert row["kind"] == "happy"                          # parsed from the id's last segment
-    assert row["synopsis"] == "Import a ZIP — happy path"  # index title is the embeddable text
-    assert {e["target"] for e in store.edges} == {"jira:LUZ-1"}   # scenario → source edge projected
+    assert row["kind"] == "happy"
+    assert row["synopsis"] == "Import a ZIP — happy path"
+    assert {e["target"] for e in store.edges} == {"jira:LUZ-1"}

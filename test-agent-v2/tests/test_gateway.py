@@ -1,9 +1,4 @@
-"""Single MCP gateway (G1) tests — one MCP server fronting the three A2A agents.
-
-Verifies the gateway composes the union of domain tools (no collision), routes each tool to the
-right agent's session (injected in-process A2A app), unifies the collision-prone tools, and gates
-its HTTP transport. Reuses the real in-process agent apps from the existing A2A tests (no network).
-"""
+"""Single MCP gateway (G1) tests — one MCP server fronting the three A2A agents."""
 
 from __future__ import annotations
 
@@ -40,7 +35,6 @@ async def test_gateway_exposes_union_of_domain_tools_without_collisions():
         "agent_cards", "send_raw_kga", "send_raw_tpd", "send_raw_tev",
     }
     assert expected <= names
-    # the per-agent collision-prone names must NOT leak through bare
     assert not ({"send_raw", "agent_card", "plan_card"} & names)
 
 

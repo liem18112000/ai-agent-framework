@@ -12,8 +12,7 @@ log = get_logger("loop.fetch.jira")
 
 
 async def _dev_status(client, issue: dict) -> list[dict]:
-    """Best-effort dev-panel detail (PRs + commits + repos), or [] when there's no dev-status
-    endpoint (a repo-less issue is normal, not a gap). Keyed on the numeric issue['id'], not the key."""
+    """Best-effort dev-panel detail (PRs + commits + repos), or [] when there's no dev-status"""
     fetch = getattr(client, "get_issue_dev_status", None)
     issue_id = issue.get("id")
     if not fetch or not issue_id:
@@ -41,8 +40,6 @@ class JiraFetcher(NodeFetcher):
         links = extract_issue_links(issue, remote, dev, base_url=client.base_url, scope=scope)
         f = issue.get("fields", {})
         body = adf_text(f.get("description"))
-        # Pre-fill the synopsis with the real AC body (capped) so the interrogation sees actual
-        # acceptance criteria, not the one-line distill. crawl.py honors a pre-set synopsis.
         note = Note(
             id=nid, type=JIRA_ISSUE, title=f.get("summary", ""),
             source_url=f"{client.base_url}/browse/{ident}", links=links, synopsis=body[:1500],

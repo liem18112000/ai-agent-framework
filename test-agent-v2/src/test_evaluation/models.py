@@ -1,16 +1,10 @@
-"""Data model for the evaluation agent — the golden EvalCase, the scored EvalReport, and every
-metric result as a typed dataclass (no bare dicts crossing module boundaries).
-
-Only genuinely dynamic, variable-key mappings stay dicts: the WEIGHTS / SEMANTIC_RUBRICS config
-tables, and HistoryRecord.per_seed (a seed-id → scores map).
-"""
+"""Data model for the evaluation agent — the golden EvalCase, the scored EvalReport, and every"""
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, fields
 
 
-# --- golden spec + top-level report --- #
 @dataclass
 class EvalCase:
     """One golden seed — the human-curated ground truth a pack is scored against."""
@@ -35,7 +29,6 @@ class EvalCase:
         return cls(**{k: v for k, v in d.items() if k in known})
 
 
-# --- metric results --- #
 @dataclass
 class RetrievalScore:
     """RAGAS Context Precision/Recall/F1 by node-id set overlap + the hard-negative leak gate."""
@@ -148,18 +141,9 @@ class EvalReport:
     tiers: list[str] = field(default_factory=list)
 
 
-# ============================================================================
-# TPD (test-plan) evaluation — the downstream twin: score the Test-Plan agent's
-# plan + suite into a Test-Plan Score (TPS). Design: docs/RESEARCH-tpd-evaluation-adk-testsuite.md.
-# ============================================================================
-
-
 @dataclass
 class PlanEvalCase:
-    """One golden pack — the human-curated ground truth a plan+suite is scored against.
-
-    `behaviours` stays a list of dicts (variable per-behaviour shape:
-    {id, expected_partitions:[...], fault_classes:[...]})."""
+    """One golden pack — the human-curated ground truth a plan+suite is scored against."""
 
     seed: str
     fixture: str = ""
@@ -184,15 +168,9 @@ class PlanEvalCase:
         return [b["id"] for b in self.behaviours if "id" in b]
 
 
-# Plan-scope Precision/Recall/F1 + the must_not_scope leak gate is field-identical to retrieval
-# scoring, so scope reuses `RetrievalScore` (precision/recall/f1/leaked/missing) rather than a
-# parallel dataclass — `leaked` is the define-brief-scoping bug guard.
-
-
 @dataclass
 class CoverageScore:
-    """Coverage adequacy: AC-coverage recall + coverage-matrix completeness + traceability.
-    `per_behaviour` stays a dict (behaviour-id -> fraction of required partitions present)."""
+    """Coverage adequacy: AC-coverage recall + coverage-matrix completeness + traceability."""
 
     ac_recall: float
     matrix_completeness: float
@@ -204,8 +182,7 @@ class CoverageScore:
 
 @dataclass
 class OracleScore:
-    """Oracle-strength distribution over the steps' `expected` (deterministic proxy for mutation).
-    score = weighted mean (strong=1.0, medium=0.5, weak=0.0). `distribution` stays a small dict."""
+    """Oracle-strength distribution over the steps' `expected` (deterministic proxy for mutation)."""
 
     score: float
     distribution: dict = field(default_factory=dict)
@@ -214,12 +191,11 @@ class OracleScore:
 
 @dataclass
 class PlaceholderReport:
-    """Placeholder-leak + which-path provenance. A `detail` run that leaked a token or shipped a
-    heuristic `_KIND_SUFFIX` title has silently fallen back to the heuristic."""
+    """Placeholder-leak + which-path provenance. A `detail` run that leaked a token or shipped a"""
 
     passed: bool
     leaked_tokens: list[str] = field(default_factory=list)
-    provenance: str = "unknown"  # llm | heuristic | mixed | unknown
+    provenance: str = "unknown"
 
 
 @dataclass
@@ -234,8 +210,7 @@ class GherkinReport:
 
 @dataclass
 class FaultClassScore:
-    """Fault-class-coverage proxy for mutation (gated on the execution stage). Of the golden
-    behaviours' known fault classes, how many have a scenario aimed at them."""
+    """Fault-class-coverage proxy for mutation (gated on the execution stage). Of the golden"""
 
     coverage: float
     covered: list[str] = field(default_factory=list)
@@ -272,7 +247,7 @@ class PlanReport:
     seed: str = ""
     tps: float = 0.0
     components: TPSComponents = field(default_factory=TPSComponents)
-    scope: RetrievalScore | None = None  # scope reuses the retrieval score shape (see note above)
+    scope: RetrievalScore | None = None
     coverage: CoverageScore | None = None
     oracle: OracleScore | None = None
     placeholders: PlaceholderReport | None = None

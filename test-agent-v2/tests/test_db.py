@@ -52,16 +52,16 @@ def test_tcp_config(monkeypatch):
 
 
 def test_missing_creds_is_no_db(monkeypatch):
-    monkeypatch.setenv("DB_INSTANCE_CONNECTION_NAME", "proj:reg:inst")  # no user/pw/name
+    monkeypatch.setenv("DB_INSTANCE_CONNECTION_NAME", "proj:reg:inst")
     assert db._db_config() is None
     assert db.get_engine() is None
 
 
 def test_engine_cached_and_reset(monkeypatch):
-    assert db.get_engine() is None                       # no DB → None, cached
+    assert db.get_engine() is None
     monkeypatch.setenv("TASK_DB_URL", "postgresql+asyncpg://u:p@localhost/db")
-    assert db.get_engine() is None                       # still cached-None until reset
+    assert db.get_engine() is None
     db.reset_engine_cache()
     eng = db.get_engine()
-    assert eng is not None                                # engine built (no connection opened)
-    assert db.get_engine() is eng                         # same cached instance
+    assert eng is not None
+    assert db.get_engine() is eng

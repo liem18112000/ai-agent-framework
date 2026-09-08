@@ -1,9 +1,4 @@
-"""Tests for the TPD evaluation surface — the plan_engine + the A2A executor's evaluate_plan.
-
-Drives gather -> refine -> define -> implement offline (harness), then scores the persisted plan+suite
-through the runtime engine (which reads the artifacts from the bank as dicts, NOT from the harness),
-and drives the executor end-to-end over the real A2A stack.
-"""
+"""Tests for the TPD evaluation surface — the plan_engine + the A2A executor's evaluate_plan."""
 
 from __future__ import annotations
 
@@ -23,7 +18,6 @@ from test_evaluation.plan_engine import evaluate_plan
 from tests.eval.harness_tpd import run_plan_offline
 
 
-# --- engine (reads the persisted plan+suite from the bank, independent of the harness) --- #
 def test_evaluate_plan_scores_a_clean_suite():
     t = run_plan_offline("LUZ-501", "eval_rich")
     case = PlanEvalCase.from_dict({
@@ -34,24 +28,22 @@ def test_evaluate_plan_scores_a_clean_suite():
                        {"id": "jira:LUZ-503", "expected_partitions": ["happy"]}],
     })
     r = evaluate_plan(t.bank, t.ctx, case)
-    assert r.scope.leaked == [] and r.scope.precision == 1.0     # scoped node is in the golden set
-    assert r.coverage.ac_recall == 1.0                            # every behaviour has scenarios
-    assert r.rubrics.cites_only_real_ids.passed                   # brief cites only in-pack ids
-    assert 0.0 <= r.tps <= 1.0 and r.components.trajectory == 1.0  # neutral trajectory at runtime
+    assert r.scope.leaked == [] and r.scope.precision == 1.0
+    assert r.coverage.ac_recall == 1.0
+    assert r.rubrics.cites_only_real_ids.passed
+    assert 0.0 <= r.tps <= 1.0 and r.components.trajectory == 1.0
 
 
 def test_evaluate_plan_flags_a_scope_leak():
     """A must_not_scope id that the plan scoped is a hard fail — the define-brief-scoping guard."""
     t = run_plan_offline("LUZ-701", "eval_bleed")
-    # force the failure mode: mark the node the plan DID scope as must-not-scope.
     scoped = t.plan.scope[0]
     case = PlanEvalCase.from_dict({"seed": "LUZ-701", "in_scope_ids": ["jira:LUZ-702"],
                                    "must_not_scope_ids": [scoped]})
     r = evaluate_plan(t.bank, t.ctx, case)
-    assert r.scope.leaked == [scoped]                             # the engine surfaces the bleed
+    assert r.scope.leaked == [scoped]
 
 
-# --- A2A executor --- #
 def _app(bank):
     ex = TestEvaluationExecutor(bank=bank)
     handler = DefaultRequestHandler(agent_executor=ex, task_store=InMemoryTaskStore(),

@@ -1,10 +1,4 @@
-"""Ingest human answers to a question set.
-
-Accepts JSON (a list of answer dicts, `{question_id: value}`, or `{"answers": [...]}`)
-or plain `Q-id: value` lines. Matches each to a question, records the choice, and
-tracks what was answered / carried (still open) / deferred — nothing is dropped.
-A `[seed:<node>]` marker in an answer re-seeds gathering.
-"""
+"""Ingest human answers to a question set."""
 
 from __future__ import annotations
 
@@ -64,7 +58,7 @@ def ingest(questions: list[Question], raw, *, now: str = "", answered_by: str = 
     for qid, value in values.items():
         q = by_id.get(qid)
         if q is None:
-            continue  # answer to an unknown question id — ignore
+            continue
         chosen, text, seed = _coerce(value)
         if text.lower() in _DEFER and not seed:
             q.status = "deferred"

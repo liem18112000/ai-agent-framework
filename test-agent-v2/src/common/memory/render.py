@@ -1,9 +1,4 @@
-"""Human Markdown rendering for notes, the index, run-logs, and refinement insights.
-
-The document shapes live in template.py; each renderer computes the dynamic parts
-(table rows, optional sections) and fills the matching template. The rendered Markdown is
-write-only/presentational — read-back goes through serialize.py (JSON), never this output.
-"""
+"""Human Markdown rendering for notes, the index, run-logs, and refinement insights."""
 
 from __future__ import annotations
 

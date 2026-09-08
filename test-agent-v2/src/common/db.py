@@ -1,18 +1,4 @@
-"""Shared async SQLAlchemy engine for Cloud SQL — ONE pool for the A2A task store AND the
-pgvector memory store (M0 of the two-tier-memory proposal).
-
-Extracted from `common.taskstore` so both dial the same instance the same way (Cloud SQL
-Python Connector, IAM + TLS — NOT the /cloudsql socket, which never reaches a Cloud Run
-sidecar; see the task-store notes). The engine is cached module-level and created eagerly
-(cheap, synchronous — no connection is opened until first use, inside the running loop).
-
-Config (env, set by terraform on Cloud Run; see deployments/cloudsql.tf):
-  * TASK_DB_URL                  — full SQLAlchemy async URL; wins over everything else.
-  * DB_INSTANCE_CONNECTION_NAME  — Cloud SQL "PROJECT:REGION:INSTANCE" via the Connector.
-    Requires DB_USER, DB_PASSWORD, DB_NAME. Optional DB_USE_PRIVATE_IP=1 for private IP.
-  * DB_HOST (+ DB_PORT)          — plain TCP (local docker-compose / a proxy). Same creds.
-  * none of the above           — no DB → in-memory task store / gcs memory backend.
-"""
+"""Shared async SQLAlchemy engine for Cloud SQL — ONE pool for the A2A task store AND the"""
 
 from __future__ import annotations
 
@@ -27,14 +13,7 @@ _resolved = False
 
 
 def _db_config() -> dict | None:
-    """Resolve DB connection settings from env into a tagged config dict, or None.
-
-    Returns one of:
-      * {"kind": "url", "url": <str>}                             — TASK_DB_URL passthrough
-      * {"kind": "connector", "instance", "user", ...}            — Cloud SQL Python Connector
-      * {"kind": "tcp", "username", "password", "host", "port"}   — plain TCP
-      * None                                                      — no DB configured
-    """
+    """Resolve DB connection settings from env into a tagged config dict, or None."""
     direct = os.environ.get("TASK_DB_URL")
     if direct:
         return {"kind": "url", "url": direct}
@@ -72,13 +51,7 @@ def _db_config() -> dict | None:
 
 
 def _connector_engine(cfg: dict):
-    """Async SQLAlchemy engine that dials Cloud SQL via the Python Connector (no unix socket).
-
-    Google's documented async pattern: `create_async_engine("postgresql+asyncpg://",
-    async_creator=getconn)`, where `getconn` returns a raw asyncpg connection from the
-    Connector. The Connector is created lazily on first use so it binds to the running event
-    loop (the engine is built synchronously at app construction, before the loop is running).
-    """
+    """Async SQLAlchemy engine that dials Cloud SQL via the Python Connector (no unix socket)."""
     from google.cloud.sql.connector import IPTypes, create_async_connector
     from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -114,12 +87,7 @@ def _build_engine(cfg: dict):
 
 
 def get_engine():
-    """The shared async SQLAlchemy engine, or None when no DB is configured.
-
-    Cached: built once per process. A configured-but-undrivable DB (missing SQLAlchemy /
-    connector) raises ImportError rather than silently returning None — a misconfigured DB
-    must not degrade to a store that loses data.
-    """
+    """The shared async SQLAlchemy engine, or None when no DB is configured."""
     global _engine, _resolved
     if not _resolved:
         cfg = _db_config()

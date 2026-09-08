@@ -1,11 +1,4 @@
-"""Canonical `AgentEvaluator` harness (E5) — the adk-samples `eval/test_eval.py` entry, factored out.
-
-`AgentEvaluator.evaluate(agent, data_dir, num_runs)` RUNS the agent against the evalset and scores it
-with the `test_config.json` criteria — so it needs the agent's REAL services (GCS / Vertex /
-Atlassian); it does not use the offline FakeBucket. Hence this is a **creds-gated CI harness**, not an
-offline unit test. Offline reproduction of the composite scores (PQS/TPS) lives in
-`tests/test_adk_eval.py` via the custom-metric functions.
-"""
+"""Canonical `AgentEvaluator` harness (E5) — the adk-samples `eval/test_eval.py` entry, factored out."""
 
 from __future__ import annotations
 

@@ -1,10 +1,4 @@
-"""Data contracts for the Knowledge-Gathering agent (stdlib dataclasses).
-
-Split into cohesive submodules — `refine` (question/answer/insight + refine constants),
-`graph` (links/notes/run-log/index + link constants), `pack` (the grounded context pack),
-and `bridge` (the normalized A2A reply) — and re-exported flat here so callers keep using
-`from common.models import <name>` unchanged.
-"""
+"""Data contracts for the Knowledge-Gathering agent (stdlib dataclasses)."""
 
 from common.models.bridge import A2AResult
 from common.models.graph import (

@@ -1,18 +1,4 @@
-"""InterrogationAgent — the shared HITL round loop for KGA refine + TPD define (Option B).
-
-The A0 spike proved the mechanic; this wires it to the REAL engines. Per invocation it advances a
-reused session (RefineSession for KGA, PlanSession for TPD) by one round and pauses (ends the
-invocation); the next A2A turn resumes. State persistence reuses each session's OWN bank rehydration
-(already tested, carries insights/decisions/questions + B0–B6), keyed by the context id (= the ADK
-session id, which the bridge holds constant across the pipeline).
-
-One class, two configs — the only differences (session class, state store, finalize summary) live in
-a `SessionSpec`. The "refine" spec (RefineSession — a `common` type) is registered here; the "plan"
-spec is registered from the test_plan_definition package, so `common` never imports an agent (I6).
-
-LLM-touching steps (`next_questions`, `finalize`) run via `asyncio.to_thread` (invariant I3). Both
-sessions select Claude-on-Vertex when configured and the heuristic otherwise (I5/I7).
-"""
+"""InterrogationAgent — the shared HITL round loop for KGA refine + TPD define (Option B)."""
 
 from __future__ import annotations
 
@@ -34,11 +20,11 @@ log = get_logger("adk.interrogation")
 class SessionSpec:
     """The four things that differ between refine (KGA) and define (TPD)."""
 
-    make: Callable            # (bank, ctx_id, rounds, now) -> a fresh session
-    rehydrate: Callable       # (bank, ctx_id) -> a resumed session
-    read_state: Callable      # (bank, ctx_id) -> dict ({} if none)
-    mark_done: Callable       # (bank, ctx_id) -> None
-    summarize: Callable       # (result) -> str
+    make: Callable
+    rehydrate: Callable
+    read_state: Callable
+    mark_done: Callable
+    summarize: Callable
 
 
 _SPECS: dict[str, SessionSpec] = {}
@@ -49,8 +35,7 @@ def register_spec(kind: str, spec: SessionSpec) -> None:
 
 
 class InterrogationAgent(BaseAgent):
-    """Config: the round set, the agent prefix (KGA/TPD), the human-facing header, and the kind
-    ('refine' | 'plan') selecting the registered SessionSpec."""
+    """Config: the round set, the agent prefix (KGA/TPD), the human-facing header, and the kind"""
 
     rounds: tuple[str, ...]
     agent_prefix: str = "KGA"
@@ -72,7 +57,7 @@ class InterrogationAgent(BaseAgent):
                 return
         else:
             session = spec.rehydrate(bank, ctx_id)
-            if incoming:  # continuation turn: the message is the answer to the paused round
+            if incoming:
                 await session.submit(incoming)
 
         rnd = await asyncio.to_thread(session.next_questions)
@@ -89,12 +74,9 @@ class InterrogationAgent(BaseAgent):
         )
 
     def _context_id(self, ctx) -> str:
-        # The pack/plan was produced under this id; the bridge reuses one id across the pipeline,
-        # so the ADK session id IS the context id (state override kept for flexibility).
         return (ctx.session.state or {}).get("io_pack_ctx") or ctx.session.id
 
 
-# --- the "refine" spec (KGA) — RefineSession is a `common` type, so it belongs here --- #
 def _refine_summary(result) -> str:
     gaps = getattr(result, "open_gaps", None) or getattr(result, "gaps", []) or []
     conf = getattr(result, "confidence", "")

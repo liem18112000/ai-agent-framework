@@ -1,8 +1,4 @@
-"""Claude-on-Vertex restatement of the proposed Test Plan brief.
-
-Confidence, TestPlan assembly, and the heuristic fallback live in define/plan.py; this is
-just the prose. Mirrors common.llm.understanding.
-"""
+"""Claude-on-Vertex restatement of the proposed Test Plan brief."""
 
 from __future__ import annotations
 

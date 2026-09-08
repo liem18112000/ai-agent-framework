@@ -1,10 +1,4 @@
-"""Stdlib HTML → readable text (roadmap G3 external-web fetcher).
-
-Uses `html.parser` (no new dep — bs4 is reserved for Confluence storage XHTML in
-storage_html.py) to strip tags, drop <script>/<style>/<noscript>/<template> content, pull the
-<title>, and collapse whitespace. Deliberately small: the web fetcher only needs a readable
-body to distill + cite, not a faithful DOM.
-"""
+"""Stdlib HTML → readable text (roadmap G3 external-web fetcher)."""
 
 from __future__ import annotations
 

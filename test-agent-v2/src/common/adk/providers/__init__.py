@@ -1,9 +1,4 @@
-"""Model-provider registry — the single place a new model backend is registered (C1/D10).
-
-`get_provider()` maps `Config.model_backend` (default `"claude"`) to a concrete `ModelProvider`.
-Add a future backend by adding one registry entry (e.g. `"local": LocalClaudeProvider`) — nothing
-else in the codebase changes. An unknown backend name raises a clear `KeyError`.
-"""
+"""Model-provider registry — the single place a new model backend is registered (C1/D10)."""
 
 from __future__ import annotations
 

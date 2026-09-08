@@ -1,11 +1,4 @@
-"""Request/question presentation helpers shared by both agents' executors.
-
-`extract_ctx` pulls a context id out of an inbound A2A request (JSON body, a `run-…`
-token, or the second word after a known command); `render_questions` formats an open
-question round for the human. Both are pure and agent-agnostic — each agent binds its own
-command prefixes / header via a thin wrapper (see knowledge_gathering.executor.refine and
-test_plan_definition.executor.define).
-"""
+"""Request/question presentation helpers shared by both agents' executors."""
 
 from __future__ import annotations
 

@@ -1,9 +1,4 @@
-"""PlanPack — the input the define/implement stages read.
-
-Wraps `common.models`' grounded `Pack` (notes + link graph + gaps + recorded insights) and
-adds the confirmed understanding brief the refine stage restated — together the "Collect
-insight" hand-off, keyed by `context_id`. Pure data holder; `load_plan_pack` builds it.
-"""
+"""PlanPack — the input the define/implement stages read."""
 
 from __future__ import annotations
 

@@ -8,11 +8,7 @@ __all__ = ["PgMemoryStore", "build_store"]
 
 
 def build_store():
-    """A PgMemoryStore on the shared Cloud SQL engine, or None when no DB is configured.
-
-    None → the retrieval facade uses the GCS graph path. Independent of MEMORY_BACKEND so a
-    caller can build the store once and let the facade decide per-call whether to use it.
-    """
+    """A PgMemoryStore on the shared Cloud SQL engine, or None when no DB is configured."""
     from common.db import get_engine
 
     engine = get_engine()

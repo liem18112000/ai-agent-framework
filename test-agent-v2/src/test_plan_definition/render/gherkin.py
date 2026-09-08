@@ -1,10 +1,4 @@
-"""Render generated scenarios/steps as BDD/Gherkin .feature files.
-
-One Feature per plan; one Scenario per TestScenario, tagged @<kind> @<methodology>; each step
-becomes a When/Then pair, with the test data as a Given. The structured scenarios/steps remain
-the source of truth — this is a presentational export the downstream Test execution stage (and
-the implement-bdd-steps skill) can consume.
-"""
+"""Render generated scenarios/steps as BDD/Gherkin .feature files."""
 
 from __future__ import annotations
 
@@ -23,13 +17,12 @@ def render_feature(subject: str, scenarios: list[TestScenario], steps: list[Test
         lines.append(f"  Scenario: {sc.title}")
         steps_sorted = sorted(by_scenario.get(sc.id, []), key=lambda s: s.order)
         has_keywords = any(s.keyword for s in steps_sorted)
-        # Only synthesize a data Given when the steps don't already carry BDD keywords.
         if sc.data_refs and not has_keywords:
             lines.append(f"    Given the test data ({', '.join(sc.data_refs)}) is prepared")
         for st in steps_sorted:
-            if st.keyword:  # detailed step: the keyword + action is the Gherkin clause
+            if st.keyword:
                 lines.append(f"    {st.keyword} {st.action}")
-            else:  # legacy step: action -> assert pair
+            else:
                 lines.append(f"    When {st.action}")
                 lines.append(f"    Then {st.expected}")
         lines.append("")
@@ -42,7 +35,7 @@ def export_features(bank, context_id: str) -> str | None:
     if not scenarios:
         return None
     steps = store.read_steps(bank, context_id)
-    subject = scenarios[0].title.split(" — ")[0]  # the entity, without the "— happy path" suffix
+    subject = scenarios[0].title.split(" — ")[0]
     text = render_feature(subject, scenarios, steps)
     store.write_feature(bank, context_id, context_id, text)
     return text

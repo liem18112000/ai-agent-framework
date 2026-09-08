@@ -1,6 +1,4 @@
-"""G3 external-web slice: WebFetcher, the Scope.follow_web gate, _fetchable, and the web
-sub-budget. No real network — a fake httpx layer (MockTransport) backs every fetch.
-"""
+"""G3 external-web slice: WebFetcher, the Scope.follow_web gate, _fetchable, and the web"""
 
 from __future__ import annotations
 
@@ -18,7 +16,6 @@ from knowledge_gathering.loop.fetch.base import NodeFetcher
 BASE = "https://axonivy.atlassian.net"
 
 
-# --- fakes --- #
 def _mock_web_client(handler) -> httpx.AsyncClient:
     """A plain httpx client whose transport is faked — mirrors web._build_client's kwargs."""
     return httpx.AsyncClient(
@@ -57,7 +54,6 @@ class FakeClient:
         return []
 
 
-# --- WebFetcher.fetch --- #
 async def test_web_fetch_200_html_returns_cited_leaf_note(monkeypatch):
     url = "https://example.com/spec"
     html = (
@@ -73,19 +69,19 @@ async def test_web_fetch_200_html_returns_cited_leaf_note(monkeypatch):
     monkeypatch.setattr(web, "_build_client", lambda: _mock_web_client(handler))
     links, note, text = await web.WebFetcher().fetch(None, "", url, Scope(follow_web=True))
 
-    assert links == []                    # leaf — no outbound links
+    assert links == []
     assert note.type == EXTERNAL_WEB
-    assert note.source_url == url         # cited
-    assert note.title == "eArchive Spec"  # from <title>
+    assert note.source_url == url
+    assert note.title == "eArchive Spec"
     assert note.links == []
-    assert note.synopsis == ""            # left for crawl's distiller (cf. confluence.py)
-    assert "Overview" in text and "world" in text  # tags stripped, text kept
-    assert "var x" not in text            # <script> content dropped
-    assert "<" not in text                # no residual tags
+    assert note.synopsis == ""
+    assert "Overview" in text and "world" in text
+    assert "var x" not in text
+    assert "<" not in text
 
 
 async def test_web_fetch_title_falls_back_to_url(monkeypatch):
-    url = "http://example.org/page"  # also exercises the http-kind fetcher
+    url = "http://example.org/page"
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, html="<p>no title here</p>")
@@ -135,24 +131,21 @@ async def test_web_fetch_timeout_raises(monkeypatch):
 
 def test_http_and_https_both_registered():
     assert {"http", "https"}.issubset(NodeFetcher.registry)
-    # both kinds resolve to the shared WebFetcher.fetch impl (http subclasses https)
     assert (
         type(NodeFetcher.registry["http"]).fetch is type(NodeFetcher.registry["https"]).fetch
     )
 
 
-# --- Scope gate + _fetchable --- #
 def test_scope_follows_external_web_only_when_enabled():
-    assert Scope().follows(EXTERNAL_WEB) is False          # default: recorded-not-fetched
+    assert Scope().follows(EXTERNAL_WEB) is False
     assert Scope(follow_web=True).follows(EXTERNAL_WEB) is True
-    assert Scope().follows(JIRA_ISSUE) is True             # existing behavior unchanged
+    assert Scope().follows(JIRA_ISSUE) is True
 
 
 def test_fetchable_http_gated_by_follow_web():
     assert _fetchable("https://example.com/x", Scope()) is False
     assert _fetchable("http://example.com/x", Scope()) is False
     assert _fetchable("https://example.com/x", Scope(follow_web=True)) is True
-    # existing kinds unaffected by the gate
     assert _fetchable("jira:LUZ-1", Scope()) is True
     assert _fetchable("codegraph:ws/r", Scope()) is True
     assert _fetchable("bitbucket:ws/r/src/main/F.java", Scope()) is True
@@ -169,15 +162,14 @@ def test_external_web_in_scope_tracks_follow_web_flag():
     assert enabled["https://example.com/spec"].in_scope is True
 
 
-# --- crawl-level: default records-only; enabled fetches + cites; sub-budget caps --- #
 async def test_default_crawl_records_but_does_not_fetch_external_web(fake_bucket):
     issues = {"LUZ-1": _issue("LUZ-1", urls=("https://example.com/spec",))}
     result = await crawl(FakeClient(issues), MemoryBank(fake_bucket), "LUZ-1", depth=2, run_id="t")
 
-    assert not any(n.type == EXTERNAL_WEB for n in result.notes)  # never fetched
+    assert not any(n.type == EXTERNAL_WEB for n in result.notes)
     inv = {lr.canonical_url: lr for lr in result.inventory}
-    assert inv["https://example.com/spec"].in_scope is False       # recorded, out-of-scope
-    assert "https://example.com/spec" not in result.gaps           # not attempted → not a gap
+    assert inv["https://example.com/spec"].in_scope is False
+    assert "https://example.com/spec" not in result.gaps
 
 
 async def test_web_following_enabled_fetches_and_cites(fake_bucket, monkeypatch):
@@ -194,9 +186,9 @@ async def test_web_following_enabled_fetches_and_cites(fake_bucket, monkeypatch)
     web_notes = [n for n in result.notes if n.type == EXTERNAL_WEB]
     assert len(web_notes) == 1
     n = web_notes[0]
-    assert n.id == url and n.source_url == url  # cited
-    assert n.synopsis                            # crawl's distiller filled it
-    assert not n.links                           # leaf — no frontier expansion
+    assert n.id == url and n.source_url == url
+    assert n.synopsis
+    assert not n.links
 
 
 async def test_web_subbudget_caps_promotions(fake_bucket, monkeypatch):
@@ -212,5 +204,5 @@ async def test_web_subbudget_caps_promotions(fake_bucket, monkeypatch):
     result = await crawl(FakeClient(issues), MemoryBank(fake_bucket), "LUZ-1",
                          depth=2, scope=Scope(follow_web=True, max_web=2), run_id="t")
 
-    assert len([n for n in result.notes if n.type == EXTERNAL_WEB]) == 2  # capped at max_web
-    assert len(calls) == 2                                                # only 2 GETs issued
+    assert len([n for n in result.notes if n.type == EXTERNAL_WEB]) == 2
+    assert len(calls) == 2

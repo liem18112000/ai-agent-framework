@@ -18,7 +18,6 @@ async def test_implement_auto_exports_a_feature(pack_bucket):
     bank = MemoryBank(pack_bucket)
     res = await _implemented(bank)
     assert res.feature and res.feature.startswith("Feature:")
-    # persisted under the features/ dir, readable back
     saved = store.read_feature(bank, "run-6f2a", "run-6f2a")
     assert saved == res.feature
 
@@ -29,7 +28,6 @@ async def test_feature_has_tagged_scenarios_and_when_then(pack_bucket):
     feature = store.read_feature(bank, "run-6f2a", "run-6f2a")
     assert "@happy" in feature and "@negative" in feature
     assert "Scenario:" in feature
-    # detailed steps now carry BDD keywords (Given arrange, When act, Then/And assert)
     assert "Given " in feature and "When " in feature and "Then " in feature
 
 
@@ -43,7 +41,6 @@ def test_render_feature_groups_steps_under_their_scenario():
         TestStep(id="s1#s1", scenario_id="s1", order=1, action="send request", expected="2xx"),
     ]
     out = render_feature("Do X", scenarios, steps)
-    # steps render in order, request before assert
     assert out.index("send request") < out.index("assert outcome")
     assert "Feature: Do X" in out and "@happy" in out
 

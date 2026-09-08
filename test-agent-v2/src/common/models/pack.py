@@ -1,9 +1,4 @@
-"""The grounded context pack a refine session reads: notes + link graph + gaps.
-
-Pure data container. It is built (`common.interrogate.pack.load_pack`) from the Memory Bank the
-gather loop wrote, or handed straight from a fresh crawl; `summary_text()` renders it
-compactly for the LLM prompt.
-"""
+"""The grounded context pack a refine session reads: notes + link graph + gaps."""
 
 from __future__ import annotations
 
@@ -20,7 +15,7 @@ class Pack:
     graph: Graph = field(default_factory=Graph)
     gaps: list[str] = field(default_factory=list)
     seed: str = ""
-    lessons: list[str] = field(default_factory=list)  # L4: prior lessons recalled for this seed
+    lessons: list[str] = field(default_factory=list)
 
     @property
     def grounded(self) -> list[Note]:

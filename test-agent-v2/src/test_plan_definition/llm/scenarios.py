@@ -1,9 +1,4 @@
-"""Claude-on-Vertex generator for test scenarios from a confirmed plan.
-
-Build the prompt, call Vertex, parse the JSON reply into `TestScenario`s. Steps and test-data
-stay heuristic (mechanical); the heuristic scenario fallback lives in implement/scenarios.py.
-Returns None on a parse miss so the caller can fall back.
-"""
+"""Claude-on-Vertex generator for test scenarios from a confirmed plan."""
 
 from __future__ import annotations
 

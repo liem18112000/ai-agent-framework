@@ -1,9 +1,4 @@
-"""Autonomous sub-agents for the Testing-Agent SequentialAgent — one class per module.
-
-Headless steps that auto-answer interrogation with the agent's own recommendations
-(`accept_recommendation`); this is the opt-in autonomous path. The gated, client-driven path
-(each agent's own router + human confirm-gates) is separate and unchanged.
-"""
+"""Autonomous sub-agents for the Testing-Agent SequentialAgent — one class per module."""
 
 from __future__ import annotations
 

@@ -1,13 +1,4 @@
-"""Golden JSON → ADK EvalSet/EvalCase (Plan B) + on-disk evalset emitter (E5).
-
-The domain ground-truth (relevant_node_ids, must_not_retrieve_ids, behaviours, …) stays in the golden
-JSON and is looked up by the custom metrics via `golden_for`/`golden_plan_for`; the ADK EvalCase
-carries the seed as the invocation's user_content, so a metric can recover the context id.
-
-`write_eval_data(dir)` emits the canonical `adk eval` layout — `*.evalset.json` + `test_config.json` —
-so the ADK CLI / `AgentEvaluator` can consume it. Timestamps are pinned to 0.0 so the committed files
-are byte-stable across regenerations.
-"""
+"""Golden JSON → ADK EvalSet/EvalCase (Plan B) + on-disk evalset emitter (E5)."""
 
 from __future__ import annotations
 
@@ -20,8 +11,6 @@ from google.genai import types
 
 from test_evaluation.golden import load_golden, load_golden_plans
 
-# Native ADK criteria (deterministic PR gate). Custom domain metrics (pqs_score / tps_score /
-# hard_negative_leak) attach programmatically via EvalMetric.custom_function_path — see config.py.
 TEST_CONFIG = {"criteria": {"tool_trajectory_avg_score": 1.0, "response_match_score": 0.35}}
 
 

@@ -1,15 +1,4 @@
-"""M5 backfill — (re)derive the pgvector recall tier from the GCS record (the source of truth).
-
-Reuses the projector end-to-end: enqueue an `IndexJob` for every node in the GCS knowledge index,
-then drain the queue into Postgres (upsert_node/edges + embed) until empty. Because Postgres is a
-*projection* of GCS, this proves the read model is droppable/re-derivable — the migration's safety
-net (§8). Idempotent (ON CONFLICT + the content-hash embed skip) so re-runs are cheap; the durable
-queue makes an interrupted run resumable (the next run just drains what's left).
-
-Run once before flipping `MEMORY_BACKEND=hybrid`, and after any bulk GCS import:
-
-    uv run python tools/backfill_memory.py
-"""
+"""M5 backfill — (re)derive the pgvector recall tier from the GCS record (the source of truth)."""
 
 from __future__ import annotations
 
@@ -30,17 +19,15 @@ def enqueue_all(bank) -> int:
 
 
 async def backfill(bank, store, *, embedder=None, batch: int = 100, max_passes: int = 1000) -> tuple[int, int]:
-    """Enqueue every index node, then drain in batches until the queue is empty (or a pass makes no
-    progress — permanently-failing jobs stay queued rather than looping forever). Returns
-    `(nodes_in_index, nodes_projected)`."""
+    """Enqueue every index node, then drain in batches until the queue is empty (or a pass makes no"""
     total = enqueue_all(bank)
     projected = 0
     for _ in range(max_passes):
         n = await drain_index(bank, store, embedder=embedder, max_jobs=batch)
         projected += n
-        if n == 0:  # queue empty, or only permanently-failing jobs remain
+        if n == 0:
             break
-    try:  # build the ANN index once the corpus is populated (idempotent; best-effort)
+    try:
         await store.ensure_ann_index()
     except Exception as exc:  # noqa: BLE001 — index build must not fail the backfill
         log.warning("backfill: ANN index build skipped (%s)", exc)

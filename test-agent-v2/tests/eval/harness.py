@@ -1,12 +1,4 @@
-"""Offline harness — drive the KGA executor in-process (no HTTP, no Cloud Run, no live network).
-
-Reuses the proven in-process A2A stack (Starlette TestClient + JSON-RPC `message/send`, exactly as
-tests/test_executor_a2a.py) with an injected recorded Atlassian client and a FakeBucket-backed bank,
-so a gather runs the REAL crawl + fan-out but touches nothing external. Refine is driven through the
-synchronous `common.interrogate.loop.refine` driver (heuristic answers, no LLM). A `RunTrace` exposes
-exactly what a human reviews: the reply, the persisted node set, the tiers that fired, and the
-understanding.
-"""
+"""Offline harness — drive the KGA executor in-process (no HTTP, no Cloud Run, no live network)."""
 
 from __future__ import annotations
 
@@ -30,8 +22,6 @@ from tests.conftest import FakeBucket
 
 _FIX = Path(__file__).parent / "fixtures" / "atlassian"
 
-# Tier reply-signatures, in the order expand.py emits its md_blocks (G2→B1→G0→G1→G4). Presence of a
-# marker in the gather reply == that tier fired. Verified against src/knowledge_gathering/explore/*.
 _TIER_MARKERS = [
     ("G2_hypothesize", "Hypothesized focus:"),
     ("B1_climb", "climbed to structural parent"),
@@ -46,8 +36,7 @@ def derive_tiers(reply: str) -> list[str]:
 
 
 class RecordedAtlassianClient:
-    """Duck-typed AtlassianClient backed by recorded fixture JSON. Records every call for tool-use
-    trajectory assertions. Missing get_issue_dev_status data → {} (no crash, no dev links)."""
+    """Duck-typed AtlassianClient backed by recorded fixture JSON. Records every call for tool-use"""
 
     base_url = "https://axonivy.atlassian.net"
 
@@ -106,8 +95,7 @@ def env(flags: dict):
 
 
 def _all_text(obj) -> str:
-    """Concatenate every `text` value in the JSON-RPC response (status message + artifacts +
-    history) — the actual agent reply, unescaped (so em-dash tier markers match)."""
+    """Concatenate every `text` value in the JSON-RPC response (status message + artifacts +"""
     out: list[str] = []
 
     def walk(o):
@@ -174,9 +162,7 @@ class RunTrace:
 def run_gather_offline(seed: str, *, client: RecordedAtlassianClient, bank: MemoryBank | None = None,
                        flags: dict | None = None, text: str | None = None,
                        context_id: str | None = None) -> RunTrace:
-    """Drive one gather through the real executor with a recorded client. Returns a RunTrace whose
-    bank holds the persisted pack. The crawl stamps each note with run_id == `context_id` (B0
-    run-scoping), so reuse `trace.context_id` for refine — otherwise load_pack sees "nothing"."""
+    """Drive one gather through the real executor with a recorded client. Returns a RunTrace whose"""
     bank = bank or MemoryBank(FakeBucket())
     context_id = context_id or f"eval-{seed}"
     with env(flags or {}):
@@ -185,9 +171,7 @@ def run_gather_offline(seed: str, *, client: RecordedAtlassianClient, bank: Memo
 
 
 def run_refine_offline(bank: MemoryBank, ctx: str, *, seed: str = ""):
-    """Run the refine interrogation to completion offline (heuristic answers, no LLM). Returns a
-    RefineResult (.understanding, .confidence, .insights, …). `refine` is a coroutine — driven to
-    completion on a fresh loop so callers stay synchronous."""
+    """Run the refine interrogation to completion offline (heuristic answers, no LLM). Returns a"""
     import asyncio
 
     from common.interrogate.loop import refine

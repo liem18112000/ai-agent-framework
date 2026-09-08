@@ -1,10 +1,4 @@
-"""Restate the agent's current understanding as a plain-language brief for a human
-to confirm or correct ("Ask AI to clarify its understanding").
-
-Confidence is computed deterministically in code (open questions → low; unconfirmed
-agent assumptions → medium; all settled by a human → high). Rendering is Claude-on-Vertex
-prose when configured (see `common.llm.understanding`), else a heuristic assembly.
-"""
+"""Restate the agent's current understanding as a plain-language brief for a human"""
 
 from __future__ import annotations
 
@@ -15,7 +9,6 @@ from common.llm.understanding import claude_understanding
 from common.llm.vertex import vertex_config
 from common.models import ASSUMPTION, DECISION, GAP_SEED, Insight, Question
 
-# (pack, insights, open_questions, deferred, confidence) -> markdown brief
 Understander = Callable[[Pack, list[Insight], list[Question], list[Question], str], str]
 
 

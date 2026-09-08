@@ -1,7 +1,4 @@
-"""Self-learning (L1–L5): capture per-step lessons into shared GCS memory (async, off the request
-path), recall them grounded into new runs, and govern them. Reuses the Insight infra (+lesson/
-correction/gotcha kinds). See docs/PROPOSAL-agent-self-learning-memory.md.
-"""
+"""Self-learning (L1–L5): capture per-step lessons into shared GCS memory (async, off the request"""
 
 from common.learn.capture import capture_lessons
 from common.learn.config import capture_enabled, recall_enabled

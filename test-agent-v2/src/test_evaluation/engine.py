@@ -1,12 +1,4 @@
-"""The evaluation engine — score a persisted pack into a Pack Quality Score.
-
-Reads the pack THIS context gathered from the shared memory bank (run-scoped, via the same
-`load_pack` refine uses) plus its restated understanding, and scores retrieval (node-overlap vs the
-golden relevant-id set + the hard-negative leak gate), generation (fabrication rubrics on the
-understanding), entity coverage, and combines them into one PQS. Fully deterministic — no network,
-no LLM. The tier-trajectory component needs the gather reply (only available in the offline harness),
-so at runtime it is left neutral and scored there.
-"""
+"""The evaluation engine — score a persisted pack into a Pack Quality Score."""
 
 from __future__ import annotations
 
@@ -31,9 +23,7 @@ def _pack_view(bank, context_id: str) -> tuple[set[str], list[str]]:
 
 def evaluate_pack(bank, context_id: str, case: EvalCase | None = None,
                   *, trajectory: float = 1.0) -> EvalReport:
-    """Score the pack `context_id` gathered. `case` supplies the golden ground truth (relevant/
-    hard-negative ids, key entities); without it, only the citation rubrics are meaningful.
-    `trajectory` lets the harness pass the tier-trajectory score it computed from the gather reply."""
+    """Score the pack `context_id` gathered. `case` supplies the golden ground truth (relevant/"""
     node_ids, node_texts = _pack_view(bank, context_id)
     understanding = bank.read_understanding(context_id) or ""
 

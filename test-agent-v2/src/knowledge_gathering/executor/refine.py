@@ -1,9 +1,4 @@
-"""Knowledge Refinement (Step 2) handler — multi-turn interrogation over A2A.
-
-`refine <ctx>` starts an interrogation; the agent pauses in `input-required` with a question set;
-the client answers on the same task and the agent resumes, persisting insights until it can
-restate a confirmed understanding. Read helpers: `get-questions <ctx>`, `get-understanding <ctx>`.
-"""
+"""Knowledge Refinement (Step 2) handler — multi-turn interrogation over A2A."""
 
 from __future__ import annotations
 
@@ -29,8 +24,7 @@ log = get_logger("executor.refine")
 
 
 async def _recall_into(session, bank) -> None:
-    """L4: inject prior lessons into the pack so refine doesn't re-learn them — structural ∪
-    semantic under a DB backend (M4b), structural-only on GCS. Best-effort, flag-gated."""
+    """L4: inject prior lessons into the pack so refine doesn't re-learn them — structural ∪"""
     if not learn.recall_enabled("KGA"):
         return
     try:
@@ -139,7 +133,7 @@ async def run_refine(ex, context: RequestContext, event_queue: EventQueue,
     continuation = bool(state) and not state.get("done")
     updater = TaskUpdater(event_queue, context.task_id, context.context_id)
 
-    if not continuation:  # turn 1 — start the interrogation
+    if not continuation:
         session = RefineSession(
             bank, pack_ctx, seed=pack_ctx, generator=ex._generator,
             understander=ex._understander, gatherer=build_gatherer(ex, bank, pack_ctx),
@@ -149,7 +143,7 @@ async def run_refine(ex, context: RequestContext, event_queue: EventQueue,
             return await reply(context, event_queue,
                                f"Nothing to refine for {pack_ctx}; run gather first.")
         bank.link_session(a2a_ctx, pack_ctx)
-    else:  # continuation — ingest answers, advance
+    else:
         session = RefineSession.rehydrate(
             bank, pack_ctx, generator=ex._generator, understander=ex._understander,
             gatherer=build_gatherer(ex, bank, pack_ctx),
@@ -157,21 +151,19 @@ async def run_refine(ex, context: RequestContext, event_queue: EventQueue,
         log.info("A2A refine: ingesting answers for %s", pack_ctx)
         await session.submit(text)
 
-    await _recall_into(session, bank)  # L4: prior lessons → pack preamble (flag-gated)
+    await _recall_into(session, bank)
 
-    if context.current_task is None:  # enqueue the initial Task before any status-update event
+    if context.current_task is None:
         await event_queue.enqueue_event(new_task_from_user_message(context.message))
 
-    # next_questions()/finalize() run the (possibly Claude-on-Vertex) generators synchronously;
-    # offload so a long LLM call never stalls the event loop and starves Cloud Run's /livez probe.
     open_qs = await asyncio.to_thread(session.next_questions)
-    if open_qs is None:  # done — finalize + complete
+    if open_qs is None:
         result = await asyncio.to_thread(session.finalize)
         bank.write_refine_state(pack_ctx, {"done": True})
-        _capture_refine(bank, pack_ctx, result)  # L2: enqueue async lesson capture (flag-gated)
+        _capture_refine(bank, pack_ctx, result)
         log.info("A2A refine done: %d insights", len(result.insights))
         return await updater.complete(
             updater.new_agent_message([a2a_pb2.Part(text=summarize_refine(result))]))
-    session.save()  # pause for the human
+    session.save()
     await updater.requires_input(
         updater.new_agent_message([a2a_pb2.Part(text=render_questions(pack_ctx, open_qs))]))

@@ -1,13 +1,4 @@
-"""Versioned GCS persistence for code graphs — reuses the MemoryBank primitives.
-
-Layout (mirrors Vinnstack's per-repo graph + built_at, adapted to the GCS memory bank):
-
-    memory/graphify/index.json                     # registry: [meta, ...]
-    memory/graphify/<repo>/<commit>/{graph.json,GRAPH_REPORT.md,meta.json}   # immutable snapshot
-    memory/graphify/<repo>/latest/{...}            # moving pointer
-
-Versioning = immutable ``<commit>/`` snapshots + a ``latest/`` pointer + GCS object generations.
-"""
+"""Versioned GCS persistence for code graphs — reuses the MemoryBank primitives."""
 
 from __future__ import annotations
 

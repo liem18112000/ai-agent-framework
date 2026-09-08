@@ -1,9 +1,4 @@
-"""The Knowledge Gathering loop — a bounded, concurrent frontier crawl.
-
-Seed → Fetch → Extract → Classify → Expand (dedup via `visited`) → Distill → Persist → Loop,
-bounded by depth / max_nodes / max_seconds. Fetch failures become declared gaps (never dropped).
-Each depth level is fetched concurrently.
-"""
+"""The Knowledge Gathering loop — a bounded, concurrent frontier crawl."""
 
 from __future__ import annotations
 
@@ -39,11 +34,9 @@ async def crawl(
     sem = asyncio.Semaphore(concurrency)
     start = time.monotonic()
 
-    # Seed + extra seeds (e.g. a `codegraph:<ws>/<repo>` to ground the technical interrogation on
-    # real code). All at depth 0.
     frontier: list[tuple[str, int]] = [(normalize_seed(s), 0) for s in [seed, *(extra_seeds or [])]]
     visited: set[str] = set()
-    web_promoted: set[str] = set()  # G3 sub-budget: distinct external-web nodes promoted
+    web_promoted: set[str] = set()
     result = CrawlResult()
     log.info("crawl start: seed=%s extra=%s depth=%s max_nodes=%s",
              seed, extra_seeds or [], depth, max_nodes)
@@ -67,13 +60,11 @@ async def crawl(
         for (nid, d), res in zip(level_items, fetched):
             visited.add(nid)
             if isinstance(res, BaseException):
-                result.gaps.append(nid)  # declared gap, not dropped
+                result.gaps.append(nid)
                 log.warning("gap: %s unreachable (%s)", nid, res)
                 continue
             links, note, text = res
             note.run_id, note.depth = run_id, d
-            # distiller may be a blocking Claude-on-Vertex call; offload so it never stalls the
-            # event loop. A fetcher may pre-fill a curated synopsis (e.g. codegraph) — keep it.
             if not note.synopsis:
                 note.synopsis = await asyncio.to_thread(distiller, note, text)
             result.notes.append(note)
@@ -85,11 +76,9 @@ async def crawl(
                     canon = lr.canonical_url
                     if not (lr.in_scope and canon not in visited and _fetchable(canon, scope)):
                         continue
-                    # External-web nodes are metered: cap the distinct URLs one ticket can promote
-                    # (max_nodes/max_seconds still bound the whole crawl). Web nodes are leaves.
                     if lr.type == EXTERNAL_WEB and canon not in web_promoted:
                         if len(web_promoted) >= scope.max_web:
-                            continue  # web sub-budget spent
+                            continue
                         web_promoted.add(canon)
                     frontier.append((canon, d + 1))
 
@@ -109,10 +98,7 @@ async def crawl(
 
 
 def _fetchable(canonical: str, scope: Scope) -> bool:
-    """Which canonical node ids can be fetched + followed. external-web canonicals ARE the raw
-    http/https URL, so their prefix is the scheme — fetchable only when `scope.follow_web` is on
-    (default OFF keeps external-web recorded-not-fetched).
-    """
+    """Which canonical node ids can be fetched + followed. external-web canonicals ARE the raw"""
     kind = canonical.split(":", 1)[0]
     if kind in ("http", "https"):
         return scope.follow_web

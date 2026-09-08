@@ -1,12 +1,4 @@
-"""Test-Plan Score — the single weighted composite for the TPD, plus its always-emitted components.
-
-The TPD twin of pqs.py. Fault-detection + brief-groundedness weigh highest because the real TPD
-incidents were a bled brief + shallow oracles, not too-few scenarios: a thin suite is a VISIBLE
-failure a human catches; a full-looking-but-shallow suite (all oracles `assert 200`) or a
-confidently-bled brief (scopes the excluded nodes) fools you. While mutation is a proxy, the
-FaultDetection term folds in oracle-strength; re-split once real mutation lands. TPS_WEIGHTS keys ==
-TPSComponents field names.
-"""
+"""Test-Plan Score — the single weighted composite for the TPD, plus its always-emitted components."""
 
 from __future__ import annotations
 

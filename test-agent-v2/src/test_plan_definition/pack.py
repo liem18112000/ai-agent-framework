@@ -1,15 +1,8 @@
-"""PlanPack — the input the define/implement stages read.
-
-Reuses knowledge_gathering's grounded `Pack` (notes + link graph + gaps + recorded
-insights) and adds the confirmed understanding brief that the refine stage restated —
-together they are the "Collect insight" hand-off, keyed by `context_id`.
-"""
+"""PlanPack — the input the define/implement stages read."""
 
 from __future__ import annotations
 
 from common.interrogate.pack import load_pack
-
-# Re-exported so `from test_plan_definition.pack import PlanPack` keeps working.
 from test_plan_definition.models import PlanPack
 
 

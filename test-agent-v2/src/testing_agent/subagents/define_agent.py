@@ -1,9 +1,4 @@
-"""DefineAgent — the autonomous define step of the Testing-Agent pipeline.
-
-Auto-answers each methodology/scope/metrics round with the agent's own recommendations
-(`accept_recommendation`) — the opt-in autonomous path (no human gate). Wraps the reused headless
-`define.define` driver; keys on `ctx.session.id` (the shared SequentialAgent session).
-"""
+"""DefineAgent — the autonomous define step of the Testing-Agent pipeline."""
 
 from __future__ import annotations
 

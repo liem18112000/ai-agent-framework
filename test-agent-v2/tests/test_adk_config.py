@@ -7,7 +7,6 @@ import pytest
 from common.adk import agent_model, get_config, get_provider
 from common.adk.providers import VertexClaudeProvider
 
-# vertex_config now lives in the provider (model.py only dispatches) — patch it there.
 _VC = "common.adk.providers.vertex_claude.vertex_config"
 
 
@@ -23,7 +22,7 @@ def test_provider_registry_maps_claude(monkeypatch):
 
 
 def test_unknown_backend_raises(monkeypatch):
-    monkeypatch.setenv("TESTAGENT_MODEL_BACKEND", "gemini")  # removed backend → no registry entry
+    monkeypatch.setenv("TESTAGENT_MODEL_BACKEND", "gemini")
     with pytest.raises(KeyError):
         get_provider()
 
@@ -31,7 +30,7 @@ def test_unknown_backend_raises(monkeypatch):
 def test_agent_model_none_without_vertex(monkeypatch):
     monkeypatch.delenv("TESTAGENT_MODEL_BACKEND", raising=False)
     monkeypatch.setattr(_VC, lambda: None)
-    assert agent_model() is None  # no Vertex → caller uses the heuristic path (I7)
+    assert agent_model() is None
 
 
 def test_agent_model_litellm_when_configured(monkeypatch):

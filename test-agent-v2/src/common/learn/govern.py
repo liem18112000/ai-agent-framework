@@ -6,14 +6,12 @@ from common.learn.store import iter_lessons
 
 
 def veto_lesson(bank, insight_id: str) -> bool:
-    """Retract a lesson. Keeps the sidecar as a `vetoed` tombstone (so capture never re-learns it)
-    but DROPS its node+edges from the index — so it vanishes from every recall path at once: G0
-    self-seed, search_lessons and recall_lessons all read the index. True if it existed."""
+    """Retract a lesson. Keeps the sidecar as a `vetoed` tombstone (so capture never re-learns it)"""
     ins = bank.read_insight(insight_id)
     if ins is None:
         return False
     ins.status = "vetoed"
-    bank.upsert_insight(ins)  # tombstone: read_insight still finds it → capture won't re-learn it
+    bank.upsert_insight(ins)
     bank.update_index(lambda g: _drop_node(g, insight_id))
     return True
 

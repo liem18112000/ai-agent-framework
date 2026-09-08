@@ -8,7 +8,6 @@ from common.extract.regex_urls import regex_links
 from common.extract.storage_html import storage_links
 from common.models import CONFLUENCE_PAGE, JIRA_ISSUE, LinkRecord, Scope
 
-# One raw candidate: (url, anchor, origin, type_or_None, canonical_or_None).
 _Raw = tuple[str, str, str, "str | None", "str | None"]
 
 
@@ -36,11 +35,7 @@ def _to_records(source_id: str, raw: list[_Raw], scope: Scope) -> list[LinkRecor
 
 
 def _dev_status_raw(details: list[dict]) -> list[_Raw]:
-    """Flatten Jira dev-status ``detail[]`` entries into raw link candidates.
-
-    classify_url later maps a bare repo URL → a CODEGRAPH node and a PR/commit URL →
-    recorded-only BITBUCKET, so we only supply (url, anchor, origin) and let it decide.
-    """
+    """Flatten Jira dev-status ``detail[]`` entries into raw link candidates."""
     out: list[_Raw] = []
     for entry in details:
         for pr in entry.get("pullRequests", []) or []:
@@ -75,7 +70,6 @@ def extract_issue_links(
     for comment in fields.get("comment", {}).get("comments", []):
         raw += [(u, a, "comment", None, None) for u, a in adf_links(comment.get("body"))]
 
-    # Epic/parent + sub-tasks — the hierarchy the crawl previously dropped (fields weren't requested).
     parent = fields.get("parent")
     if parent and parent.get("key"):
         pk = parent["key"]
@@ -100,7 +94,6 @@ def extract_issue_links(
         if obj.get("url"):
             raw.append((obj["url"], obj.get("title", ""), "remotelink", None, None))
 
-    # Development panel (Bitbucket): PRs, commits, and the repo itself.
     raw += _dev_status_raw(dev_status or [])
 
     return _to_records(f"jira:{key}", raw, scope)

@@ -1,8 +1,4 @@
-"""DDL for the pgvector recall tier (M0). `memory_node` carries the embedding + tsvector +
-metadata projection of a GCS note/insight; `memory_edge` replaces the hot knowledge-index.json
-blob. Applied idempotently by `PgMemoryStore._ensure` on first use (like DatabaseTaskStore's
-lazy `create_table`). Vector width follows MEMORY_EMBED_DIMS (must match the embedding model).
-"""
+"""DDL for the pgvector recall tier (M0). `memory_node` carries the embedding + tsvector +"""
 
 from __future__ import annotations
 
@@ -49,8 +45,6 @@ CREATE TABLE IF NOT EXISTS memory_edge (
 CREATE INDEX IF NOT EXISTS memory_edge_target ON memory_edge (target);
 """
 
-# The HNSW ANN index is created separately (M4): it needs a non-null-embedding corpus and its
-# build cost/memory depends on the tier — so it is NOT part of the lazy first-use DDL above.
 HNSW_INDEX_SQL = (
     "CREATE INDEX IF NOT EXISTS memory_node_embedding_hnsw "
     "ON memory_node USING hnsw (embedding vector_cosine_ops);"

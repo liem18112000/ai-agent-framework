@@ -30,14 +30,14 @@ def classify_url(url: str) -> tuple[str, str]:
     if "/rest/api/3/attachment/" in path:
         return ATTACHMENT, url
     if "bitbucket.org" in host:
-        m = re.match(r"/([^/]+)/([^/]+)/src/([^/]+)/(.+)$", path)  # a file at a ref
+        m = re.match(r"/([^/]+)/([^/]+)/src/([^/]+)/(.+)$", path)
         if m:
             ws, repo, ref, fp = m.groups()
             return BITBUCKET, f"bitbucket:{ws}/{repo}/src/{ref}/{fp}"
-        r = re.fullmatch(r"/([^/]+)/([^/]+)/?", path)  # a bare repo → build its code graph
+        r = re.fullmatch(r"/([^/]+)/([^/]+)/?", path)
         if r:
             return CODEGRAPH, f"codegraph:{r.group(1)}/{r.group(2)}"
-        return BITBUCKET, url  # PR / commit / other — recorded, not fetchable
+        return BITBUCKET, url
     if "figma.com" in host:
         return FIGMA, url
     if host in ("docs.google.com", "drive.google.com"):

@@ -23,7 +23,6 @@ def _q(qid="Q-biz-1", **kw):
     return Question(id=qid, **kw)
 
 
-# --- ingest --- #
 def test_ingest_line_format_matches_option():
     qs = [_q()]
     res = ingest(qs, "Q-biz-1: Materialized", now="T")
@@ -38,7 +37,7 @@ def test_ingest_json_list_and_new_seed():
     raw = '[{"question_id": "Q-biz-1", "text": "read it", "new_seed": "confluence:999"}]'
     res = ingest(qs, raw)
     assert res.answers[0].new_seed == "confluence:999"
-    assert [q.id for q in res.carried] == ["Q-biz-2"]  # unanswered stays, not dropped
+    assert [q.id for q in res.carried] == ["Q-biz-2"]
 
 
 def test_ingest_seed_marker_in_line():
@@ -59,7 +58,6 @@ def test_ingest_unknown_question_ignored():
     assert not res.answers
 
 
-# --- insight distillation --- #
 def _pack(pack_bucket):
     return load_pack(MemoryBank(pack_bucket), "run-6f2a", seed="LUZ-158390")
 
@@ -73,7 +71,7 @@ def test_distill_human_answer_is_high_confidence_decision(pack_bucket):
     assert ins.kind == "decision" and ins.confidence == "high"
     assert ins.source_refs == ["jira:LUZ-158390"]
     assert "Materialized" in ins.statement
-    assert "Accepted" in ins.rejected  # the not-chosen option is preserved
+    assert "Accepted" in ins.rejected
 
 
 def test_distill_new_seed_answer_is_gap_seed(pack_bucket):
@@ -90,7 +88,6 @@ def test_self_answer_becomes_low_confidence_assumption(pack_bucket):
     assert ins.confidence == "low"
 
 
-# --- persistence (the Collect-insight edge) --- #
 def test_upsert_insight_roundtrips_and_indexes(fake_bucket):
     bank = MemoryBank(fake_bucket)
     ins = Insight(id="insight:run-6f2a:Q-biz-1", kind="decision", context_id="run-6f2a",
@@ -99,7 +96,6 @@ def test_upsert_insight_roundtrips_and_indexes(fake_bucket):
     path = bank.upsert_insight(ins)
     assert path == "memory/notes/insight/insight_run-6f2a_Q-biz-1.md"
     assert bank.read_insight("insight:run-6f2a:Q-biz-1").statement == "done -> materialized"
-    # index gains the insight node + an edge to the grounded note it builds on
     bank.update_index(lambda g: g.add_insight(ins))
     graph, _ = bank.load_index()
     assert "insight:run-6f2a:Q-biz-1" in graph.nodes
@@ -113,7 +109,7 @@ def test_refine_session_files_and_run_log(fake_bucket):
     assert bank.read_questions("run-6f2a")[0].id == "Q-biz-1"
 
     bank.append_answers("run-6f2a", [Answer(question_id="Q-biz-1", text="a1")])
-    bank.append_answers("run-6f2a", [Answer(question_id="Q-biz-2", text="a2")])  # append-only
+    bank.append_answers("run-6f2a", [Answer(question_id="Q-biz-2", text="a2")])
     assert [a.question_id for a in bank.read_answers("run-6f2a")] == ["Q-biz-1", "Q-biz-2"]
 
     bank.write_understanding("run-6f2a", "## Understanding\nok")
@@ -135,6 +131,5 @@ def test_redactor_applies_to_insight(fake_bucket):
 
 
 def test_asdict_insight_is_json_native():
-    # guards the from_dict roundtrip path used by read_insight
     d = asdict(Insight(id="i", kind="decision", context_id="c", question_id="q", statement="s"))
     assert set(d) >= {"id", "kind", "source_refs", "rejected"}

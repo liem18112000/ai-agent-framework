@@ -1,14 +1,4 @@
-"""Shared trigger content for the two MCP bridges — delivered by the SERVER, so a fresh
-client that has only connected the MCP server(s) (no CLAUDE.md, no slash-command files) can
-run the whole Testing Agent by saying "test <JIRA>".
-
-- `TRIGGER_INSTRUCTIONS` is appended to each bridge's MCPServer `instructions` (the client
-  surfaces server instructions to the model), so free-text "test LUZ-158390" is recognized.
-- `test_prompt()` is the body of the `test` MCP prompt each bridge registers (the client
-  surfaces it as a slash command, e.g. /mcp__test-plan-definition__test) — same workflow.
-
-Both live here (imported by both bridges) so the wording has one source of truth.
-"""
+"""Shared trigger content for the two MCP bridges — delivered by the SERVER, so a fresh"""
 
 from __future__ import annotations
 

@@ -1,9 +1,4 @@
-"""DefineAgent — TPD's methodology/scope/metrics interrogation (Option B).
-
-Reuses the shared InterrogationAgent by registering a "plan" SessionSpec that binds TPD's PlanSession
-+ plan-state store + brief summary. Registering it here (not in common.adk) keeps `common` free of any
-test_plan_definition import (invariant I6).
-"""
+"""DefineAgent — TPD's methodology/scope/metrics interrogation (Option B)."""
 
 from __future__ import annotations
 
@@ -26,7 +21,7 @@ register_spec("plan", SessionSpec(
 def build_define_agent(name: str = "define") -> InterrogationAgent:
     return InterrogationAgent(
         name=name,
-        rounds=tuple(ROUNDS),  # ("methodology", "scope", "metrics")
+        rounds=tuple(ROUNDS),
         agent_prefix="TPD",
         header="Test Plan questions — answer each as `Q-id: your choice`.",
         kind="plan",

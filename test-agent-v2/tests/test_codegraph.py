@@ -1,8 +1,4 @@
-"""Codegraph: URL/seed routing, graphify-output parsing, GCS store, and fetcher registration.
-
-The real graphify subprocess is exercised out-of-band (needs the CLI + a repo); here we test the
-pure logic + the versioned GCS layout against the in-memory FakeBucket.
-"""
+"""Codegraph: URL/seed routing, graphify-output parsing, GCS store, and fetcher registration."""
 
 from __future__ import annotations
 
@@ -57,10 +53,8 @@ GRAPH = {
 def test_classify_repo_url_is_codegraph():
     assert classify_url("https://bitbucket.org/axonivy-prod/luz_docs_import") == (
         CODEGRAPH, "codegraph:axonivy-prod/luz_docs_import")
-    # a source file at a ref stays a fetchable bitbucket file
     t, cid = classify_url("https://bitbucket.org/axonivy-prod/luz_docs_import/src/master/pom.xml")
     assert t == "bitbucket" and cid == "bitbucket:axonivy-prod/luz_docs_import/src/master/pom.xml"
-    # a PR is recorded-only (not a codegraph)
     t2, _ = classify_url("https://bitbucket.org/axonivy-prod/luz_docs_import/pull-requests/42")
     assert t2 == "bitbucket"
 
@@ -81,7 +75,7 @@ def test_scan_api_surface():
     assert api["endpoints"] == ["src/main/java/ch/klara/luz/docsimport/rest/ImportJobResource.java"]
     assert api["rest_clients"] == ["src/main/java/ch/klara/luz/docsimport/rest/client/AntivirusRestClient.java"]
     enum_members = api["enums"]["src/main/java/ch/klara/luz/docsimport/enums/JobStatus.java"]
-    assert enum_members == ["SCANNING", "UPLOADED"]  # sorted; file-kind node excluded
+    assert enum_members == ["SCANNING", "UPLOADED"]
 
 
 def _sample_result() -> CodeGraphResult:
@@ -98,14 +92,12 @@ def _sample_result() -> CodeGraphResult:
 def test_store_and_read_versioned(fake_bucket):
     bank = MemoryBank(fake_bucket)
     meta = store_code_graph(bank, _sample_result())
-    assert "graph_json" not in meta and "report_md" not in meta  # heavy fields dropped from meta
-    # both the immutable snapshot and the moving pointer exist
+    assert "graph_json" not in meta and "report_md" not in meta
     assert "memory/graphify/luz_docs_import/bf0d26f/graph.json" in fake_bucket.store
     assert "memory/graphify/luz_docs_import/latest/GRAPH_REPORT.md" in fake_bucket.store
-    # registry upserts one row per repo
     idx = read_index(bank)
     assert [r["repo"] for r in idx] == ["luz_docs_import"]
-    store_code_graph(bank, _sample_result())  # idempotent — still one row
+    store_code_graph(bank, _sample_result())
     assert len(read_index(bank)) == 1
     assert read_code_meta(bank, "luz_docs_import")["nodes"] == 470
 
@@ -124,10 +116,7 @@ def test_codegraph_fetcher_registered():
 
 
 async def test_crawl_builds_codegraph_note(monkeypatch, fake_bucket):
-    """Full flow through the real crawl(): a repo seed → CodeGraphFetcher → distilled note persisted.
-
-    graphify + GCS are stubbed so the wiring (seed→classify→fetch→note→bank) is exercised deterministically.
-    """
+    """Full flow through the real crawl(): a repo seed → CodeGraphFetcher → distilled note persisted."""
     from knowledge_gathering.loop import crawl as crawl_fn
     from knowledge_gathering.loop.fetch import codegraph as cg_mod
 
@@ -142,5 +131,5 @@ async def test_crawl_builds_codegraph_note(monkeypatch, fake_bucket):
     assert [n.type for n in result.notes] == [CODEGRAPH]
     note = result.notes[0]
     assert note.id == "codegraph:axonivy-prod/luz_docs_import"
-    assert "ImportJobResource" in note.synopsis  # code intelligence reached the pack
-    assert bank.read_note(note.id, CODEGRAPH) is not None  # persisted to the memory bank
+    assert "ImportJobResource" in note.synopsis
+    assert bank.read_note(note.id, CODEGRAPH) is not None

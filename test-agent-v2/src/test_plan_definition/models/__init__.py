@@ -1,11 +1,4 @@
-"""Data contracts for the Test-Plan Definition agent (stdlib dataclasses).
-
-Split into cohesive submodules — `plan` (Stage A: the plan, its decisions, define constants),
-`scenario` (Stage B: test data / scenarios / steps, coverage constants), and `pack` (the
-`PlanPack` input) — and re-exported flat here so callers keep using
-`from test_plan_definition.models import <name>` unchanged. Generic contracts (`Question`,
-`Answer`, `Graph`, ...) stay in `common.models`.
-"""
+"""Data contracts for the Test-Plan Definition agent (stdlib dataclasses)."""
 
 from test_plan_definition.models.pack import PlanPack
 from test_plan_definition.models.plan import (

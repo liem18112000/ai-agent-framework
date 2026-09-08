@@ -1,9 +1,4 @@
-"""Self-learning capture (L1): distil per-step signals into cited, deduped Insight lessons.
-
-Generalises refine's "collect insight" to any step. Grounding gate keeps only cited lessons;
-content-keyed ids make re-capture idempotent; vetoed lessons are never re-learned. Best-effort —
-never raises. See docs/PROPOSAL-agent-self-learning-memory.md.
-"""
+"""Self-learning capture (L1): distil per-step signals into cited, deduped Insight lessons."""
 
 from __future__ import annotations
 
@@ -16,15 +11,14 @@ from common.monitoring import get_logger
 
 log = get_logger("learn.capture")
 
-Distiller = Callable[[list[LessonSignal]], list[LessonSignal]]  # optional signal refiner (LLM seam)
+Distiller = Callable[[list[LessonSignal]], list[LessonSignal]]
 
 
-def _key(statement: str) -> str:  # same statement → same id → idempotent
+def _key(statement: str) -> str:
     return hashlib.sha1(statement.strip().lower().encode()).hexdigest()[:10]
 
 
 def _grounded(graph: Graph, refs: list[str]) -> bool:
-    # Must cite a real index node; empty index → nothing to gate, allow. Local check (common ⊥ KG).
     return not graph.nodes or any(r in graph.nodes for r in refs)
 
 
@@ -34,7 +28,7 @@ def _to_insight(sig: LessonSignal, *, context_id: str, run_id: str, step: str, n
         kind=sig.kind, context_id=context_id, question_id="",
         statement=sig.statement.strip(), answered_by="agent-self", confidence=sig.confidence,
         source_refs=list(sig.source_refs), created_at=now, run_id=run_id, rationale=sig.rationale,
-        origin_step=step, scope="context", status="active",  # L1 never auto-promotes to shared
+        origin_step=step, scope="context", status="active",
     )
 
 
@@ -42,8 +36,7 @@ def capture_lessons(
     bank, *, context_id: str, run_id: str = "", step: str = "",
     signals: list[LessonSignal], distiller: Distiller | None = None, now: str = "",
 ) -> list[Insight]:
-    """Distil `signals` → grounded, deduped Insight lessons; persist + index. Returns those written
-    (already-captured/vetoed are skipped, so a repeat returns []). Best-effort — never raises."""
+    """Distil `signals` → grounded, deduped Insight lessons; persist + index. Returns those written"""
     try:
         if distiller is not None:
             signals = distiller(signals) or []
@@ -54,7 +47,7 @@ def capture_lessons(
             if not sig.statement.strip() or not _grounded(graph, sig.source_refs):
                 continue
             ins = _to_insight(sig, context_id=context_id, run_id=run_id, step=step, now=now)
-            if ins.id in seen or bank.read_insight(ins.id) is not None:  # dedup + don't re-learn/veto
+            if ins.id in seen or bank.read_insight(ins.id) is not None:
                 continue
             seen.add(ins.id)
             bank.upsert_insight(ins)

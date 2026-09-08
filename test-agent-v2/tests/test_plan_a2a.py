@@ -1,10 +1,4 @@
-"""M2 integration: drive Test Plan definition through the real A2A stack (multi-turn).
-
-message/send `define <ctx>` -> the agent pauses in input-required with the methodology
-round; answers on the same task advance scope then metrics; the final turn completes with a
-confirmed TestPlan. Read helper `get-test-plan` works. No memory bank config is required
-beyond the injected fixture bucket.
-"""
+"""M2 integration: drive Test Plan definition through the real A2A stack (multi-turn)."""
 
 from __future__ import annotations
 
@@ -67,20 +61,17 @@ def test_define_multiturn_pauses_then_confirms():
     app = _app()
     c = TestClient(app)
 
-    # turn 1: start → agent asks the methodology round and pauses (input-required)
     r1 = _send(c, "define run-6f2a", context_id="ctx-1")
     s1 = json.dumps(r1)
     assert "Q-mth-1" in s1 and "methodology" in s1.lower()
     task_id = r1.get("result", {}).get("id") or r1.get("result", {}).get("taskId")
 
-    # turns 2-4: answer each round on the same task; the last completes with a confirmed plan
     _send(c, "Q-mth-1: API", task_id=task_id, context_id="ctx-1")
     _send(c, "Q-sco-1: In scope", task_id=task_id, context_id="ctx-1")
     r4 = _send(c, "Q-mtr-1: End-state verified", task_id=task_id, context_id="ctx-1")
     s4 = json.dumps(r4)
     assert "Plan definition complete" in s4 and "confirmed" in s4
 
-    # the confirmed plan really persisted to the test-plan namespace
     bank = app.state.bank
     plan = bank.get_json("memory/test-plan/run-6f2a/plan.json", None)
     assert plan and plan["status"] == "confirmed" and plan["methodology"] == ["api"]
@@ -97,7 +88,7 @@ def test_get_test_plan_helper_before_any_run():
 
 
 def test_define_empty_bank_says_run_gather_refine_first():
-    c = TestClient(_app(bucket=FakeBucket()))  # nothing gathered/refined yet
+    c = TestClient(_app(bucket=FakeBucket()))
     r = _send(c, "define run-6f2a", context_id="ctx-x")
     assert "Nothing to plan" in json.dumps(r)
 
@@ -111,18 +102,15 @@ def test_bare_text_gets_help_not_a_crash():
 def test_implement_after_confirm_generates_scenarios():
     app = _app()
     c = TestClient(app)
-    # define through to a confirmed plan (methodology -> scope -> metrics)
     r1 = _send(c, "define run-6f2a", context_id="ctx-1")
     task_id = r1.get("result", {}).get("id") or r1.get("result", {}).get("taskId")
     _send(c, "Q-mth-1: API", task_id=task_id, context_id="ctx-1")
     _send(c, "Q-sco-1: In scope", task_id=task_id, context_id="ctx-1")
     _send(c, "Q-mtr-1: End-state verified", task_id=task_id, context_id="ctx-1")
 
-    # one-shot implement in a new conversation
     ri = _send(c, "implement run-6f2a", context_id="ctx-impl")
     assert "Implement complete" in json.dumps(ri)
 
-    # get-scenarios read helper returns the rendered scenarios
     rs = _send(c, "get-scenarios run-6f2a", context_id="ctx-ro2")
     assert "Test Scenarios" in json.dumps(rs)
 

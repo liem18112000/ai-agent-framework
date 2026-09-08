@@ -1,8 +1,4 @@
-"""common.adk — the ADK substrate for test-agent-v2 (A.0 shared foundation).
-
-Replaces the v1 a2a-sdk shell (server.py / card.py / executor / taskstore) with ADK wiring, while the
-framework-neutral engine (memory / learn / interrogate / llm / atlassian / codegraph) is reused as-is.
-"""
+"""common.adk — the ADK substrate for test-agent-v2 (A.0 shared foundation)."""
 
 from common.adk.config import Config, get_config
 from common.adk.interrogation import InterrogationAgent

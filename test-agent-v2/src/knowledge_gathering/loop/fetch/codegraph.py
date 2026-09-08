@@ -1,9 +1,4 @@
-"""Code-graph fetcher — treats a whole Bitbucket repo as a node and distills it with graphify.
-
-At a ``codegraph:<ws>/<repo>`` node, builds the repo's graphify graph (thread-offloaded — the
-subprocess + network must not block the event loop), stores it versioned in GCS, and returns a
-Note carrying the code-intelligence distillation (endpoints, enums, hubs) into the pack.
-"""
+"""Code-graph fetcher — treats a whole Bitbucket repo as a node and distills it with graphify."""
 
 from __future__ import annotations
 
@@ -28,12 +23,9 @@ class CodeGraphFetcher(NodeFetcher):
     async def fetch(
         self, client, ident: str, nid: str, scope: Scope
     ) -> tuple[list[LinkRecord], Note, str]:
-        # ident = "<ws>/<repo>"
         ws, _, repo = ident.partition("/")
         result = await asyncio.to_thread(build_and_store, build_bank(), ws, repo, bb_auth=_bb_auth())
         md = distill_code_note(result)
-        # Pre-fill the synopsis with the full code intelligence so crawl.py's distiller doesn't
-        # truncate it away (it honors an already-set synopsis).
         note = Note(
             id=nid, type=CODEGRAPH, title=f"{ws}/{repo}",
             source_url=f"https://bitbucket.org/{ws}/{repo}", links=[], synopsis=md,

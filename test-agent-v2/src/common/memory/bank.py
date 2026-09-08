@@ -1,7 +1,4 @@
-"""MemoryBank — GCS notes (json sidecar + rendered md), a link-graph index
-written with compare-and-set, and run-logs. A `redactor` runs over md before
-persist. Inject a bucket; build_bank() (common.executor) wires the real GCS client.
-"""
+"""MemoryBank — GCS notes (json sidecar + rendered md), a link-graph index"""
 
 from __future__ import annotations
 
@@ -53,8 +50,6 @@ class MemoryBank:
     def __init__(self, bucket, *, redactor: Callable[[str], str] | None = None, on_write=None) -> None:
         self._bucket = bucket
         self._redact = redactor or (lambda s: s)
-        # M2 projector seam: called (bank, node_id, node_type, kind) after a note/insight lands in
-        # GCS. build_bank wires it to the pgvector index queue; None → GCS-only (the default).
         self.on_write = on_write
 
     def _fire_on_write(self, node_id: str, node_type: str, kind: str) -> None:
@@ -74,8 +69,6 @@ class MemoryBank:
     def _put(self, path: str, data: str, ctype: str, **kw) -> None:
         self._bucket.blob(path).upload_from_string(data, content_type=ctype, **kw)
 
-    # generic path-based primitives (shared by any stage that writes to this bank;
-    # e.g. the test_plan_definition writers persist Test Plan artifacts through these)
     def put_json(self, path: str, obj) -> str:
         self._put(path, json.dumps(obj, indent=1, ensure_ascii=False), "application/json")
         return path
@@ -92,7 +85,6 @@ class MemoryBank:
         blob = self._bucket.get_blob(path)
         return blob.download_as_text() if blob else None
 
-    # notes
     def read_note(self, note_id: str, note_type: str) -> Note | None:
         blob = self._bucket.get_blob(self._note_json(note_type, note_id))
         return note_from_dict(json.loads(blob.download_as_text())) if blob else None
@@ -115,11 +107,10 @@ class MemoryBank:
         self._fire_on_write(merged.id, merged.type, "")
         return path
 
-    # index (compare-and-set)
     def load_index(self) -> tuple[Graph, int]:
         blob = self._bucket.get_blob(INDEX_JSON)
         if blob is None:
-            return Graph(), 0  # 0 = create-if-absent
+            return Graph(), 0
         return Graph.from_json(json.loads(blob.download_as_text())), blob.generation
 
     def update_index(self, mutate: Callable[[Graph], None], *, max_retries: int = 5) -> Graph:
@@ -134,16 +125,14 @@ class MemoryBank:
                     if_generation_match=generation,
                 )
             except PreconditionFailed:
-                continue  # concurrent write — reload and re-apply
+                continue
             self._put(INDEX_MD, self._redact(render_index_md(graph)), "text/markdown")
             return graph
         raise RuntimeError("index CAS retries exhausted")
 
     def mutate_json(self, path: str, mutate: Callable[[object], object], *,
                     default, max_retries: int = 5):
-        """Compare-and-set a JSON blob at `path` (generalises `update_index`'s CAS loop for any
-        JSON doc — e.g. the self-learning capture queue). `mutate` receives the current value
-        (or `default` when absent) and returns the new value; retried on a concurrent write."""
+        """Compare-and-set a JSON blob at `path` (generalises `update_index`'s CAS loop for any"""
         for _ in range(max_retries):
             blob = self._bucket.get_blob(path)
             current = json.loads(blob.download_as_text()) if blob else default
@@ -153,17 +142,15 @@ class MemoryBank:
                 self._put(path, json.dumps(new, indent=1, ensure_ascii=False),
                           "application/json", if_generation_match=generation)
             except PreconditionFailed:
-                continue  # concurrent write — reload and re-apply
+                continue
             return new
         raise RuntimeError(f"mutate_json CAS retries exhausted for {path}")
 
-    # run-log
     def append_run_log(self, run: RunLog) -> str:
         path = f"{ROOT}/runs/{_slug(run.started) or run.run_id}_run-{run.run_id}.md"
         self._put(path, self._redact(render_run_log_md(run)), "text/markdown")
         return path
 
-    # --- Step 2 · Knowledge Refinement --- #
     def _read_json(self, path: str, default):
         blob = self._bucket.get_blob(path)
         return json.loads(blob.download_as_text()) if blob else default
@@ -200,7 +187,7 @@ class MemoryBank:
     def append_answers(self, context_id: str, answers: list[Answer]) -> str:
         path = f"{self._refine_dir(context_id)}/answers.json"
         existing = self._read_json(path, [])
-        existing.extend(asdict(a) for a in answers)  # append-only
+        existing.extend(asdict(a) for a in answers)
         self._put(path, json.dumps(existing, indent=1, ensure_ascii=False), "application/json")
         return path
 
@@ -221,7 +208,6 @@ class MemoryBank:
         self._put(path, self._redact(render_refine_run_log_md(run)), "text/markdown")
         return path
 
-    # resumable-session state (so a stateless A2A turn can rehydrate the loop)
     def write_refine_state(self, context_id: str, state: dict) -> str:
         path = f"{self._refine_dir(context_id)}/state.json"
         self._put(path, json.dumps(state, indent=1, ensure_ascii=False), "application/json")

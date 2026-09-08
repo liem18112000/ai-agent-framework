@@ -1,9 +1,4 @@
-"""R5 integration: drive Knowledge Refinement through the real A2A stack (multi-turn).
-
-message/send `refine <ctx>` → the agent pauses in input-required with questions; a second
-message/send on the same task carries answers → the agent resumes; a final turn completes
-with the refined pack. Gather still works unchanged. No Atlassian client is built.
-"""
+"""R5 integration: drive Knowledge Refinement through the real A2A stack (multi-turn)."""
 
 from __future__ import annotations
 
@@ -41,7 +36,7 @@ def _gen(pack, rnd):
 
 def _app(bucket=None):
     bank = MemoryBank(bucket if bucket is not None else load_fixture_bucket("pack_run-6f2a"))
-    executor = KnowledgeGatheringExecutor(bank=bank, generator=_gen)  # no client → read-only, offline
+    executor = KnowledgeGatheringExecutor(bank=bank, generator=_gen)
     handler = DefaultRequestHandler(
         agent_executor=executor, task_store=InMemoryTaskStore(), agent_card=AGENT_CARD)
     app = Starlette(routes=create_jsonrpc_routes(handler, DEFAULT_RPC_URL, enable_v0_3_compat=True))
@@ -66,32 +61,28 @@ def test_refine_multiturn_pauses_then_completes():
     app = _app()
     c = TestClient(app)
 
-    # turn 1: start → agent asks the business round and pauses (input-required)
     r1 = _send(c, "refine run-6f2a", context_id="ctx-1")
     s1 = json.dumps(r1)
     assert "Q-biz-1" in s1 and "materialized" in s1.lower()
     task_id = _task(r1).get("id") or _task(r1).get("taskId")
 
-    # turns 2-4: answer each round on the same task; the last completes with the refined pack
     _send(c, "Q-biz-1: Materialized", task_id=task_id, context_id="ctx-1")
     _send(c, "Q-tech-1: dev", task_id=task_id, context_id="ctx-1")
     r4 = _send(c, "Q-qa-1: happy", task_id=task_id, context_id="ctx-1")
     s4 = json.dumps(r4)
     assert "Refinement complete" in s4 and "Understanding" in s4
 
-    # the Collect-insight edge really persisted: insight notes + understanding + run-log in the bank
     bank = app.state.bank
     assert bank.read_understanding("run-6f2a")
     store = bank._bucket.store
     assert any(k.startswith("memory/notes/insight/") for k in store)
     assert any("refine-" in k for k in store)
-    # decisions captured from the human answers
     ins = bank.read_insight("insight:run-6f2a:Q-biz-1")
     assert ins is not None and "Materialized" in ins.statement and ins.answered_by == "human"
 
 
 def test_refine_empty_bank_says_run_gather_first():
-    c = TestClient(_app(bucket=FakeBucket()))  # no gathered pack yet
+    c = TestClient(_app(bucket=FakeBucket()))
     r = _send(c, "refine run-6f2a", context_id="ctx-x")
     assert "run gather first" in json.dumps(r).lower()
 
@@ -103,10 +94,7 @@ def test_get_understanding_helper_before_any_run():
 
 
 def test_gather_still_routes_and_works():
-    # a plain gather seed must NOT be mistaken for a refine request
     app = _app()
     c = TestClient(app)
     r = _send(c, "gather LUZ-158390 depth 0", context_id="ctx-g")
-    # bank has the fixture pack; gather has no client → config error is the graceful reply,
-    # proving it routed to the gather branch (not refine)
     assert "Config error" in json.dumps(r) or "Gather complete" in json.dumps(r)

@@ -1,14 +1,9 @@
-"""Prompt templates for the Claude-on-Vertex plan generators.
-
-Kept separate from the call/parse logic (llm/questions.py, llm/plan.py, llm/scenarios.py) so
-the LLM wording can be tuned without touching parsing. Mirrors common.llm.prompts.
-"""
+"""Prompt templates for the Claude-on-Vertex plan generators."""
 
 from __future__ import annotations
 
 from test_plan_definition.models import ROUND_PREFIX, TestData, TestPlan, TestScenario
 
-# Per-round focus injected into the define question prompt.
 ROUND_FOCUS = {
     "methodology": (
         "the test methodology (API / E2E / UI) that fits THIS feature. API is the deterministic "

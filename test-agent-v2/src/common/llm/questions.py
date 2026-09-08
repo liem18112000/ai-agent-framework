@@ -1,8 +1,4 @@
-"""Claude-on-Vertex generator for one interrogation round's clarifying questions.
-
-The LLM half of the question step: build the prompt, call Vertex, parse the JSON reply
-into `Question`s. Ranking, capping, and the heuristic fallback live in refine/questions.py.
-"""
+"""Claude-on-Vertex generator for one interrogation round's clarifying questions."""
 
 from __future__ import annotations
 
@@ -14,7 +10,7 @@ from common.llm.vertex import complete
 from common.models import Question
 from common.monitoring import get_logger
 
-if TYPE_CHECKING:  # annotation-only; importing refine.pack at runtime would cycle back into llm
+if TYPE_CHECKING:
     from common.interrogate.pack import Pack
 
 log = get_logger("llm.questions")
@@ -30,8 +26,6 @@ def claude_questions(
 ) -> list[Question]:
     raw = complete(
         question_prompt(pack, round_name),
-        # A full round is a verbose JSON array (each Q: options+why+recommendation+depends_on);
-        # 1500 truncated it mid-array -> loads_array failed -> 0 questions. 6000 fits a round.
         project=project, location=location, model=model, max_tokens=6000,
     )
     return _parse(raw, round_name)
@@ -45,7 +39,7 @@ def _parse(raw: str, round_name: str) -> list[Question]:
     out = []
     for it in items:
         it.setdefault("round", round_name)
-        if "applies_to" in it:  # LLM sometimes returns a list; the field's contract is str
+        if "applies_to" in it:
             it["applies_to"] = coerce_str(it["applies_to"])
         out.append(Question(**{k: it.get(k) for k in _FIELDS if k in it}))
     return out

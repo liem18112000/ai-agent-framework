@@ -1,21 +1,11 @@
-"""Toggleable logging, shared by the engine and both agents.
-
-`LoggingToggle` is the single implementation; each package (common / knowledge_gathering /
-test_plan_definition) owns one instance with its own logger root + env prefix, so the three
-namespaces stay independently switchable — `common.monitoring` is `COMMON_LOG`, and the agents'
-`*.monitoring` shims are `KGA_LOG` / `TPD_LOG`. Off by default; env `<PREFIX>_LOG=1` turns a
-namespace on (level via `<PREFIX>_LOG_LEVEL`, default INFO).
-
-This module also exposes `configure`/`enable`/`disable`/`get_logger` bound to the `common` root,
-so `from common.monitoring import get_logger` keeps working for the shared-engine modules.
-"""
+"""Toggleable logging, shared by the engine and both agents."""
 
 from __future__ import annotations
 
 import logging
 import os
 
-_OFF = logging.CRITICAL + 1  # silences every level, including CRITICAL
+_OFF = logging.CRITICAL + 1
 
 
 def _truthy(v: str | None) -> bool:
@@ -23,10 +13,7 @@ def _truthy(v: str | None) -> bool:
 
 
 class LoggingToggle:
-    """One toggleable logger namespace: children of `root`, gated by `<prefix>_LOG` env.
-
-    `get_logger("x")` -> logging.getLogger(f"{root}.x"). All children share the one switch.
-    """
+    """One toggleable logger namespace: children of `root`, gated by `<prefix>_LOG` env."""
 
     def __init__(self, root: str, env_prefix: str) -> None:
         self.root = root
@@ -39,7 +26,7 @@ class LoggingToggle:
         if enabled is None:
             enabled = _truthy(os.environ.get(self._env))
         logger = logging.getLogger(self.root)
-        logger.propagate = False  # don't double-log through uvicorn/root
+        logger.propagate = False
         if not logger.handlers:
             handler = logging.StreamHandler()
             handler.setFormatter(
@@ -58,11 +45,10 @@ class LoggingToggle:
 
     def get_logger(self, name: str) -> logging.Logger:
         if not self._ready:
-            self.configure()  # first use applies the env toggle
+            self.configure()
         return logging.getLogger(f"{self.root}.{name}")
 
 
-# The shared-engine (`common.*`) namespace. Agents create their own toggle in their shim.
 _toggle = LoggingToggle("common", "COMMON")
 configure = _toggle.configure
 enable = _toggle.enable

@@ -1,11 +1,4 @@
-"""RoundQuestions — one heuristic-question strategy per interrogation round.
-
-The shared base for both agents' no-LLM question rounds: KGA refine (business / technical / qa)
-and TPD define (methodology / scope / metrics) each subclass this with their `round` name and
-self-register via __init_subclass__ into RoundQuestions.registry. common.interrogate.questions.
-build_round_questions dispatches on the round name — adding a round is a new module in this
-package (Open/Closed: no edit to the dispatcher); each subclass owns one round's questions (SRP).
-"""
+"""RoundQuestions — one heuristic-question strategy per interrogation round."""
 
 from __future__ import annotations
 
@@ -16,7 +9,6 @@ from typing import ClassVar
 from common.interrogate.pack import Pack
 from common.models import Note, Question
 
-# Factory (bound inside build_round_questions) that stamps id + round and builds a Question.
 QFactory = Callable[..., Question]
 
 

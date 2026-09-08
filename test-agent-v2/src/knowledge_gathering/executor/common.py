@@ -1,8 +1,4 @@
-"""KG executor seam — generic helpers reused from common, plus the KG-specific client.
-
-`now`, `reply`, `build_bank` are generic (see common.executor); `build_client` builds the
-read-only Atlassian client from env (+ optional Bitbucket auth) and stays here.
-"""
+"""KG executor seam — generic helpers reused from common, plus the KG-specific client."""
 
 from __future__ import annotations
 

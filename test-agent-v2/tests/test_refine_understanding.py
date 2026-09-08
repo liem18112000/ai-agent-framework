@@ -21,7 +21,7 @@ def test_brief_lists_decisions_and_problem(pack_bucket):
     md, confidence = restate(_pack(pack_bucket), [_decision()])
     assert "Understanding — LUZ-158390" in md
     assert "Q-biz-1 settled" in md
-    assert "Import a conformant" in md or "import" in md.lower()  # problem from the pack synopsis
+    assert "Import a conformant" in md or "import" in md.lower()
     assert confidence == "high"
 
 
@@ -34,7 +34,7 @@ def test_open_questions_drive_low_confidence_and_gaps(pack_bucket):
 
 def test_agent_assumptions_yield_medium_confidence(pack_bucket):
     _md, confidence = restate(_pack(pack_bucket), [_decision(conf="low")])
-    assert confidence == "medium"  # unconfirmed agent assumption, but nothing open
+    assert confidence == "medium"
 
 
 def test_deferred_shown_separately(pack_bucket):

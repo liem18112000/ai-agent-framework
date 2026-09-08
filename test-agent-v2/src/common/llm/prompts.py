@@ -1,8 +1,4 @@
-"""Prompt + text templates for the Claude-on-Vertex generators.
-
-Kept separate from the generation logic (llm/questions.py, llm/understanding.py) so the
-LLM wording can be tuned without touching the call, parsing, or ranking code.
-"""
+"""Prompt + text templates for the Claude-on-Vertex generators."""
 
 from __future__ import annotations
 
@@ -10,14 +6,10 @@ from typing import TYPE_CHECKING
 
 from common.models import Insight, Question
 
-if TYPE_CHECKING:  # annotation-only; importing refine.pack at runtime would cycle back into llm
+if TYPE_CHECKING:
     from common.interrogate.pack import Pack
 
-# --- question generation ---------------------------------------------------
 
-# Per-round guidance injected into the question-generation prompt. Each block embeds the method of
-# the corresponding vinnstack interrogate-* skill (interrogate-business / -technical / -qa) so the
-# agent generates questions the same way those skills do — consistent, skill-faithful output.
 GUIDANCE = {
     "business": (
         "ROUND: Business (product-owner judgement) — vinnstack interrogate-business method.\n"
@@ -68,11 +60,7 @@ GUIDANCE = {
 
 
 def question_prompt(pack: Pack, round_name: str) -> str:
-    """Claude-on-Vertex prompt asking for one interrogation round's questions.
-
-    The per-round guidance embeds the corresponding vinnstack interrogate-* skill's method, so the
-    generated questions are consistent with those skills.
-    """
+    """Claude-on-Vertex prompt asking for one interrogation round's questions."""
     guidance = GUIDANCE.get(round_name, f"ROUND: {round_name}")
     return (
         "You are the QA Testing Agent's interrogation step, applying the vinnstack interrogation "
@@ -88,9 +76,6 @@ def question_prompt(pack: Pack, round_name: str) -> str:
         f"Use id prefix 'Q-{round_name[:3]}-'.\n\n"
         f"Context pack:\n{pack.summary_text()}"
     )
-
-
-# --- understanding restatement ---------------------------------------------
 
 
 def understanding_prompt(

@@ -1,8 +1,4 @@
-"""Claude-on-Vertex restatement of the agent's current understanding.
-
-The LLM half of the understanding step: build the prompt, call Vertex, return the prose
-brief. Confidence, the heuristic fallback, and orchestration live in refine/understanding.py.
-"""
+"""Claude-on-Vertex restatement of the agent's current understanding."""
 
 from __future__ import annotations
 
@@ -12,7 +8,7 @@ from common.llm.prompts import understanding_prompt
 from common.llm.vertex import complete
 from common.models import Insight, Question
 
-if TYPE_CHECKING:  # annotation-only; importing refine.pack at runtime would cycle back into llm
+if TYPE_CHECKING:
     from common.interrogate.pack import Pack
 
 

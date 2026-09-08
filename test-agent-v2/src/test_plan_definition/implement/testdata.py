@@ -1,9 +1,4 @@
-"""Generate the test-data a plan's scenarios depend on.
-
-Claude-on-Vertex generates concrete, grounded test data (a role-matched account + one mock
-record per behaviour + an input fixture) when VERTEX_* is configured; otherwise a detailed
-heuristic produces the same shape mechanically. Mirrors implement/scenarios.py.
-"""
+"""Generate the test-data a plan's scenarios depend on."""
 
 import os
 
@@ -12,15 +7,12 @@ from common.memory.bank import _slug
 from test_plan_definition.models import FIXTURE, MOCK_DATA, TEST_ACCOUNT, TestData, TestPlan
 from test_plan_definition.pack import PlanPack
 
-_MAX_MOCKS = 8  # one mock record per behaviour under test, capped
+_MAX_MOCKS = 8
 
 
 def generate_test_data(plan: TestPlan, plan_pack: PlanPack, *, now: str = "",
                        detail: bool = False) -> list[TestData]:
-    """Detailed heuristic by default; opt into the Claude-on-Vertex generator per-call with
-    detail=True (or globally with env TPD_LLM_DETAIL=1). The LLM path is opt-in because it adds
-    serial Vertex calls that take minutes — the caller chooses richer-but-slower vs fast.
-    """
+    """Detailed heuristic by default; opt into the Claude-on-Vertex generator per-call with"""
     if detail or os.environ.get("TPD_LLM_DETAIL"):
         cfg = vertex_config()
         if cfg:
@@ -28,7 +20,7 @@ def generate_test_data(plan: TestPlan, plan_pack: PlanPack, *, now: str = "",
             from test_plan_definition.llm.testdata import claude_test_data
 
             td = claude_test_data(plan, plan_pack, project=proj, location=loc, model=model, now=now)
-            if td:  # non-empty on success; None/[] falls through to the heuristic
+            if td:
                 return td
     return heuristic_test_data(plan, plan_pack, now=now)
 
@@ -50,7 +42,6 @@ def heuristic_test_data(plan: TestPlan, plan_pack: PlanPack, *, now: str = "") -
         source_refs=plan.source_refs[:1],
         created_at=now,
     )]
-    # one mock-data record per behaviour under test — the scenarios reference these by id.
     for n in plan_pack.pack.grounded[:_MAX_MOCKS]:
         out.append(TestData(
             id=f"test-data:{ctx}:mock:{_slug(n.id)}",
@@ -65,7 +56,7 @@ def heuristic_test_data(plan: TestPlan, plan_pack: PlanPack, *, now: str = "") -
             source_refs=[n.id],
             created_at=now,
         ))
-    if method == "api":  # a baseline valid request payload the API cases build on
+    if method == "api":
         out.append(TestData(
             id=f"test-data:{ctx}:fixture",
             kind=FIXTURE,

@@ -1,10 +1,4 @@
-"""Markdown templates for the memory-bank artifacts (notes, index, run-logs, insights).
-
-Separated from render.py so the document shapes can be edited as text. Filled with
-``str.format`` — values are inserted literally, so braces inside a value (e.g. JSON params)
-are safe. The frontmatter ``key: value`` lines are load-bearing: memory.serialize parses
-them back, so keep those keys intact.
-"""
+"""Markdown templates for the memory-bank artifacts (notes, index, run-logs, insights)."""
 
 from __future__ import annotations
 

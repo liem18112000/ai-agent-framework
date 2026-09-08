@@ -1,10 +1,4 @@
-"""Acquire a repo's source tree for graphify — gitless (Bitbucket tarball) or a local clone.
-
-Cloud Run has no writable git clones, so we download the Bitbucket tarball (read-only app
-password, same creds as the crawler) and extract it to a temp dir — mirroring Vinnstack's
-runner. For local dev, ``CODEGRAPH_LOCAL_ROOT`` (or an explicit ``local_root``) short-circuits
-to an existing clone so the build runs with no network.
-"""
+"""Acquire a repo's source tree for graphify — gitless (Bitbucket tarball) or a local clone."""
 
 from __future__ import annotations
 
@@ -35,11 +29,7 @@ def acquire_repo(
     ws: str, repo: str, ref: str | None, dest: Path,
     *, bb_auth: tuple[str, str] | None = None, local_root: Path | None = None, timeout: float = 120.0,
 ) -> tuple[Path, str]:
-    """Return ``(source_dir, commit)`` for ``<ws>/<repo>``.
-
-    Uses ``local_root/<repo>`` when present (dev, no network); otherwise downloads and extracts
-    the Bitbucket tarball into ``dest``. Raises on HTTP / extraction failure.
-    """
+    """Return ``(source_dir, commit)`` for ``<ws>/<repo>``."""
     if local_root:
         local = Path(local_root) / repo
         if local.is_dir():
@@ -59,9 +49,8 @@ def acquire_repo(
     tar_path.write_bytes(tar.content)
     with tarfile.open(tar_path, "r:gz") as tf:
         top = tf.getnames()[0].split("/")[0] if tf.getnames() else ""
-        tf.extractall(dest, filter="data")  # filter=data: no absolute/parent-escaping paths
+        tf.extractall(dest, filter="data")
     tar_path.unlink(missing_ok=True)
-    # Bitbucket names the top dir "<ws>-<repo>-<shorthash>"; the hash is the commit.
     src = dest / top
     commit = top.rsplit("-", 1)[-1] if "-" in top else (ref or "head")
     return src, commit

@@ -1,14 +1,4 @@
-"""Retrieval facade (M1) — one dispatch point over the memory backend.
-
-`MEMORY_BACKEND` selects the read path:
-  * gcs (default)      — the GCS link-graph predicates (`common.memory.graph_index`); today's behaviour.
-  * hybrid             — read Postgres, fall back to the graph on any miss/error (safe dark launch).
-  * postgres           — read Postgres authoritative (still falls back on error, so a DB blip degrades
-                         rather than breaks).
-
-M1 wires the `search-memory` read through here; the explore-loop predicates and lesson recall move
-onto the facade in M4 (they need the async store + query embeddings). Best-effort — never raises.
-"""
+"""Retrieval facade (M1) — one dispatch point over the memory backend."""
 
 from __future__ import annotations
 
@@ -30,10 +20,9 @@ def _graph_search(bank, query: str) -> list[dict]:
 
 
 async def search_nodes(bank, query: str, *, store=None) -> list[dict]:
-    """Index nodes matching `query`, as `{id,type,title}` dicts. Postgres (hybrid/postgres) when a
-    store is available, else the GCS graph. A Postgres error/empty-in-hybrid degrades to the graph."""
+    """Index nodes matching `query`, as `{id,type,title}` dicts. Postgres (hybrid/postgres) when a"""
     if backend() in ("hybrid", "postgres"):
-        store = store or _build_store()  # self-build so callers (search-memory) needn't wire one
+        store = store or _build_store()
         if store is not None:
             try:
                 rows = await store.search(q_text=query, q_embed=await _query_embedding(query))
@@ -45,9 +34,7 @@ async def search_nodes(bank, query: str, *, store=None) -> list[dict]:
 
 
 async def recall_lessons(bank, *, seed_refs: set[str], query_text: str = "", limit: int = 5) -> list[str]:
-    """Prior lessons for a run — structural (source_refs ∩ seed_refs) ∪ semantic (vector-nearest,
-    shared-scope). Postgres when a DB backend is selected + a store builds; else the structural GCS
-    recall (`learn.recall_lessons`). Best-effort — any error falls back to the graph path."""
+    """Prior lessons for a run — structural (source_refs ∩ seed_refs) ∪ semantic (vector-nearest,"""
     if backend() in ("hybrid", "postgres"):
         store = _build_store()
         if store is not None:
@@ -71,8 +58,7 @@ def _build_store():
 
 
 async def _query_embedding(query: str):
-    """Embed the query (RETRIEVAL_QUERY) for the vector arm, or None when Vertex isn't configured
-    (→ the store runs lexical-only). Lazy import keeps the gcs path free of the pg/embed modules."""
+    """Embed the query (RETRIEVAL_QUERY) for the vector arm, or None when Vertex isn't configured"""
     if not query:
         return None
     from common.memory.pg import embed

@@ -1,19 +1,4 @@
-"""Tier-1/2 hypothesize step (roadmap G2) — ONE bounded LLM call → focused search terms.
-
-Turns the seed's title/description/labels into a compact set of SEARCHABLE concepts (key phrases
-/ entities / subsystems) that REPLACE the raw title-substring terms feeding G0 self-seed + G1
-search — the raw terms over-match (a broad token like "import" hits half the index).
-
-Discipline:
-- Flag-gated, default OFF (`KGA_LLM_HYPOTHESIZE`). When off, ZERO LLM calls (caller skips the
-  thread offload).
-- Best-effort: disabled / empty title / Vertex unconfigured / error / junk → `""` (caller keeps
-  the raw probe terms). Never breaks gather.
-- QUERY TERMS ONLY — never turned into ticket ids / URLs / seeds; grounded downstream by G0/G1.
-- The single Vertex call is BLOCKING by design so the async caller offloads it with
-  `asyncio.to_thread` — a blocking Vertex call on the event loop starves Cloud Run's liveness
-  probe and kills the instance (ERROR_TIMEOUT).
-"""
+"""Tier-1/2 hypothesize step (roadmap G2) — ONE bounded LLM call → focused search terms."""
 
 from __future__ import annotations
 
@@ -26,23 +11,19 @@ from knowledge_gathering.monitoring import get_logger
 log = get_logger("explore.hypothesize")
 
 _FLAG = "KGA_LLM_HYPOTHESIZE"
-_MAX_TOKENS = 400  # short JSON object of terms — bounds the single call
-_DESC_CAP = 1000  # cap the (possibly long) ticket body fed to the prompt
+_MAX_TOKENS = 400
+_DESC_CAP = 1000
 _FIELDS = ("key_phrases", "entities", "subsystems")
-_MAX_TERMS = 8  # cap the flattened list — G0/G1 match per token substring, so MORE terms BROADEN
-# (over-match) instead of tightening. A few distinctive terms, whatever the model returns.
+_MAX_TERMS = 8
 
 
 def hypothesize_enabled() -> bool:
-    """G2 opt-in (default OFF). Exposed so the async caller can skip the thread offload entirely
-    when disabled, not just rely on `hypothesize_terms` short-circuiting."""
+    """G2 opt-in (default OFF). Exposed so the async caller can skip the thread offload entirely"""
     return os.environ.get(_FLAG, "").lower() in ("1", "true", "yes", "on")
 
 
 def _prompt(title: str, description: str, labels: list[str]) -> str:
-    """Prompt for a FEW distinctive search terms as strict JSON — no ids/URLs. Demands rare/precise
-    terms and bans broad words: G0/G1 match per token substring, so an exhaustive list broadens
-    the match instead of tightening it."""
+    """Prompt for a FEW distinctive search terms as strict JSON — no ids/URLs. Demands rare/precise"""
     lbls = ", ".join(labels) if labels else "(none)"
     return (
         "You are the QA Testing Agent's search-planning step. Given a ticket's title, short "
@@ -64,10 +45,9 @@ def _prompt(title: str, description: str, labels: list[str]) -> str:
 
 
 def _coerce_terms(raw: str) -> list[str]:
-    """Parse the LLM JSON object and flatten its three fields into a deduped, order-stable list of
-    non-empty strings. Junk → `[]`. Tolerates a ```json fence and a scalar-instead-of-list field."""
+    """Parse the LLM JSON object and flatten its three fields into a deduped, order-stable list of"""
     text = raw.strip()
-    if text.startswith("```"):  # strip a ```json fence if the model added one
+    if text.startswith("```"):
         text = text.split("```", 2)[1].removeprefix("json").strip()
     try:
         data = json.loads(text)
@@ -78,9 +58,9 @@ def _coerce_terms(raw: str) -> list[str]:
     out: list[str] = []
     for field in _FIELDS:
         v = data.get(field)
-        if v is None:  # missing field — don't let str(None) become "None"
+        if v is None:
             continue
-        items = v if isinstance(v, list) else [v]  # coerce a scalar field to a 1-elem list
+        items = v if isinstance(v, list) else [v]
         for item in items:
             s = "" if item is None else str(item).strip()
             if s and s not in out:
@@ -89,24 +69,19 @@ def _coerce_terms(raw: str) -> list[str]:
 
 
 def hypothesize_terms(title: str, description: str = "", labels: list[str] | None = None) -> str:
-    """ONE blocking Claude-on-Vertex call → a space-joined string of focused search terms, to drop
-    into `memory_self_seed` (G0) / `atlassian_search_seeds` (G1) in place of the raw terms.
-
-    Returns `""` (caller keeps the raw probe terms) when the flag is OFF, `title` is empty, Vertex
-    is unconfigured, or anything fails. BLOCKING by design — offloaded via `asyncio.to_thread`.
-    At most ONE LLM call; never raises."""
+    """ONE blocking Claude-on-Vertex call → a space-joined string of focused search terms, to drop"""
     if not hypothesize_enabled() or not title.strip():
         return ""
     try:
         cfg = vertex_config()
-        if not cfg:  # flag on but no Vertex → keep raw terms
+        if not cfg:
             return ""
         proj, loc, model = cfg
         raw = complete(
             _prompt(title.strip(), (description or "").strip(), labels or []),
             project=proj, location=loc, model=model, max_tokens=_MAX_TOKENS,
         )
-        terms = _coerce_terms(raw)[:_MAX_TERMS]  # cap the flattened list
+        terms = _coerce_terms(raw)[:_MAX_TERMS]
         if not terms:
             log.info("hypothesize: LLM returned no usable terms; keeping raw probe terms")
             return ""

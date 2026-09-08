@@ -1,11 +1,4 @@
-"""Test Plan implement (Stage B) — one-shot artifact generation from a confirmed plan.
-
-Loads the confirmed TestPlan + insight pack, generates test data / scenarios / steps,
-persists them to the test-plan namespace, adds plan + scenario nodes to the shared knowledge
-graph (cross-stage provenance: scenario -> insight/note), and writes a run-log. The analog of
-knowledge_gathering's gather (one-shot), and the second half of this stage's reconfirm ->
-generate flow.
-"""
+"""Test Plan implement (Stage B) — one-shot artifact generation from a confirmed plan."""
 
 from __future__ import annotations
 
@@ -48,9 +41,9 @@ def implement_plan(bank, context_id: str, *, run_id: str = "implement", now: str
     store.write_test_data(bank, context_id, test_data)
     store.write_scenarios(bank, context_id, scenarios, steps)
     store.write_steps(bank, context_id, steps)
-    feature = export_features(bank, context_id) or ""  # BDD export for the execution stage
+    feature = export_features(bank, context_id) or ""
     bank.update_index(lambda g: _add_provenance(g, plan, scenarios))
-    _project_nodes(bank, plan, scenarios)  # enqueue plan/scenario into the pgvector recall tier
+    _project_nodes(bank, plan, scenarios)
 
     run = TestPlanRun(
         run_id=run_id, context_id=context_id, plan_id=plan.id,
@@ -64,9 +57,7 @@ def implement_plan(bank, context_id: str, *, run_id: str = "implement", now: str
 
 
 def _project_nodes(bank, plan: TestPlan, scenarios: list[TestScenario]) -> None:
-    """Enqueue the plan + scenario index nodes for the pgvector projector (no-op under
-    MEMORY_BACKEND=gcs). They aren't written via upsert_note/insight, so on_write never fires for
-    them — this is their equivalent hook. Best-effort; never breaks implement."""
+    """Enqueue the plan + scenario index nodes for the pgvector projector (no-op under"""
     try:
         from common.memory.pg.project import index_on_write
 

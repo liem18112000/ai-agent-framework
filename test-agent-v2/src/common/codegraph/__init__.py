@@ -1,10 +1,4 @@
-"""Code-base intelligence: build a graphify code graph for a Bitbucket repo and store it
-versioned in the GCS memory bank.
-
-``build_and_store`` is the reusable, synchronous entrypoint (acquire -> graphify -> GCS). It is
-blocking (subprocess + network) by design, so async callers offload it with
-``asyncio.to_thread`` — see knowledge_gathering.loop.fetch.codegraph.
-"""
+"""Code-base intelligence: build a graphify code graph for a Bitbucket repo and store it"""
 
 from __future__ import annotations
 
@@ -37,11 +31,7 @@ def build_and_store(
     bank, ws: str, repo: str, *, ref: str | None = None,
     bb_auth: tuple[str, str] | None = None, timeout: float = 300.0,
 ) -> CodeGraphResult:
-    """Acquire ``<ws>/<repo>``, build its graphify graph, persist it to GCS, return the result.
-
-    Reads ``CODEGRAPH_LOCAL_ROOT`` (a dir holding local clones) to skip the download in dev.
-    Blocking — call via ``asyncio.to_thread`` from async code.
-    """
+    """Acquire ``<ws>/<repo>``, build its graphify graph, persist it to GCS, return the result."""
     local_root = os.environ.get("CODEGRAPH_LOCAL_ROOT")
     with tempfile.TemporaryDirectory(prefix=f"codegraph-{repo}-") as tmp:
         src, commit = acquire_repo(

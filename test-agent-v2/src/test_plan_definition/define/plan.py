@@ -1,10 +1,4 @@
-"""Assemble the confirmed TestPlan from plan decisions, and restate a human-facing brief.
-
-The analog of common.interrogate.understanding: confidence is computed
-deterministically (open questions -> low; unconfirmed assumptions -> medium; all settled by
-a human -> high); the brief is a heuristic assembly (Claude-on-Vertex prose is the M6 add
-behind `make_restater`).
-"""
+"""Assemble the confirmed TestPlan from plan decisions, and restate a human-facing brief."""
 
 from __future__ import annotations
 
@@ -17,7 +11,6 @@ from test_plan_definition.pack import PlanPack
 
 _METHODOLOGIES = ("api", "e2e", "ui")
 
-# (plan, plan_pack, open_questions) -> markdown brief
 Restater = Callable[[TestPlan, PlanPack, list[Question]], str]
 
 

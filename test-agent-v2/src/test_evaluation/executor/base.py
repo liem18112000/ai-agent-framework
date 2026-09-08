@@ -1,9 +1,4 @@
-"""The A2A executor — one-shot pack evaluation.
-
-`evaluate <context_id>` scores the pack that context gathered (reusing any golden EvalCase whose
-seed/fixture matches) and replies with the Pack Quality Score + components. Read-only over the
-shared memory bank; the scoring runs in a worker thread so a large pack never stalls the event loop.
-"""
+"""The A2A executor — one-shot pack evaluation."""
 
 from __future__ import annotations
 
@@ -93,7 +88,7 @@ class TestEvaluationExecutor(AgentExecutor):
         ctx = extract_ctx(text) or a2a_ctx
         if not ctx:
             return await reply(context, event_queue, "Provide a context id, e.g. 'evaluate run-6f2a'.")
-        if _is_plan(text):  # 'evaluate plan <ctx>' scores the Test-Plan agent's plan + suite
+        if _is_plan(text):
             report = await asyncio.to_thread(evaluate_plan, bank, ctx, golden_plan_for(ctx))
             return await reply(context, event_queue, render_plan(report))
         report = await asyncio.to_thread(evaluate_pack, bank, ctx, golden_for(ctx))

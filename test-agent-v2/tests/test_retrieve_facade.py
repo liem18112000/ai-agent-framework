@@ -48,7 +48,7 @@ async def test_default_backend_uses_graph():
 
 
 async def test_store_none_ignores_backend(monkeypatch):
-    monkeypatch.setenv("MEMORY_BACKEND", "postgres")           # no store → still the graph
+    monkeypatch.setenv("MEMORY_BACKEND", "postgres")
     nodes = await retrieve.search_nodes(_bank(_LOGIN), "login", store=None)
     assert {n["id"] for n in nodes} == {"jira:LUZ-1"}
 
@@ -63,16 +63,16 @@ async def test_hybrid_prefers_store(monkeypatch):
 async def test_hybrid_falls_back_on_store_error(monkeypatch):
     monkeypatch.setenv("MEMORY_BACKEND", "hybrid")
     nodes = await retrieve.search_nodes(_bank(_LOGIN), "login", store=_FakeStore(boom=True))
-    assert {n["id"] for n in nodes} == {"jira:LUZ-1"}          # graph fallback
+    assert {n["id"] for n in nodes} == {"jira:LUZ-1"}
 
 
 async def test_hybrid_empty_store_falls_back(monkeypatch):
-    monkeypatch.setenv("MEMORY_BACKEND", "hybrid")             # hybrid: empty PG → try the graph
+    monkeypatch.setenv("MEMORY_BACKEND", "hybrid")
     nodes = await retrieve.search_nodes(_bank(_LOGIN), "login", store=_FakeStore(rows=[]))
     assert {n["id"] for n in nodes} == {"jira:LUZ-1"}
 
 
 async def test_postgres_empty_is_authoritative(monkeypatch):
-    monkeypatch.setenv("MEMORY_BACKEND", "postgres")           # postgres: empty PG is the answer
+    monkeypatch.setenv("MEMORY_BACKEND", "postgres")
     nodes = await retrieve.search_nodes(_bank(_LOGIN), "login", store=_FakeStore(rows=[]))
     assert nodes == []

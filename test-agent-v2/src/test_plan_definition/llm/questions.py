@@ -1,9 +1,4 @@
-"""Claude-on-Vertex generator for one define round's questions.
-
-Build the prompt, call Vertex (reusing common.llm.vertex.complete), parse the
-JSON reply into `Question`s. Ranking/capping and the heuristic fallback live in
-define/questions.py. Mirrors common.llm.questions.
-"""
+"""Claude-on-Vertex generator for one define round's questions."""
 
 from __future__ import annotations
 
@@ -26,8 +21,6 @@ def claude_plan_questions(
 ) -> list[Question]:
     raw = complete(
         question_prompt(pack.summary_text(), understanding, round_name),
-        # 1500 truncated multi-question JSON -> parse failure -> 0 questions (same bug the refine
-        # generator had; see common.llm.questions). 6000 fits a full round.
         project=project, location=location, model=model, max_tokens=6000,
     )
     items = loads_array(raw)
@@ -37,7 +30,7 @@ def claude_plan_questions(
     out = []
     for it in items:
         it.setdefault("round", round_name)
-        if "applies_to" in it:  # LLM sometimes returns a list; the field's contract is str
+        if "applies_to" in it:
             it["applies_to"] = coerce_str(it["applies_to"])
         out.append(Question(**{k: it.get(k) for k in _FIELDS if k in it}))
     return out

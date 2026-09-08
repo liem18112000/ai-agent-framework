@@ -1,15 +1,4 @@
-"""The Knowledge Refinement loop — a resumable, multi-turn interrogation state machine.
-
-`RefineSession` advances one interrogation round at a time: it generates questions,
-persists agent self-answers as assumptions, and pauses on the open ones. The caller
-submits human answers; the session distills each into an insight, re-grounds the pack
-when an answer names a new source (the Gather↔Refine edge), and moves on. It concludes
-on a round budget, a dry pass, or when no open question remains — leftover questions are
-declared as gaps, never dropped.
-
-`RefineSession` is what the A2A executor drives (pause = input-required). `refine()` is a
-thin synchronous driver over it for offline runs and tests.
-"""
+"""The Knowledge Refinement loop — a resumable, multi-turn interrogation state machine."""
 
 from __future__ import annotations
 
@@ -27,7 +16,6 @@ from common.monitoring import get_logger
 
 log = get_logger("refine.loop")
 
-# Re-grounds the pack for a new seed (in prod: run the gather crawl). Async — it may hit the network.
 Gatherer = Callable[[str], Awaitable[None]]
 
 
@@ -63,8 +51,8 @@ class RefineSession:
         self.pack = load_pack(bank, context_id, seed=seed)
         self.insights: list[Insight] = []
         self.new_seeds: list[str] = []
-        self._seen_seeds: set[str] = set()  # dedup: never re-gather the same source twice
-        self._pending: list[str] = list(self.rounds)  # sub-rounds left in the current pass
+        self._seen_seeds: set[str] = set()
+        self._pending: list[str] = list(self.rounds)
         self._current: list[Question] = []
         self._pass = 1
         self._reseeded_this_pass = False
@@ -86,7 +74,7 @@ class RefineSession:
             qs = generate_round(
                 self.pack, rnd, max_questions=self.max_questions, generator=self.generator
             )
-            for q in qs:  # persist agent self-answers as vetoable assumptions right away
+            for q in qs:
                 if q.status == "self-answered":
                     self._record_insight(assumption_from_self_answer(
                         q, self.pack, run_id=self.run_id, now=self.now))
@@ -104,7 +92,7 @@ class RefineSession:
         self.bank.append_answers(self.context_id, res.answers)
         self._answered += len(res.answered)
         self._deferred += res.deferred
-        self._open_carried += res.carried  # carried → declared gaps (not re-queued: avoids looping)
+        self._open_carried += res.carried
 
         by_id = {q.id: q for q in self._current}
         seeds: list[str] = []
@@ -115,7 +103,7 @@ class RefineSession:
                 seeds.append(ans.new_seed)
                 self._seen_seeds.add(ans.new_seed)
 
-        for seed in seeds:  # Gather↔Refine edge: re-ground before the next round (deduped)
+        for seed in seeds:
             self.new_seeds.append(seed)
             if self.gatherer:
                 log.info("re-seed: gathering %s", seed)
@@ -131,7 +119,7 @@ class RefineSession:
             understander=self.understander,
         )
         self.bank.write_understanding(self.context_id, understanding)
-        if self.insights:  # one batched CAS index write for the whole session
+        if self.insights:
             self.bank.update_index(self._add_insights)
         open_gaps = [q.question for q in self._open_carried]
         run = RefinementRun(
@@ -146,7 +134,6 @@ class RefineSession:
                  len(self.insights), len(open_gaps), len(self.new_seeds))
         return RefineResult(understanding, confidence, self.insights, open_gaps, self.new_seeds, run)
 
-    # --- resumable state (persisted so a stateless A2A turn can rehydrate) --- #
     def save(self) -> None:
         self.bank.write_refine_state(self.context_id, self._state())
 
@@ -193,10 +180,9 @@ class RefineSession:
         self._raised = st.get("raised", 0)
         self._answered = st.get("answered", 0)
         self.insights = [ins for iid in st.get("insight_ids", []) if (ins := bank.read_insight(iid))]
-        self._current = bank.read_questions(context_id)  # the round now awaiting answers
+        self._current = bank.read_questions(context_id)
         return self
 
-    # --- internals --- #
     def _record_insight(self, insight: Insight) -> None:
         self.insights.append(insight)
         self._insights_this_pass += 1

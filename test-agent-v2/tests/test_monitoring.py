@@ -22,7 +22,7 @@ def test_disabled_silences_all_levels():
     configure(enabled=False)
     kga = logging.getLogger("knowledge_gathering")
     assert not kga.isEnabledFor(logging.INFO)
-    assert not kga.isEnabledFor(logging.CRITICAL)  # off means fully off
+    assert not kga.isEnabledFor(logging.CRITICAL)
 
 
 def test_enabled_emits():

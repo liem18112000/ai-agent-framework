@@ -1,6 +1,4 @@
-"""Shared test fakes/fixtures — an in-memory GCS bucket (generation + CAS) and a
-loader that hydrates one from a saved pack fixture under tests/fixtures/.
-"""
+"""Shared test fakes/fixtures — an in-memory GCS bucket (generation + CAS) and a"""
 
 from __future__ import annotations
 

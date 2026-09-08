@@ -1,9 +1,4 @@
-"""Toggleable logging for knowledge_gathering (env `KGA_LOG`, level `KGA_LOG_LEVEL`).
-
-A thin instance of common.monitoring.LoggingToggle over the "knowledge_gathering" logger root,
-so it switches on/off independently of the other namespaces. `get_logger("loop")` ->
-logging.getLogger("knowledge_gathering.loop").
-"""
+"""Toggleable logging for knowledge_gathering (env `KGA_LOG`, level `KGA_LOG_LEVEL`)."""
 
 from __future__ import annotations
 

@@ -1,9 +1,4 @@
-"""Test Plan implement (Stage B) handler — one-shot artifact generation over A2A.
-
-`implement <ctx>` generates the test data / scenarios / steps from the confirmed TestPlan and
-replies with a summary (no pause — this is one-shot, like gather). Mirrors
-knowledge_gathering.executor.gather.
-"""
+"""Test Plan implement (Stage B) handler — one-shot artifact generation over A2A."""
 
 from __future__ import annotations
 
@@ -54,14 +49,11 @@ async def run_implement(ex, context: RequestContext, event_queue: EventQueue,
     ctx = extract_ctx(text) or a2a_ctx
     if not ctx:
         return await reply(context, event_queue, "Provide a context id, e.g. 'implement run-6f2a'.")
-    detail = "detail" in text.lower().split()  # opt into the richer, slower LLM generation
-    # implement_plan is fully synchronous and (with detail) makes several blocking Vertex calls.
-    # Run it in a worker thread so it never blocks the asyncio event loop — otherwise Cloud Run's
-    # /livez probe starves and the instance is killed mid-request.
+    detail = "detail" in text.lower().split()
     result = await asyncio.to_thread(
         implement_plan, bank, ctx, run_id=f"impl-{(a2a_ctx or ctx)[:8]}", now=now(), detail=detail
     )
-    _capture_implement(bank, ctx, result)  # L3: enqueue async coverage-summary lesson (flag-gated)
+    _capture_implement(bank, ctx, result)
     if not result.scenarios:
         return await reply(context, event_queue, result.message or f"Nothing generated for {ctx}.")
     await reply(context, event_queue, summarize_implement(result))

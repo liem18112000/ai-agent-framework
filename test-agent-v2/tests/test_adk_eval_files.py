@@ -1,5 +1,4 @@
-"""E5 — canonical `adk eval` data: emitted `*.evalset.json` + `test_config.json` are well-formed,
-and the committed data dir matches the emitter. The live `AgentEvaluator` run is creds-gated."""
+"""E5 — canonical `adk eval` data: emitted `*.evalset.json` + `test_config.json` are well-formed,"""
 
 from __future__ import annotations
 
@@ -18,9 +17,8 @@ def test_emitted_evalsets_are_well_formed(tmp_path):
     assert written == {"kga_pack.evalset.json", "tpd_plan.evalset.json", "test_config.json"}
 
     es = EvalSet.model_validate_json((tmp_path / "kga_pack.evalset.json").read_text(encoding="utf-8"))
-    assert len(es.eval_cases) >= 3  # eval_rich/thin/bleed
+    assert len(es.eval_cases) >= 3
     case = es.eval_cases[0]
-    # the seed rides in user_content so a custom metric can recover the context id
     assert case.conversation[0].user_content.parts[0].text == case.eval_id
 
     cfg = json.loads((tmp_path / "test_config.json").read_text(encoding="utf-8"))
@@ -36,8 +34,7 @@ def test_committed_data_dir_is_present_and_loads():
 
 @pytest.mark.skipif(creds_available(), reason="live AgentEvaluator run needs no assertion here")
 async def test_agent_eval_harness_skips_without_creds():
-    """Offline, the canonical AgentEvaluator harness is not exercised (it runs the real agent).
-    This documents the entry point; with creds, CI calls run_agent_eval('knowledge_gathering')."""
+    """Offline, the canonical AgentEvaluator harness is not exercised (it runs the real agent)."""
     assert not creds_available()
     assert callable(run_agent_eval)
     assert Path(DATA_DIR).is_dir()

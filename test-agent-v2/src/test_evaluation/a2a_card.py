@@ -1,8 +1,4 @@
-"""Static A2A definitions — this agent's skills and Agent Card.
-
-Shared card scaffolding (transport / I/O modes / capabilities / bearer security) lives in
-common.card; only the skills + name/description/version are agent-specific.
-"""
+"""Static A2A definitions — this agent's skills and Agent Card."""
 
 from __future__ import annotations
 

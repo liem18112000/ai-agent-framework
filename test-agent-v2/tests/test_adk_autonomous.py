@@ -1,5 +1,4 @@
-"""E7 — the autonomous SequentialAgent runs gather→refine→define→approve→implement end to end,
-offline, with no human gates (auto-answers) and reaches a confirmed plan + scenarios."""
+"""E7 — the autonomous SequentialAgent runs gather→refine→define→approve→implement end to end,"""
 
 from __future__ import annotations
 
@@ -44,14 +43,12 @@ async def test_autonomous_pipeline_end_to_end(monkeypatch):
                 steps.append(p.text)
 
     joined = " | ".join(steps)
-    # every stage of the fixed pipeline ran, in order
     assert "Gather complete" in joined
     assert "[auto-refine]" in joined
     assert "[auto-define]" in joined
     assert "[auto-approve]" in joined
     assert "Implement complete" in joined
 
-    # the autonomous run produced a confirmed plan + persisted scenarios under the one ctx
     plan = store.read_plan(bank, ctx_id)
     assert plan is not None and plan.status == CONFIRMED
     assert store.read_scenarios_md(bank, ctx_id)

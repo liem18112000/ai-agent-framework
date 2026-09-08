@@ -1,10 +1,4 @@
-"""E4 trend history — append each nightly run to an append-only JSONL for PQS-over-time trending.
-
-The CALLER stamps `timestamp` and `commit` (the eval code stays clock-free, mirroring the workflow
-rule that eval logic must be deterministic/replayable). Locally this writes a file; the nightly
-runner can mirror the same record to `gs://…/memory/eval/history.jsonl`. `load_history` +
-`regressed` give the main-branch baseline comparison used to alert on a PQS drop.
-"""
+"""E4 trend history — append each nightly run to an append-only JSONL for PQS-over-time trending."""
 
 from __future__ import annotations
 

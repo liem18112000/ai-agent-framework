@@ -1,8 +1,4 @@
-"""Autonomous Testing Agent — ADK A2A app (E7). `uvicorn testing_agent.adk_app:app`.
-
-Serves the SequentialAgent over A2A (to_a2a auto-generates the card). Needs the crawler's env +
-Vertex to run a real ticket end to end.
-"""
+"""Autonomous Testing Agent — ADK A2A app (E7). `uvicorn testing_agent.adk_app:app`."""
 
 from __future__ import annotations
 

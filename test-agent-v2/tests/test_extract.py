@@ -41,8 +41,8 @@ def test_classify_url():
         CONFLUENCE_PAGE,
         "confluence:49662787598",
     )
-    assert classify_url("https://bitbucket.org/acme/x") == (CODEGRAPH, "codegraph:acme/x")  # bare repo → code graph
-    assert classify_url("https://bitbucket.org/acme/x/pull-requests/9")[0] == BITBUCKET  # PR recorded-only
+    assert classify_url("https://bitbucket.org/acme/x") == (CODEGRAPH, "codegraph:acme/x")
+    assert classify_url("https://bitbucket.org/acme/x/pull-requests/9")[0] == BITBUCKET
     assert classify_url("https://www.figma.com/file/abc")[0] == FIGMA
     assert classify_url("https://example.com/spec.pdf")[0] == EXTERNAL_WEB
 
@@ -50,24 +50,22 @@ def test_classify_url():
 def test_every_link_found_none_dropped():
     canon = {r.canonical_url for r in _issue_records()}
     assert canon == {
-        "confluence:49662787598",  # description link == remotelink (deduped)
-        "https://example.com/spec.pdf",  # raw-text URL — only regex catches it
-        "bitbucket:acme/luz-docs/src/main/FileUtil.java",  # smart-link inlineCard (file → fetchable id)
-        "https://www.figma.com/file/abc/eArchive",  # comment link
-        "jira:LUZ-159670",  # issue link (Blocks)
-        "jira:LUZ-159671",  # issue link (Relates)
+        "confluence:49662787598",
+        "https://example.com/spec.pdf",
+        "bitbucket:acme/luz-docs/src/main/FileUtil.java",
+        "https://www.figma.com/file/abc/eArchive",
+        "jira:LUZ-159670",
+        "jira:LUZ-159671",
         "https://axonivy.atlassian.net/rest/api/3/attachment/content/10001",
-        "https://confluence.example.com/display/LUZ/eArchive-Spec",  # server confluence → external
+        "https://confluence.example.com/display/LUZ/eArchive-Spec",
     }
 
 
 def test_follow_vs_record_only():
     by_canon = {r.canonical_url: r for r in _issue_records()}
-    # in-scope → follow
     assert by_canon["confluence:49662787598"].in_scope is True
     assert by_canon["jira:LUZ-159670"].in_scope is True
     assert by_canon["jira:LUZ-159671"].in_scope is True
-    # out-of-scope → recorded, not followed
     for canon in (
         "bitbucket:acme/luz-docs/src/main/FileUtil.java",
         "https://www.figma.com/file/abc/eArchive",
@@ -124,14 +122,11 @@ def test_parent_subtask_and_dev_panel_links():
         r.canonical_url: r
         for r in extract_issue_links(issue, None, dev, base_url=BASE, scope=SCOPE)
     }
-    # parent + subtasks → jira nodes, followed
     assert recs["jira:LUZ-159000"].origin == "parent" and recs["jira:LUZ-159000"].in_scope
     assert recs["jira:LUZ-159313"].origin == "subtask" and recs["jira:LUZ-159313"].in_scope
     assert recs["jira:LUZ-159314"].in_scope
-    # dev panel: repo → codegraph node, recorded-only under the default scope
     repo = recs["codegraph:axonivy-prod/luz_docs"]
     assert repo.type == CODEGRAPH and repo.origin == "repository" and repo.in_scope is False
-    # PR + commit → bitbucket, recorded-only
     pr = recs["https://bitbucket.org/axonivy-prod/luz_docs/pull-requests/42"]
     assert pr.type == BITBUCKET and pr.origin == "pullrequest" and pr.in_scope is False
     commit = recs["https://bitbucket.org/axonivy-prod/luz_docs/commits/abc1234ff"]
@@ -146,11 +141,8 @@ def test_extract_page_links():
         scope=SCOPE,
     )
     by_canon = {r.canonical_url: r for r in recs}
-    # <a href> internal jira link, storage body
     assert by_canon["jira:LUZ-158390"].in_scope is True
     assert by_canon["jira:LUZ-158390"].origin == "body-storage"
-    # ri:url macro grafana → external, record-only
     assert by_canon["https://grafana.example.com/d/abc/earchive"].in_scope is False
-    # child page → confluence, in-scope
     assert by_canon["confluence:111"].in_scope is True
     assert by_canon["confluence:111"].origin == "child"

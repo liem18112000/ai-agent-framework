@@ -1,14 +1,4 @@
-"""Vertex text embeddings for the recall tier (M3).
-
-Multilingual by default (`text-multilingual-embedding-002`, 768d) so a German dunning page and an
-English test note land near each other. Runs ONLY in the projector drain, thread-offloaded and
-bounded — never in a request handler (Cloud Run throttles CPU after the response, and serial Vertex
-calls have already tripped ERROR_TIMEOUT here). `vertexai` is imported lazily so importing this
-module (and stubbing the embedder in tests) needs no google-cloud-aiplatform install.
-
-Embeddings are asymmetric: documents embed with RETRIEVAL_DOCUMENT, queries with RETRIEVAL_QUERY —
-this measurably lifts recall over using one task type for both.
-"""
+"""Vertex text embeddings for the recall tier (M3)."""
 
 from __future__ import annotations
 
@@ -20,14 +10,11 @@ from common.monitoring import get_logger
 log = get_logger("memory.embed")
 
 _MODEL_NAME = os.environ.get("MEMORY_EMBED_MODEL", "text-multilingual-embedding-002")
-# Embeddings need a REGIONAL Vertex endpoint: the vertexai SDK 404s on location="global" for
-# embedding models (the Claude/AnthropicVertex path uses global, but that's a different SDK). So this
-# is deliberately separate from VERTEX_LOCATION. Default us-central1 (broad); override per deploy.
 _EMBED_LOCATION = os.environ.get("MEMORY_EMBED_LOCATION", "us-central1")
 TASK_DOCUMENT = "RETRIEVAL_DOCUMENT"
 TASK_QUERY = "RETRIEVAL_QUERY"
 
-_model = None  # cached across calls (vertexai.init + from_pretrained are not free)
+_model = None
 
 
 def embed_configured() -> bool:
@@ -55,8 +42,7 @@ def embed_texts(texts: list[str], *, task: str = TASK_DOCUMENT) -> list[list[flo
 
 
 async def aembed_one(text: str, *, task: str = TASK_DOCUMENT) -> list[float]:
-    """One embedding, thread-offloaded. Empty text → []. Best-effort — [] on failure so the
-    projector still writes the metadata row (embedding stays NULL, retried on the next write)."""
+    """One embedding, thread-offloaded. Empty text → []. Best-effort — [] on failure so the"""
     if not text:
         return []
     try:
@@ -68,8 +54,7 @@ async def aembed_one(text: str, *, task: str = TASK_DOCUMENT) -> list[float]:
 
 
 async def aembed_batch(texts: list[str], *, task: str = TASK_DOCUMENT) -> list[list[float]]:
-    """Embed a whole batch in ONE Vertex call, thread-offloaded. Whole-batch best-effort: any
-    failure → [] (the projector re-queues those nodes), so one bad batch never breaks the drain."""
+    """Embed a whole batch in ONE Vertex call, thread-offloaded. Whole-batch best-effort: any"""
     if not texts:
         return []
     try:
@@ -80,9 +65,7 @@ async def aembed_batch(texts: list[str], *, task: str = TASK_DOCUMENT) -> list[l
 
 
 def build_embedder():
-    """The DOCUMENT batch embedder for the projector drain, or None when Vertex isn't configured
-    (→ the drain projects metadata only). Signature: async (list[str]) -> list[list[float]] — one
-    Vertex call per batch (the drain groups nodes; MEMORY_EMBED_BATCH sizes the group)."""
+    """The DOCUMENT batch embedder for the projector drain, or None when Vertex isn't configured"""
     if not embed_configured():
         return None
 

@@ -1,8 +1,4 @@
-"""Claude-on-Vertex generator for TEST DATA from a confirmed plan.
-
-Build the prompt, call Vertex, parse the JSON reply into `TestData`. Returns None on a parse
-miss so the caller falls back to the heuristic. Mirrors llm/scenarios.py.
-"""
+"""Claude-on-Vertex generator for TEST DATA from a confirmed plan."""
 
 from __future__ import annotations
 
@@ -22,8 +18,6 @@ def claude_test_data(
 ) -> list[TestData] | None:
     raw = complete(
         testdata_prompt(plan, plan_pack.summary_text()),
-        # account + up to 8 mock records + a fixture is more than 2000 tokens of JSON; too small a
-        # budget truncates the array so loads_array() fails and we silently fall back to heuristics.
         project=project, location=location, model=model, max_tokens=6000,
     )
     items = loads_array(raw)

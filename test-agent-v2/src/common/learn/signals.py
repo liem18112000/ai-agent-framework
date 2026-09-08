@@ -1,8 +1,4 @@
-"""Per-step signal collectors (L2/L3): step artifacts → candidate LessonSignals.
-
-Duck-typed on purpose — `common` can't import the agents, and refine `Insight`s and define
-`PlanDecision`s share the same fields (statement/source_refs/confidence/rejected/answered_by).
-"""
+"""Per-step signal collectors (L2/L3): step artifacts → candidate LessonSignals."""
 
 from __future__ import annotations
 
@@ -13,8 +9,7 @@ from common.models import CORRECTION, LESSON
 
 
 def from_decisions(decisions) -> list[LessonSignal]:
-    """Human-confirmed decisions (refine or define) → cited lesson signals; a choice that rejected
-    options → `correction`. Agent-self assumptions are skipped (low value, would re-flood memory)."""
+    """Human-confirmed decisions (refine or define) → cited lesson signals; a choice that rejected"""
     out: list[LessonSignal] = []
     for d in decisions:
         stmt = getattr(d, "statement", "").strip()
@@ -31,8 +26,7 @@ def from_decisions(decisions) -> list[LessonSignal]:
 
 
 def from_gather(repos: list[str], *, seed_ref: str) -> list[LessonSignal]:
-    """Which repo implements the seed. `repos` are clean `<ws>/<repo>` slugs (built codegraphs);
-    the codegraph node grounds the lesson alongside the seed."""
+    """Which repo implements the seed. `repos` are clean `<ws>/<repo>` slugs (built codegraphs);"""
     return [
         LessonSignal(statement=f"{seed_ref} is implemented in repo {r}", kind=LESSON,
                      source_refs=[seed_ref, f"codegraph:{r}"], confidence="medium")
@@ -41,8 +35,7 @@ def from_gather(repos: list[str], *, seed_ref: str) -> list[LessonSignal]:
 
 
 def from_implement(scenarios, *, context_id: str) -> list[LessonSignal]:
-    """ONE bounded coverage-summary lesson per implement — never the scenarios themselves (those
-    would flood memory). Grounded on the scenarios' own source_refs (insight/note ids)."""
+    """ONE bounded coverage-summary lesson per implement — never the scenarios themselves (those"""
     if not scenarios:
         return []
     kinds = Counter(getattr(s, "kind", "") for s in scenarios)

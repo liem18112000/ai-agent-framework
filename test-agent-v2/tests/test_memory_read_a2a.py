@@ -1,9 +1,4 @@
-"""The `search-memory` and `get-note` read skills, driven through the real A2A stack.
-
-Reuses the refine A2A harness (`_app` builds the executor + JSON-RPC app; `_send` posts a
-message/send). A tiny bank is seeded with one crawl note + its index node, then queried the
-same way a client would after gathering.
-"""
+"""The `search-memory` and `get-note` read skills, driven through the real A2A stack."""
 
 from __future__ import annotations
 
@@ -28,8 +23,6 @@ def _seeded_bucket() -> FakeBucket:
     return b
 
 
-# --- search-memory --- #
-
 def test_search_memory_lists_matching_nodes():
     c = TestClient(_app(bucket=_seeded_bucket()))
     s = json.dumps(_send(c, "search-memory login", context_id="ctx-s"))
@@ -47,8 +40,6 @@ def test_search_memory_empty_query_summarizes_index():
     s = json.dumps(_send(c, "search-memory", context_id="ctx-s3"))
     assert "node(s)" in s and "jira:LUZ-1" in s
 
-
-# --- get-note --- #
 
 def test_get_note_returns_the_note():
     c = TestClient(_app(bucket=_seeded_bucket()))

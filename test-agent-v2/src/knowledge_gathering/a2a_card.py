@@ -1,8 +1,4 @@
-"""Static A2A definitions — this agent's skills and Agent Card.
-
-Shared card scaffolding (transport / I/O modes / capabilities / bearer security) lives in
-common.card; only the skills + name/description/version are agent-specific.
-"""
+"""Static A2A definitions — this agent's skills and Agent Card."""
 
 from __future__ import annotations
 
@@ -11,7 +7,6 @@ from a2a.types import AgentSkill
 from common.card import build_agent_card, resolve_url
 from knowledge_gathering import __version__
 
-# PORT is what the server binds; PUBLIC_URL is advertised in the card (set to the Cloud Run URL).
 PORT, PUBLIC_URL = resolve_url(8080)
 
 SKILLS = [

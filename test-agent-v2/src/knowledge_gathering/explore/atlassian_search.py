@@ -1,9 +1,4 @@
-"""Tier-2 Atlassian search (roadmap G1) — pre-crawl expansion for THIN seeds, NO LLM.
-
-When the seed is thin, sweep Jira (JQL) + Confluence (CQL) over its salient terms and promote
-hits to crawl seeds. Best-effort: each search is guarded independently (a missing Confluence
-perm must not kill the Jira sweep); any error → `([], "")`. Never breaks gather, no LLM call.
-"""
+"""Tier-2 Atlassian search (roadmap G1) — pre-crawl expansion for THIN seeds, NO LLM."""
 
 from __future__ import annotations
 
@@ -14,7 +9,7 @@ log = get_logger("explore.atlassian_search")
 
 
 def _escape(s: str) -> str:
-    """Escape a string for embedding inside a double-quoted JQL/CQL literal (\\ before ")."""
+    r"""Escape a string for embedding inside a double-quoted JQL/CQL literal (\ before ")."""
     return s.replace("\\", "\\\\").replace('"', '\\"')
 
 
@@ -32,10 +27,7 @@ async def atlassian_search_seeds(
     max_seeds: int = 5,
     exclude: set[str] | None = None,
 ) -> tuple[list[str], str]:
-    """Return `(extra_seeds, note_md)` — canonical jira:/confluence: ids for work related to
-    `terms` (JQL + CQL full-text), minus `exclude`, capped at `max_seeds`. `note_md` is a compact
-    block or `""`. NEVER raises — any failure → `([], "")`.
-    """
+    """Return `(extra_seeds, note_md)` — canonical jira:/confluence: ids for work related to"""
     try:
         tokens = salient_tokens(terms)
         if not tokens:
@@ -60,7 +52,6 @@ async def atlassian_search_seeds(
         except Exception as exc:  # noqa: BLE001 — e.g. no Confluence permission
             log.warning("CQL search failed (%s): %s", cql, exc)
 
-        # dedup (set) + drop excluded; sorted() gives the stable, deterministic order.
         seeds = sorted({sid for sid in found if sid not in exclude})[:max_seeds]
         return (seeds, _render(seeds)) if seeds else ([], "")
     except Exception as exc:  # noqa: BLE001 — G1 must never break gather

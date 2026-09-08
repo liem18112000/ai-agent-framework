@@ -1,14 +1,4 @@
-"""Domain metrics as ADK custom-metric functions (Plan B).
-
-Each has ADK's custom-metric signature `(EvalMetric, actual_invocations, expected_invocations,
-conversation_scenario) -> EvaluationResult` and is loadable by dotted path via ADK's
-`custom_metric_evaluator`. They wrap the UNCHANGED v1 engine (`engine.evaluate_pack` /
-`plan_engine.evaluate_plan`), so the numbers reproduce by construction while `google-adk`'s eval
-types (EvaluationResult / PerInvocationResult / EvalMetric / Invocation) are genuinely on-path.
-
-The context id is read from the invocation's user_content; the bank is injected in tests via
-`set_bank`, else built from env (as `adk eval` would at runtime).
-"""
+"""Domain metrics as ADK custom-metric functions (Plan B)."""
 
 from __future__ import annotations
 
@@ -49,7 +39,7 @@ def _result(metric: EvalMetric, score, actual, expected) -> EvaluationResult:
     return EvaluationResult(overall_score=score, overall_eval_status=status, per_invocation_results=[pir])
 
 
-def _pack(actual):  # ctx computed once (not twice) → one event scan + one golden lookup
+def _pack(actual):
     ctx = _ctx(actual)
     return evaluate_pack(_bank(), ctx, golden_for(ctx))
 
@@ -59,8 +49,6 @@ def _plan(actual):
     return evaluate_plan(_bank(), ctx, golden_plan_for(ctx))
 
 
-# Each metric = one scoring rule over the (unchanged v1) engine's report. Threshold 1.0 on a leak
-# gate → PASS only when nothing leaked.
 def pqs_score(metric: EvalMetric, actual, expected=None, scenario=None) -> EvaluationResult:
     return _result(metric, _pack(actual).pqs, actual, expected)
 

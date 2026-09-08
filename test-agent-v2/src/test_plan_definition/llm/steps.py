@@ -1,9 +1,4 @@
-"""Claude-on-Vertex generator for detailed step-by-step STEPS.
-
-One bulk call produces Given/When/Then steps for every scenario at once (keyed by scenario id),
-so a 30-scenario suite is one request, not thirty. Returns a {scenario_id: [TestStep]} map, or
-None on a parse miss so the caller falls back to the heuristic per scenario. Mirrors llm/scenarios.py.
-"""
+"""Claude-on-Vertex generator for detailed step-by-step STEPS."""
 
 from __future__ import annotations
 
@@ -23,11 +18,9 @@ def claude_steps(
     summary = plan_pack.summary_text() if plan_pack is not None else ""
     raw = complete(
         steps_prompt(scenarios, plan, summary, test_data),
-        # Called per batch (see generate_all_steps _STEP_BATCH), so this covers ~8 scenarios ×4 steps
-        # of JSON. 8000 leaves ample headroom; the batching is what prevents the truncation fallback.
         project=project, location=location, model=model, max_tokens=8000,
     )
-    items = loads_array(raw)  # [{scenario_id, steps:[{order, keyword, action, expected}]}]
+    items = loads_array(raw)
     if not items:
         log.warning("could not parse steps output as JSON; falling back to heuristic")
         return None

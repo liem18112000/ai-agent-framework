@@ -9,8 +9,7 @@ log = get_logger("learn.recall")
 
 
 def recall_lessons(bank, *, seed_refs: set[str], limit: int = 5) -> list[str]:
-    """Active lessons grounded to the seed (a source_ref in `seed_refs`), human-confidence first,
-    capped. B5 structural grounding — not term-match — keeps off-topic lessons out. Best-effort."""
+    """Active lessons grounded to the seed (a source_ref in `seed_refs`), human-confidence first,"""
     try:
         hits = [i for i in iter_lessons(bank) if seed_refs and set(i.source_refs) & seed_refs]
         hits.sort(key=lambda i: (i.confidence != "high", i.created_at))

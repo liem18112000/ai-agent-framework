@@ -1,9 +1,4 @@
-"""I8 gate (C1/D10) — all ADK-model construction lives in `common/adk/providers/` only.
-
-A structural guard: `LiteLlm(...)` and `google.adk.models` imports must appear nowhere in `src/`
-except under `common/adk/providers/`. Keeps the "one seam for model access" invariant enforced in CI,
-not just by review. Also asserts the Gemini backend stays scrubbed.
-"""
+"""I8 gate (C1/D10) — all ADK-model construction lives in `common/adk/providers/` only."""
 
 from __future__ import annotations
 

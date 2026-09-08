@@ -1,19 +1,4 @@
-"""The A2A half of the A2A->MCP bridge.
-
-Claude speaks MCP, not A2A. This module is a thin JSON-RPC 2.0 client (over httpx)
-that drives the knowledge-gathering agent's `message/send` endpoint and normalizes
-its two response shapes into one small result object:
-
-  - a plain **Message** reply  (one-shot gather / read-helpers):  result.kind == "message",
-    text in `result.parts[].text`;
-  - a **Task**                 (multi-turn refine):               result.kind == "task",
-    which may pause in `status.state == "input-required"`, text in
-    `result.status.message.parts[].text`.
-
-No `mcp` import lives here, so the translation logic is unit-testable without the MCP
-runtime (see tests/test_bridge.py, which drives a real in-process agent over
-httpx.ASGITransport).
-"""
+"""The A2A half of the A2A->MCP bridge."""
 
 from __future__ import annotations
 
@@ -24,11 +9,11 @@ from typing import Any, Self
 import httpx
 
 from common.models import (
-    A2AResult,  # re-exported here for `from common.bridge.a2a_client import A2AResult`
+    A2AResult,
 )
 
 _JSONRPC = "2.0"
-_RPC_PATH = "/"  # a2a.utils.DEFAULT_RPC_URL
+_RPC_PATH = "/"
 _CARD_PATH = "/.well-known/agent-card.json"
 
 
@@ -55,25 +40,21 @@ def extract_text(result: dict[str, Any]) -> str:
     if not isinstance(result, dict):
         return str(result)
     chunks: list[str] = []
-    chunks += _text_parts(result.get("parts"))                       # plain Message
-    chunks += _text_parts((result.get("status") or {}).get("message", {}).get("parts"))  # Task status
-    for art in result.get("artifacts") or []:                        # Task artifacts
+    chunks += _text_parts(result.get("parts"))
+    chunks += _text_parts((result.get("status") or {}).get("message", {}).get("parts"))
+    for art in result.get("artifacts") or []:
         chunks += _text_parts(art.get("parts"))
-    if not chunks:                                                   # last resort: agent turns in history
+    if not chunks:
         for h in result.get("history") or []:
             if h.get("role") == "agent":
                 chunks += _text_parts(h.get("parts"))
     seen: set[str] = set()
-    uniq = [c for c in chunks if not (c in seen or seen.add(c))]     # drop duplicates, keep order
+    uniq = [c for c in chunks if not (c in seen or seen.add(c))]
     return "\n".join(uniq)
 
 
 class A2ABridgeClient:
-    """Minimal A2A client: `message/send` + agent-card fetch, with optional bearer auth.
-
-    `transport` lets tests inject an httpx.ASGITransport wrapping the real agent app so the
-    whole round-trip is exercised with no network; leave it None for real HTTP.
-    """
+    """Minimal A2A client: `message/send` + agent-card fetch, with optional bearer auth."""
 
     def __init__(
         self,
@@ -83,8 +64,6 @@ class A2ABridgeClient:
         timeout: float | None = None,
         transport: httpx.BaseTransport | httpx.AsyncBaseTransport | None = None,
     ) -> None:
-        # The detailed implement can run for minutes (serial batched Vertex calls); 180s errored
-        # mid-call. Default 600s, tunable via A2A_CLIENT_TIMEOUT, so the bridge waits for the agent.
         if timeout is None:
             timeout = float(os.environ.get("A2A_CLIENT_TIMEOUT", "600"))
         headers = {"Authorization": f"Bearer {token}"} if token else {}
@@ -115,11 +94,7 @@ class A2ABridgeClient:
         task_id: str | None = None,
         message_id: str | None = None,
     ) -> A2AResult:
-        """Send one text message; return the normalized reply.
-
-        Pass `context_id` to keep a conversation together and `task_id` to answer a task the
-        agent paused in `input-required`.
-        """
+        """Send one text message; return the normalized reply."""
         message: dict[str, Any] = {
             "messageId": message_id or uuid.uuid4().hex,
             "role": "user",
@@ -146,7 +121,6 @@ class A2ABridgeClient:
         return A2AResult(
             text=extract_text(result),
             context_id=result.get("contextId"),
-            # a Message carries taskId at top level; a Task carries its id in `id`
             task_id=result.get("taskId") or result.get("id"),
             state=status.get("state"),
             kind=result.get("kind"),

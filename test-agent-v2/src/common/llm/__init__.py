@@ -1,10 +1,4 @@
-"""Shared LLM surface — Claude-on-Vertex plus the generic question/understanding generators.
-
-Callers reach the model through `complete` (raw completion), `vertex_config` (env-driven
-"is an LLM configured?" check), and the two generic generators (`claude_questions`,
-`claude_understanding`) used by the refine engine. Agent-specific prompts/generators and
-the distiller stay in each agent's own `llm` package.
-"""
+"""Shared LLM surface — Claude-on-Vertex plus the generic question/understanding generators."""
 
 from common.llm.questions import claude_questions
 from common.llm.understanding import claude_understanding

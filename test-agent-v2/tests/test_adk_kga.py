@@ -1,9 +1,4 @@
-"""A1 — the KGA ADK agent graph, offline, over recorded Atlassian fixtures + FakeBucket.
-
-Parity: the ADK GatherAgent must persist the SAME node set as v1's run_gather_offline for the same
-fixture (the port didn't regress). Plus: the router dispatches gather vs refine vs reads, and a live
-refine session pauses/resumes to completion on the ADK-produced pack (B0 run-scoping intact).
-"""
+"""A1 — the KGA ADK agent graph, offline, over recorded Atlassian fixtures + FakeBucket."""
 
 from __future__ import annotations
 
@@ -27,8 +22,8 @@ async def _run_adk_gather(seed_text: str, ctx_id: str, client, monkeypatch) -> M
     monkeypatch.setattr(ga, "build_client", lambda: client)
     monkeypatch.setattr(ga, "build_bank", lambda: bank)
     monkeypatch.setattr("knowledge_gathering.agent.build_bank", lambda: bank)
-    monkeypatch.setattr("common.adk.interrogation.build_bank", lambda: bank)  # refine path
-    monkeypatch.setattr("common.adk.tools.build_bank", lambda: bank)  # read tools
+    monkeypatch.setattr("common.adk.interrogation.build_bank", lambda: bank)
+    monkeypatch.setattr("common.adk.tools.build_bank", lambda: bank)
 
     svc = InMemorySessionService()
     await svc.create_session(app_name="kga", user_id="u", session_id=ctx_id)
@@ -46,7 +41,7 @@ async def _run_adk_gather(seed_text: str, ctx_id: str, client, monkeypatch) -> M
                     out.append(p.text)
         return " ".join(out)
 
-    bank._turn = turn  # expose the driver for the caller
+    bank._turn = turn
     return bank
 
 
@@ -54,9 +49,7 @@ async def _run_adk_gather(seed_text: str, ctx_id: str, client, monkeypatch) -> M
 async def test_gather_parity_with_v1(monkeypatch, seed, fixture):
     """ADK GatherAgent persists the same node set as the v1 executor for the same fixture."""
     ctx_id = f"eval-{seed}"
-    # v1 baseline
     v1 = run_gather_offline(seed, client=recorded_client(fixture), context_id=ctx_id)
-    # v2 ADK
     bank = await _run_adk_gather(f"gather {seed}", ctx_id, recorded_client(fixture), monkeypatch)
     reply = await bank._turn(f"gather {seed}")
     assert "Gather complete" in reply
@@ -72,12 +65,10 @@ async def test_router_gather_then_refine_and_reads(monkeypatch):
     turn = bank._turn
 
     assert "Gather complete" in await turn(f"gather {seed}")
-    # a search-memory read routes to the tool (not gather)
     assert "[" in await turn("search-memory") or "No matching" in await turn("search-memory")
 
-    # start refine (heuristic, no LLM) — router sees "refine" → InterrogationAgent
     first = await turn(f"refine {ctx_id}")
-    assert "Nothing to refine" not in first  # B0: the ADK-produced pack is found
+    assert "Nothing to refine" not in first
     replies = [first]
     for _ in range(6):
         if "Refinement complete" in replies[-1]:

@@ -1,8 +1,4 @@
-"""Static A2A definitions — this agent's skills and Agent Card.
-
-The card's shared scaffolding (transport / I/O modes / capabilities / bearer security) lives
-in common.card; only the skills and the card's name/description/version are agent-specific.
-"""
+"""Static A2A definitions — this agent's skills and Agent Card."""
 
 from __future__ import annotations
 
@@ -11,7 +7,6 @@ from a2a.types import AgentSkill
 from common.card import build_agent_card, resolve_url
 from test_plan_definition import __version__
 
-# Default 8081 so it can run beside knowledge_gathering (8080) locally without a clash.
 PORT, PUBLIC_URL = resolve_url(8081)
 
 SKILLS = [

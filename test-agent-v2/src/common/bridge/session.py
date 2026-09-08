@@ -1,10 +1,4 @@
-"""BridgeSession — the per-bridge A2A client + multi-turn task state, shared by both MCP servers.
-
-Both agents' bridges are identical except for their tool set + MCPServer name/instructions. The
-plumbing each tool needs — a lazily-built A2ABridgeClient, the context_id -> task_id map for
-multi-turn interrogation, the send/error wrapper, the "continue-or-restart a turn" step, and the
-agent-card fetch/format — lives here so each mcp_server only declares its tools.
-"""
+"""BridgeSession — the per-bridge A2A client + multi-turn task state, shared by both MCP servers."""
 
 from __future__ import annotations
 
@@ -19,8 +13,6 @@ class BridgeSession:
     def __init__(self, base_url: str, token: str | None) -> None:
         self.base_url = base_url
         self.token = token
-        # context_id -> task_id: multi-turn interrogation pauses a Task in `input-required`
-        # and the client must answer on the same task; MCP tool calls are otherwise independent.
         self.tasks: dict[str, str] = {}
         self._client: A2ABridgeClient | None = None
 
@@ -43,14 +35,11 @@ class BridgeSession:
             raise RuntimeError(f"Cannot reach the A2A agent at {self.base_url}: {exc}") from exc
 
     async def turn(self, context_id: str, answer: str | None, start_text: str) -> A2AResult:
-        """One multi-turn interrogation step: continue the live task if answering, else (re)start.
-
-        Tracks context_id -> task_id and clears it when the agent reports the task completed.
-        """
+        """One multi-turn interrogation step: continue the live task if answering, else (re)start."""
         task_id = self.tasks.get(context_id)
         if answer is not None and task_id:
             res = await self.ask(answer, context_id=context_id, task_id=task_id)
-        else:  # start (or restart) the interrogation
+        else:
             res = await self.ask(start_text, context_id=context_id)
         if res.task_id:
             self.tasks[context_id] = res.task_id

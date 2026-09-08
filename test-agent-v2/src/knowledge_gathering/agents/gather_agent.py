@@ -1,11 +1,4 @@
-"""GatherAgent — the KGA crawl engine as a custom ADK BaseAgent.
-
-Re-triggers v1's gather pipeline verbatim (parse → seed probe → fan-out → bounded BFS crawl →
-summarize), reusing the exact functions from `executor/gather.py`. The crawl/fan-out are already
-async I/O (LLM + codegraph work is offloaded inside them), so we await them directly. Determinism +
-B0–B6 + the heuristic distiller (distiller=None) are unchanged (invariants I1/I2). run_id = the ADK
-session id (== the pipeline context id the bridge holds constant), so the pack is run-scoped (B0).
-"""
+"""GatherAgent — the KGA crawl engine as a custom ADK BaseAgent."""
 
 from __future__ import annotations
 
@@ -33,7 +26,7 @@ log = get_logger("adk.gather")
 class GatherAgent(BaseAgent):
     async def _run_async_impl(self, ctx):
         text = incoming_text(ctx).strip()
-        seed, depth, repo, _exclude = parse_input(text)  # _exclude: used by the explore loop (A1 follow-up)
+        seed, depth, repo, _exclude = parse_input(text)
         if not seed:
             yield text_event(self.name, "Provide a seed, e.g. 'gather LUZ-158390 depth 2'.")
             return
@@ -64,5 +57,5 @@ class GatherAgent(BaseAgent):
         summary = summarize_gather(result)
         for md in md_blocks:
             summary += "\n\n" + md
-        _capture_gather(bank, context_id=run_id or seed, seed=seed, result=result)  # L3, flag-gated
+        _capture_gather(bank, context_id=run_id or seed, seed=seed, result=result)
         yield text_event(self.name, summary)

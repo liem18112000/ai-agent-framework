@@ -1,9 +1,4 @@
-"""Knowledge Refinement (Step 2) — interrogate the gathered pack, collect insight.
-
-Turn a grounded context pack into ranked business/technical/QA questions, ingest
-human answers over a multi-turn A2A dialogue, distill each into a provenance-carrying
-insight note, and restate a confirmed understanding. See docs/PROPOSAL-KNOWLEDGE-REFINEMENT.md.
-"""
+"""Knowledge Refinement (Step 2) — interrogate the gathered pack, collect insight."""
 
 from common.interrogate.answers import IngestResult, ingest
 from common.interrogate.insight import assumption_from_self_answer, distill_answer

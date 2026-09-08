@@ -1,10 +1,4 @@
-"""E4 rubric checks — KGA-specific quality gates no off-the-shelf metric knows.
-
-Each rubric encodes a real failure mode as a permanent regression test. The two ID-fabrication
-guards are DETERMINISTIC (regex + set membership) and gate on every run — they catch the G4
-hallucination risk at the output level. The semantic rubrics (names-the-AC, gaps-honesty) are
-LLM-judged and run via an injected `judge` callable, so this module imports with no LLM dep.
-"""
+"""E4 rubric checks — KGA-specific quality gates no off-the-shelf metric knows."""
 
 from __future__ import annotations
 
@@ -30,8 +24,6 @@ def no_invented_urls(understanding: str, pack_text: str) -> RubricResult:
     return RubricResult(passed=not invented, invented=invented)
 
 
-# Semantic rubrics (LLM-judged) — pass a `judge(question, text) -> bool`; kept declarative so the
-# catalog is data, not code. Wire to ADK rubric_based_* or RAGAS RubricsScore in the nightly job.
 SEMANTIC_RUBRICS = {
     "names_the_ac": "Does the understanding state this ticket's actual acceptance criteria "
                     "(not a generic 'high confidence' summary)?",

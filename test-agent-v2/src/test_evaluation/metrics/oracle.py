@@ -1,14 +1,4 @@
-"""Oracle Strength — would a step actually catch a regression? (deterministic proxy for mutation)
-
-A test that asserts only a status code kills almost no mutant; one that asserts a concrete
-end-state kills many. This classifies each step's `expected` text without running anything — a
-strong predictor of mutation score, available now (real mutation is gated on the execution stage):
-  - weak    — a status code / acceptance only ("2xx", "a 4xx status is returned", "is processed").
-  - strong  — names a concrete, resolvable end-state: an ALL-CAPS enum/state token, or a golden
-              pass-criterion phrase (e.g. CREDIT_CARD_CHARGED_PENDING).
-  - medium  — a resolved metric string that is real prose but not a concrete named state.
-score = weighted mean (strong 1.0 / medium 0.5 / weak 0.0). This encodes the execution-depth gap.
-"""
+"""Oracle Strength — would a step actually catch a regression? (deterministic proxy for mutation)"""
 
 from __future__ import annotations
 
@@ -18,7 +8,7 @@ from test_evaluation.models import OracleScore
 
 _WEAK = ("2xx", "3xx", "4xx", "5xx", "status", "accepted", "succeeds", "is returned",
          "is processed", "is ready", "unchanged", "without error", "is rejected")
-_ENUM = re.compile(r"[A-Z][A-Z0-9_]{3,}")  # a named state/enum: CREDIT_CARD_CHARGED_PENDING
+_ENUM = re.compile(r"[A-Z][A-Z0-9_]{3,}")
 _WEIGHT = {"strong": 1.0, "medium": 0.5, "weak": 0.0}
 
 

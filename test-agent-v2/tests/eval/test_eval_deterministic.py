@@ -1,14 +1,4 @@
-"""E0 + E1 — the deterministic PR gate. No LLM, no network.
-
-Drives every golden seed through the offline harness (real crawl + fan-out, recorded Atlassian
-client, FakeBucket bank) and asserts:
-  E0  the tier trajectory and fetch-kind sequence match the golden expectation.
-  E1  node-overlap recall/precision clear the per-seed thresholds, and NO hard-negative leaked.
-
-The hard-negative leak assertion IS the memory-bleed gate; the thin-seed recall assertion is the
-0-links-false-negative gate (B1 climb must recover the parent). Both are absolute — a regression
-turns the check red.
-"""
+"""E0 + E1 — the deterministic PR gate. No LLM, no network."""
 
 from __future__ import annotations
 
@@ -32,7 +22,6 @@ def trace(request):
     return case, t
 
 
-# --- E0: trajectory --- #
 def test_tier_trajectory(trace):
     case, t = trace
     assert trajectory_score(t.tiers, case["expected_tiers"], "in_order") == 1.0, \
@@ -45,7 +34,6 @@ def test_fetch_kind_trajectory(trace):
         f"{case['seed']}: fetch_kinds {t.fetch_kinds} missing {case['expected_fetch_kinds']}"
 
 
-# --- E1: node-overlap retrieval --- #
 def test_retrieval_scores(trace):
     case, t = trace
     s = retrieval_scores(t.node_ids, set(case["relevant_node_ids"]),

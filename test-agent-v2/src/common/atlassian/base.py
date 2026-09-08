@@ -11,7 +11,7 @@ from common.monitoring import get_logger
 
 log = get_logger("atlassian")
 
-RETRY_BACKOFFS: tuple[float, ...] = (1.0, 2.0, 4.0)  # wait before each retry
+RETRY_BACKOFFS: tuple[float, ...] = (1.0, 2.0, 4.0)
 RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
 BITBUCKET_API = "https://api.bitbucket.org/2.0"
 

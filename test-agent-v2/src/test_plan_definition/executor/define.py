@@ -1,10 +1,4 @@
-"""Test Plan definition (Stage A) handler — multi-turn interrogation over A2A.
-
-`define <ctx>` starts the interrogation; the agent pauses in `input-required` with a
-question round; the client answers on the same task (grouped by contextId) and the agent
-resumes, distilling decisions until it can confirm a TestPlan and restate a brief. Read
-helper: `get-test-plan <ctx>`. Mirrors knowledge_gathering.executor.refine.
-"""
+"""Test Plan definition (Stage A) handler — multi-turn interrogation over A2A."""
 
 from __future__ import annotations
 
@@ -31,8 +25,7 @@ log = get_logger("executor.define")
 
 
 async def _recall_into(session, bank) -> None:
-    """L4: inject prior lessons into the plan pack — structural ∪ semantic under a DB backend
-    (M4b), structural-only on GCS. Best-effort, flag-gated."""
+    """L4: inject prior lessons into the plan pack — structural ∪ semantic under a DB backend"""
     if not learn.recall_enabled("TPD"):
         return
     try:
@@ -118,7 +111,7 @@ async def run_read_helper(ex, context: RequestContext, event_queue: EventQueue, 
 async def run_approve(ex, context: RequestContext, event_queue: EventQueue, bank, text: str,
                       a2a_ctx: str = "") -> None:
     """The reconfirm gate — lock the plan to 'confirmed' so implement may run."""
-    ctx = extract_ctx(text) or a2a_ctx  # fall back to the A2A context id (mirrors define/implement)
+    ctx = extract_ctx(text) or a2a_ctx
     if not ctx:
         return await reply(context, event_queue, "Provide a context id, e.g. 'approve run-6f2a'.")
     plan = store.read_plan(bank, ctx)
@@ -128,7 +121,7 @@ async def run_approve(ex, context: RequestContext, event_queue: EventQueue, bank
     if plan.status != CONFIRMED:
         plan.status = CONFIRMED
         store.write_plan(bank, plan)
-    store.write_plan_state(bank, ctx, {"done": True})  # close any lingering define session
+    store.write_plan_state(bank, ctx, {"done": True})
     brief = store.read_plan_brief(bank, ctx) or ""
     await reply(context, event_queue, f"APPROVED {ctx} (status: confirmed)\n\n{brief}")
 
@@ -143,7 +136,7 @@ async def run_define(ex, context: RequestContext, event_queue: EventQueue,
     continuation = bool(state) and not state.get("done")
     updater = TaskUpdater(event_queue, context.task_id, context.context_id)
 
-    if not continuation:  # turn 1 — start the interrogation
+    if not continuation:
         session = PlanSession(
             bank, pack_ctx, seed=pack_ctx, generator=ex._generator, restater=ex._restater,
             run_id=f"plan-{(a2a_ctx or pack_ctx)[:8]}", now=now(),
@@ -152,27 +145,24 @@ async def run_define(ex, context: RequestContext, event_queue: EventQueue,
             return await reply(context, event_queue,
                                f"Nothing to plan for {pack_ctx}; run gather + refine (approve) first.")
         store.link_session(bank, a2a_ctx, pack_ctx)
-    else:  # continuation — ingest answers, advance
+    else:
         session = PlanSession.rehydrate(
             bank, pack_ctx, generator=ex._generator, restater=ex._restater)
         log.info("A2A define: ingesting answers for %s", pack_ctx)
         await session.submit(text)
 
-    await _recall_into(session, bank)  # L4: prior lessons → plan-pack preamble (flag-gated)
+    await _recall_into(session, bank)
 
-    if context.current_task is None:  # enqueue the initial Task before any status-update event
+    if context.current_task is None:
         await event_queue.enqueue_event(new_task_from_user_message(context.message))
 
-    # next_questions() and finalize() run the (possibly Claude-on-Vertex) question/
-    # brief generators synchronously; offload so a long LLM call never stalls the
-    # event loop and starve Cloud Run's /livez probe.
     open_qs = await asyncio.to_thread(session.next_questions)
-    if open_qs is None:  # done — finalize (writes the confirmed plan + brief) + complete
+    if open_qs is None:
         result = await asyncio.to_thread(session.finalize)
-        _capture_define(bank, pack_ctx, result)  # L3: enqueue async lesson capture (flag-gated)
+        _capture_define(bank, pack_ctx, result)
         log.info("A2A define done: %d decisions", len(result.decisions))
         return await updater.complete(
             updater.new_agent_message([a2a_pb2.Part(text=summarize_define(result))]))
-    session.save()  # pause for the human
+    session.save()
     await updater.requires_input(
         updater.new_agent_message([a2a_pb2.Part(text=render_questions(pack_ctx, open_qs))]))

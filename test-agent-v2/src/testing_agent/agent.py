@@ -1,12 +1,4 @@
-"""Autonomous Testing Agent (E7) — the opt-in end-to-end pipeline.
-
-The order is FIXED (gather → refine → define → approve → implement), so the canonical + deterministic
-shape is a **SequentialAgent** (like adk-samples/llm-auditor), NOT an LlmAgent+AgentTool coordinator —
-no LLM router, determinism preserved (I1). This is a THIRD package that composes the KGA + TPD agents
-so neither imports the other (I6). The gated, client-driven path (each agent's own router + human
-confirm-gates) is unchanged and remains the default; this is opt-in autonomy for a "test LUZ-xxx"
-one-shot.
-"""
+"""Autonomous Testing Agent (E7) — the opt-in end-to-end pipeline."""
 
 from __future__ import annotations
 

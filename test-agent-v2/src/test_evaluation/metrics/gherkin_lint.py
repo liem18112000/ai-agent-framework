@@ -1,9 +1,4 @@
-"""BDD / Gherkin quality — is the exported .feature well-formed? (deterministic tier)
-
-Lints the text `render/gherkin.py` produces: a `Feature:` header, every `Scenario:` preceded by a
-`@<kind> @<methodology>` tag line, and at least one When/Then per scenario. Declarative-phrasing and
-semantic one-behaviour-per-scenario checks are the LLM upgrade (T3); this is the cheap structural gate.
-"""
+"""BDD / Gherkin quality — is the exported .feature well-formed? (deterministic tier)"""
 
 from __future__ import annotations
 

@@ -25,9 +25,9 @@ def _graph_returns(monkeypatch, value):
 
 
 async def test_gcs_uses_graph_recall(monkeypatch):
-    monkeypatch.delenv("MEMORY_BACKEND", raising=False)     # default gcs
+    monkeypatch.delenv("MEMORY_BACKEND", raising=False)
     _graph_returns(monkeypatch, ["graph-lesson"])
-    _use_store(monkeypatch, _FakeStore(["should-not-be-used"]))   # store must not even be built…
+    _use_store(monkeypatch, _FakeStore(["should-not-be-used"]))
     monkeypatch.setattr(retrieve, "_build_store", lambda: (_ for _ in ()).throw(AssertionError("built")))
     out = await retrieve.recall_lessons(None, seed_refs={"jira:LUZ-1"})
     assert out == ["graph-lesson"]
@@ -42,8 +42,8 @@ async def test_postgres_uses_store(monkeypatch):
 
 async def test_hybrid_empty_store_falls_back_to_graph(monkeypatch):
     monkeypatch.setenv("MEMORY_BACKEND", "hybrid")
-    _use_store(monkeypatch, _FakeStore([]))                 # PG has nothing…
-    _graph_returns(monkeypatch, ["graph-lesson"])           # …so the graph answers
+    _use_store(monkeypatch, _FakeStore([]))
+    _graph_returns(monkeypatch, ["graph-lesson"])
     out = await retrieve.recall_lessons(None, seed_refs={"jira:LUZ-1"})
     assert out == ["graph-lesson"]
 
@@ -75,4 +75,4 @@ async def test_query_text_is_embedded_for_the_semantic_arm(monkeypatch):
     _use_store(monkeypatch, store)
     out = await retrieve.recall_lessons(None, seed_refs={"jira:LUZ-1"}, query_text="dunning reminder")
     assert out == ["pg-lesson"]
-    assert store.seen_embed == [0.5, 0.5]        # semantic arm fed the query embedding
+    assert store.seen_embed == [0.5, 0.5]

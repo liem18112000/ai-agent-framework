@@ -1,12 +1,4 @@
-"""`serve()` — expose an ADK agent over A2A behind the SAME bearer + health as v1.
-
-Replaces v1's `server.py` + `card.py`: `to_a2a()` returns a Starlette app and auto-generates the
-AgentCard from the agent (pass `agent_card=` for exact skill parity — invariant I4). We inject our
-own Runner (durable DatabaseSessionService + plugins) and reuse the v1 bearer middleware + health
-routes verbatim.
-
-Spike-confirmed (google-adk 2.8.0): `to_a2a(agent, *, port, runner=, agent_card=) -> Starlette`.
-"""
+"""`serve()` — expose an ADK agent over A2A behind the SAME bearer + health as v1."""
 
 from __future__ import annotations
 

@@ -13,16 +13,15 @@ from knowledge_gathering.a2a_card import AGENT_CARD, PORT
 from knowledge_gathering.executor import KnowledgeGatheringExecutor
 from knowledge_gathering.monitoring import configure, get_logger
 
-configure()  # apply the KGA_LOG env toggle at startup
-log = get_logger("server")  # child of the "knowledge_gathering" root logger
+configure()
+log = get_logger("server")
 
-# Readiness gate — config/secrets the crawler needs before it can gather (served at /readyz).
 _REQUIRED_ENV = ("ATLASSIAN_BASE_URL", "ATLASSIAN_EMAIL", "ATLASSIAN_API_TOKEN", "GCS_BUCKET")
 health_routes = make_health_routes(AGENT_CARD.name, AGENT_CARD.version, _REQUIRED_ENV)
 
 _handler = DefaultRequestHandler(
     agent_executor=KnowledgeGatheringExecutor(),
-    task_store=build_task_store(),  # Cloud SQL (durable) if configured, else in-memory
+    task_store=build_task_store(),
     agent_card=AGENT_CARD,
 )
 
@@ -31,7 +30,7 @@ app = FastAPI(
     version=__version__,
     docs_url=None,
     redoc_url=None,
-    openapi_url=None,  # this is an A2A / JSON-RPC service, not a REST/OpenAPI one
+    openapi_url=None,
 )
 
 app.router.routes.extend(

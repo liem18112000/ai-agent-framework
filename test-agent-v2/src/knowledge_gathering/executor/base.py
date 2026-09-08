@@ -1,8 +1,4 @@
-"""The A2A executor — dispatches Gather (one-shot) vs Refine (multi-turn).
-
-Routing: a live refine session or a `refine`/context_id request → Refine; `get-questions`/
-`get-understanding` → read helpers; everything else → Gather. Dependencies are injectable for tests.
-"""
+"""The A2A executor — dispatches Gather (one-shot) vs Refine (multi-turn)."""
 
 from __future__ import annotations
 
@@ -43,19 +39,16 @@ class KnowledgeGatheringExecutor(AgentExecutor):
         except Exception:  # noqa: BLE001 — bank is optional for the gather config-error path
             bank = None
 
-        # L5: flush pending self-learning captures at the head of ANY request (off the enqueuing
-        # request's own path) so a lesson is persisted by the next call, whatever its type.
         if bank is not None and learn.capture_enabled("KGA"):
             await asyncio.to_thread(learn.drain, bank, now=now())
 
-        # M2: project notes/insights into the pgvector index (no-op under MEMORY_BACKEND=gcs).
         from common.memory.pg.project import maybe_drain_index
         await maybe_drain_index(bank)
 
         if text.lower().startswith(("get-questions", "get-understanding")) and bank is not None:
             return await run_read_helper(self, context, event_queue, bank, text)
 
-        if text.lower().startswith(("search-lessons", "veto-lesson")):  # L5 governance
+        if text.lower().startswith(("search-lessons", "veto-lesson")):
             if bank is None:
                 return await reply(context, event_queue, "Config error: memory bank unavailable.")
             if text.lower().startswith("search-lessons"):

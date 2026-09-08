@@ -12,7 +12,6 @@ class BitbucketFetcher(NodeFetcher):
     async def fetch(
         self, client, ident: str, nid: str, scope: Scope
     ) -> tuple[list[LinkRecord], Note, str]:
-        # ident = "<ws>/<repo>/src/<ref>/<path...>"
         parts = ident.split("/")
         ws, repo, ref, fp = parts[0], parts[1], parts[3], "/".join(parts[4:])
         content = await client.get_bitbucket_src(ws, repo, fp, ref)

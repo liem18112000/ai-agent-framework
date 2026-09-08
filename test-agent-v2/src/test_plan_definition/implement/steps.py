@@ -1,10 +1,4 @@
-"""Generate the step-by-step test steps for a scenario.
-
-Claude-on-Vertex writes concrete Given/When/Then steps grounded in the endpoint + test data
-(one bulk call for the whole suite via generate_all_steps); the detailed heuristic below is the
-mechanical fallback — four keyworded steps per API case (arrange -> act -> assert status ->
-assert end state), shaped by the coverage kind. E2E/UI stay a single deferred placeholder.
-"""
+"""Generate the step-by-step test steps for a scenario."""
 
 from __future__ import annotations
 
@@ -13,12 +7,8 @@ import os
 from common.llm.vertex import vertex_config
 from test_plan_definition.models import BOUNDARY, ERROR, NEGATIVE, TestPlan, TestScenario, TestStep
 
-# Scenarios per LLM steps call. One request for a whole 30+ scenario suite (120+ steps) overruns
-# the token budget and truncates the JSON (loads_array -> None -> total heuristic fallback); small
-# batches each parse reliably. Keep low enough that a batch's JSON fits well under llm/steps max_tokens.
 _STEP_BATCH = 8
 
-# arrange / act / assert-status / assert-end-state, per coverage kind.
 _KIND_STEPS = {
     NEGATIVE: [
         ("Given", "invalid or unauthorized input is prepared", "the invalid request is ready"),
@@ -84,10 +74,7 @@ def generate_all_steps(
     scenarios: list[TestScenario], plan: TestPlan, plan_pack=None, test_data=None, *, now: str = "",
     detail: bool = False,
 ) -> list[TestStep]:
-    """Detailed keyworded heuristic steps by default; opt into batched Claude-on-Vertex steps per
-    call with detail=True (or globally with env TPD_LLM_DETAIL=1). The LLM calls are heavy but run
-    off the event loop (implement is wrapped in asyncio.to_thread), so they don't starve Cloud Run's
-    liveness probe. claude_steps tolerates a None plan_pack (grounds on the scenarios + plan alone)."""
+    """Detailed keyworded heuristic steps by default; opt into batched Claude-on-Vertex steps per"""
     if detail or os.environ.get("TPD_LLM_DETAIL"):
         cfg = vertex_config()
         if cfg:
@@ -100,6 +87,6 @@ def generate_all_steps(
                                     project=proj, location=loc, model=model, now=now)
                 if part:
                     by_id.update(part)
-            if by_id:  # use LLM steps where present, heuristic for any scenario it missed
+            if by_id:
                 return [st for sc in scenarios for st in (by_id.get(sc.id) or generate_steps(sc, plan))]
     return [st for sc in scenarios for st in generate_steps(sc, plan)]

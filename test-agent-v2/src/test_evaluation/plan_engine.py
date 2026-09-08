@@ -1,18 +1,4 @@
-"""The plan-evaluation engine — score a persisted TestPlan + suite into a Test-Plan Score.
-
-The downstream twin of engine.py (which scores the KGA pack). Reads the plan/brief/scenarios/
-steps/test-data THIS context produced from the shared memory bank and scores four surfaces —
-scope (id-overlap vs the golden in-scope set + the must_not_scope leak gate, reusing the same
-node-overlap arithmetic), coverage adequacy (AC-recall + matrix completeness + traceability),
-oracle strength + fault-class coverage (the fault-detection proxy), and brief groundedness
-(fabrication rubrics) — combined into one TPS. Fully deterministic (no network, no LLM).
-
-Independence: this NEVER imports test_plan_definition. It reads the TPD artifacts as plain JSON via
-the bank's generic primitives at the documented path (memory/test-plan/<ctx>/…), and reads pack
-behaviours via the shared common.interrogate.pack.load_pack — the same discipline engine.py uses.
-The tier-trajectory component needs the tool sequence (only the offline harness has it), so at
-runtime it is left neutral and scored there.
-"""
+"""The plan-evaluation engine — score a persisted TestPlan + suite into a Test-Plan Score."""
 
 from __future__ import annotations
 
@@ -35,10 +21,8 @@ _FULL_MATRIX = ["happy", "negative", "boundary", "error"]
 
 def evaluate_plan(bank, context_id: str, case: PlanEvalCase | None = None,
                   *, trajectory: float = 1.0, detail: bool = False) -> PlanReport:
-    """Score the plan+suite `context_id` produced. `case` supplies the golden ground truth
-    (in-scope/must-not-scope ids, per-behaviour partitions + fault classes); without it, behaviours
-    default to the pack's grounded notes with the full coverage matrix and scope has no ground truth."""
-    d = f"{ROOT}/test-plan/{_slug(context_id)}"  # TPD artifact namespace (path contract; see module doc)
+    """Score the plan+suite `context_id` produced. `case` supplies the golden ground truth"""
+    d = f"{ROOT}/test-plan/{_slug(context_id)}"
     plan = bank.get_json(f"{d}/plan.json", None) or {}
     brief = bank.get_text(f"{d}/plan-brief.md") or ""
     scenarios = bank.get_json(f"{d}/scenarios.json", [])
@@ -47,11 +31,9 @@ def evaluate_plan(bank, context_id: str, case: PlanEvalCase | None = None,
     pack = load_pack(bank, context_id)
     pack_ids = {n.id for n in pack.notes}
 
-    # behaviours (ACs): the golden set if given, else the pack's grounded notes @ the full matrix
     behaviours = (case.behaviours if case and case.behaviours else
                   [{"id": n.id, "expected_partitions": list(_FULL_MATRIX)} for n in pack.grounded])
 
-    # scope: reuse the node-overlap arithmetic (precision/recall/f1 + the must_not_scope leak gate)
     scope = retrieval_scores(
         set(plan.get("scope", [])),
         set(case.in_scope_ids) if case else set(),

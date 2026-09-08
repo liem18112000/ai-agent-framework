@@ -1,10 +1,4 @@
-"""The A2A executor — dispatches Define (multi-turn) vs Implement (one-shot).
-
-Routing mirrors knowledge_gathering.executor.base: read helpers (get-test-plan /
-get-scenarios) first, then a live define session or a define request, then implement,
-else a help reply. A live session is what catches a bare-answer continuation turn (whose
-text has no `define` prefix). Dependencies are injectable for tests.
-"""
+"""The A2A executor — dispatches Define (multi-turn) vs Implement (one-shot)."""
 
 from __future__ import annotations
 
@@ -39,12 +33,9 @@ class TestPlanDefinitionExecutor(AgentExecutor):
         except Exception:  # noqa: BLE001 — bank is optional for the help/config-error path
             bank = None
 
-        # L5: flush pending self-learning captures at the head of ANY request (off the enqueuing
-        # request's own path) so a lesson is persisted by the next call, whatever its type.
         if bank is not None and learn.capture_enabled("TPD"):
             await asyncio.to_thread(learn.drain, bank, now=now())
 
-        # M2: project notes/insights into the pgvector index (no-op under MEMORY_BACKEND=gcs).
         from common.memory.pg.project import maybe_drain_index
         await maybe_drain_index(bank)
 
@@ -53,7 +44,7 @@ class TestPlanDefinitionExecutor(AgentExecutor):
                 return await reply(context, event_queue, "Config error: memory bank unavailable.")
             return await run_read_helper(self, context, event_queue, bank, text)
 
-        if text.lower().startswith("approve"):  # explicit gate — wins over a live define session
+        if text.lower().startswith("approve"):
             if bank is None:
                 return await reply(context, event_queue, "Config error: memory bank unavailable.")
             return await run_approve(self, context, event_queue, bank, text, a2a_ctx)

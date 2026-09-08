@@ -1,13 +1,4 @@
-"""ADK Runner + services, wired to the shared runtime.
-
-`build_session_service()` returns a durable **DatabaseSessionService** on the SAME Cloud SQL engine
-`common/db.py` already builds (via the async Cloud SQL Connector / asyncpg — ADK's session store
-accepts a `db_engine=`, so no URL rebuild), else an `InMemorySessionService` (local/tests). This one
-store subsumes v1's A2A DatabaseTaskStore + the GCS `state.json` rehydration.
-
-Spike-confirmed (google-adk 2.8.0): DatabaseSessionService needs `google-adk[db]` + an async driver;
-passing `db_engine=` reuses our engine directly.
-"""
+"""ADK Runner + services, wired to the shared runtime."""
 
 from __future__ import annotations
 
@@ -34,8 +25,7 @@ def build_session_service():
 
 
 def build_runner(agent, *, app_name: str):
-    """A Runner with the durable session store, the GCS artifact store (bucket → GCS, else in-memory),
-    and the shared plugins."""
+    """A Runner with the durable session store, the GCS artifact store (bucket → GCS, else in-memory),"""
     from google.adk.artifacts import GcsArtifactService, InMemoryArtifactService
     from google.adk.runners import Runner
 

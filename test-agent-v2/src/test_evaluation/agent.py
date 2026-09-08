@@ -1,10 +1,4 @@
-"""Test-Evaluation ADK agent (E1) — scores a pack/plan by context id and returns the report.
-
-A thin custom BaseAgent over the reused engine (`engine.evaluate_pack` / `plan_engine.evaluate_plan`)
-so `test_evaluation` is `adk web`/`adk run`-discoverable like the other agents. The canonical
-`adk eval` harness (domain metrics as ADK custom metrics) lives in `test_evaluation.eval` (Plan B/E5).
-Read-only; keys on the context id (from the message, else the session id).
-"""
+"""Test-Evaluation ADK agent (E1) — scores a pack/plan by context id and returns the report."""
 
 from __future__ import annotations
 

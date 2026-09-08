@@ -1,9 +1,4 @@
-"""Generate test scenarios from a confirmed plan (heuristic; POC).
-
-One happy-path scenario per grounded note (the acceptance-criterion proxies in the pack),
-plus a negative scenario when the plan's metrics call for negative coverage. Each scenario
-carries source_refs back to the note it covers, for cross-stage provenance.
-"""
+"""Generate test scenarios from a confirmed plan (heuristic; POC)."""
 
 from __future__ import annotations
 
@@ -20,10 +15,8 @@ from test_plan_definition.models import (
 )
 from test_plan_definition.pack import PlanPack
 
-_MAX_NOTES = 8  # cap the note fan-out — enough to cover a full story batch (× the coverage matrix)
+_MAX_NOTES = 8
 
-# The coverage bar the agent applies per behaviour — mirrors story-to-bdd-scenarios
-# (happy + negative + boundary + error). A plan whose metrics say "happy only" opts back down.
 _FULL_COVERAGE = (HAPPY, NEGATIVE, BOUNDARY, ERROR)
 _KIND_SUFFIX = {
     HAPPY: "happy path",
@@ -40,8 +33,7 @@ _KIND_RATIONALE = {
 
 
 def _coverage_kinds(plan: TestPlan) -> tuple[str, ...]:
-    """Which scenario kinds to generate per behaviour: the full matrix unless the plan's
-    metrics explicitly ask for happy-only coverage."""
+    """Which scenario kinds to generate per behaviour: the full matrix unless the plan's"""
     metrics = " ".join(plan.metrics).lower()
     if "happy only" in metrics or "happy-only" in metrics:
         return (HAPPY,)
@@ -59,7 +51,7 @@ def generate_scenarios(
 
         scs = claude_scenarios(plan, plan_pack, test_data,
                                project=proj, location=loc, model=model, now=now)
-        if scs:  # non-empty on success; None/[] falls through to the heuristic
+        if scs:
             return scs
     return heuristic_scenarios(plan, plan_pack, test_data, now=now)
 
@@ -73,13 +65,13 @@ def heuristic_scenarios(
     kinds = _coverage_kinds(plan)
 
     targets = [(n.id, n.title) for n in plan_pack.pack.grounded[:_MAX_NOTES]]
-    if not targets:  # fall back to the plan's scope when the pack has no grounded notes
+    if not targets:
         targets = [(s, s) for s in plan.scope[:_MAX_NOTES]]
 
     out: list[TestScenario] = []
     for ref, title in targets:
         base = _slug(ref)
-        for kind in kinds:  # full coverage matrix per behaviour (happy + negative + boundary + error)
+        for kind in kinds:
             out.append(TestScenario(
                 id=f"scenario:{ctx}:{base}:{kind}", plan_id=plan.id,
                 title=f"{title} — {_KIND_SUFFIX[kind]}",

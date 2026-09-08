@@ -1,9 +1,4 @@
-"""G4 external-LLM lead enumerator — `ask_llm_leads` (unit).
-
-No real Vertex: `complete` is monkeypatched in the ask_llm module to return canned JSON, so the
-whole call path (flag gate, config select, parse, coerce, cap) runs offline. The grounding of these
-leads (and the run_gather wiring) is exercised in test_ground_leads.py.
-"""
+"""G4 external-LLM lead enumerator — `ask_llm_leads` (unit)."""
 
 from __future__ import annotations
 
@@ -23,8 +18,6 @@ def vertex_on(monkeypatch):
     monkeypatch.setenv("VERTEX_MODEL", "claude-sonnet-5")
 
 
-# --- ask_llm_leads unit --- #
-
 def test_returns_lead_list_from_json_array(vertex_on, monkeypatch):
     canned = json.dumps(["restricted folders", "audit log", "bulk export"])
     monkeypatch.setattr(al, "complete", lambda *a, **k: canned)
@@ -33,7 +26,6 @@ def test_returns_lead_list_from_json_array(vertex_on, monkeypatch):
 
 
 def test_dedup_and_strip_and_coerce_non_string(vertex_on, monkeypatch):
-    # duplicate + whitespace dropped; a non-string element coerced via str(); None dropped
     canned = json.dumps(["export", " export ", "  ", "audit", None, 42])
     monkeypatch.setattr(al, "complete", lambda *a, **k: canned)
     assert al.ask_llm_leads("t") == ["export", "audit", "42"]
@@ -48,7 +40,6 @@ def test_tolerates_json_code_fence(vertex_on, monkeypatch):
     "not json at all", "{}", '{"leads":["x"]}', '"just a string"', "42", "[]", "",
 ])
 def test_malformed_or_non_array_returns_empty(vertex_on, monkeypatch, bad):
-    # a JSON object / scalar / non-JSON / empty array all yield [] (not a list of phrases)
     monkeypatch.setattr(al, "complete", lambda *a, **k: bad)
     assert al.ask_llm_leads("Export fails") == []
 
@@ -81,7 +72,7 @@ def test_flag_off_returns_empty_without_calling_llm(monkeypatch):
 
     monkeypatch.setattr(al, "complete", spy)
     assert al.ask_llm_leads("Export fails") == []
-    assert calls["n"] == 0  # flag off → ZERO LLM calls
+    assert calls["n"] == 0
 
 
 def test_empty_title_returns_empty_without_calling_llm(vertex_on, monkeypatch):
@@ -107,5 +98,5 @@ def test_vertex_unconfigured_returns_empty_without_calling_llm(monkeypatch):
         return "[]"
 
     monkeypatch.setattr(al, "complete", spy)
-    assert al.ask_llm_leads("Export fails") == []  # flag on but no Vertex → no call
+    assert al.ask_llm_leads("Export fails") == []
     assert calls["n"] == 0

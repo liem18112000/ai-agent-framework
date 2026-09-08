@@ -1,10 +1,4 @@
-"""A2 — the TPD ADK agent graph, offline: define → approve → implement over a real pack.
-
-Drives the TpdRouter through a Runner with a stable session id (== the pipeline ctx). Uses the
-shared InterrogationAgent via the registered "plan" SessionSpec (no LLM — heuristic). Confirms the
-implement default is deterministic (the TPD_LLM_DETAIL 1-call gate — invariant I3) and produces a
-confirmed plan + scenarios.
-"""
+"""A2 — the TPD ADK agent graph, offline: define → approve → implement over a real pack."""
 
 from __future__ import annotations
 
@@ -44,11 +38,10 @@ async def _tpd_runner(bank, ctx_id, monkeypatch):
 
 
 async def test_define_approve_implement(monkeypatch, pack_bucket):
-    ctx_id = "run-6f2a"  # the fixture pack's context id
+    ctx_id = "run-6f2a"
     bank = MemoryBank(pack_bucket)
     turn = await _tpd_runner(bank, ctx_id, monkeypatch)
 
-    # define (heuristic, no LLM) — router sees "define" → the shared InterrogationAgent(kind='plan')
     first = await turn(f"define {ctx_id}")
     assert "Nothing to" not in first, "the fixture pack should be plan-able"
     replies = [first]
@@ -59,16 +52,13 @@ async def test_define_approve_implement(monkeypatch, pack_bucket):
     assert any("Plan definition complete" in r for r in replies), f"never finalized: {replies}"
     assert len(replies) >= 3, "define should pause/resume across turns"
 
-    # approve — deterministic gate → plan status CONFIRMED
     approved = await turn(f"approve {ctx_id}")
     assert "APPROVED" in approved
     from test_plan_definition import memory as store
     assert store.read_plan(bank, ctx_id).status == CONFIRMED
 
-    # implement — DEFAULT (no 'detail') → deterministic 1-LLM-call path (Vertex unset → heuristic)
     impl = await turn(f"implement {ctx_id}")
     assert "Implement complete" in impl
     assert "scenarios" in impl
-    assert store.read_scenarios_md(bank, ctx_id)  # scenarios.md persisted
-    # get-scenarios read routes to the read helper, not implement
+    assert store.read_scenarios_md(bank, ctx_id)
     assert store.read_scenarios_md(bank, ctx_id) in await turn(f"get-scenarios {ctx_id}")

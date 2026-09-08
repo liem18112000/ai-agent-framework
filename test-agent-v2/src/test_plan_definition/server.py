@@ -1,9 +1,4 @@
-"""A2A server — a FastAPI ASGI app (card at /.well-known/agent-card.json, JSON-RPC at /).
-Run with `uvicorn test_plan_definition.server:app`.
-
-Mirrors knowledge_gathering.server: the a2a-sdk card + JSON-RPC routes are mounted onto
-FastAPI's router, and the reused BearerAuthMiddleware gates everything but the card/health.
-"""
+"""A2A server — a FastAPI ASGI app (card at /.well-known/agent-card.json, JSON-RPC at /)."""
 
 from __future__ import annotations
 
@@ -20,16 +15,15 @@ from test_plan_definition.a2a_card import AGENT_CARD, PORT
 from test_plan_definition.executor import TestPlanDefinitionExecutor
 from test_plan_definition.monitoring import configure, get_logger
 
-configure()  # apply the TPD_LOG env toggle at startup
+configure()
 log = get_logger("server")
 
-# Readiness gate — this agent reads the shared memory bank (no Atlassian creds; Vertex optional).
 _REQUIRED_ENV = ("GCS_BUCKET",)
 health_routes = make_health_routes(AGENT_CARD.name, AGENT_CARD.version, _REQUIRED_ENV)
 
 _handler = DefaultRequestHandler(
     agent_executor=TestPlanDefinitionExecutor(),
-    task_store=build_task_store(),  # Cloud SQL (durable) if configured, else in-memory
+    task_store=build_task_store(),
     agent_card=AGENT_CARD,
 )
 
@@ -38,7 +32,7 @@ app = FastAPI(
     version=__version__,
     docs_url=None,
     redoc_url=None,
-    openapi_url=None,  # this is an A2A / JSON-RPC service, not a REST/OpenAPI one
+    openapi_url=None,
 )
 
 app.router.routes.extend(
