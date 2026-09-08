@@ -50,10 +50,16 @@ def test_oracle_and_fault_proxy(scored):
 
 
 def test_ragas_brief_faithfulness(scored):
-    if not ragas_judge.available():
-        pytest.skip("ragas not installed — runs only in the nightly/[eval] job")
+    # V1 — route RAGAS through the PROVIDER-sourced judge (no silent OpenAI default, I8). Skips
+    # cleanly offline: build_ragas_llm() is None without the `eval` extra OR VERTEX_* creds.
+    from test_evaluation.eval.judge import build_ragas_embeddings, build_ragas_llm
+
+    llm = build_ragas_llm()
+    if llm is None:
+        pytest.skip("no provider-sourced RAGAS judge (`eval` extra or VERTEX_* creds absent)")
     case, t, _ = scored
     scores = ragas_judge.judge(seed_summary=f"Test plan for {case.seed}", understanding=t.brief,
                                note_synopses=[s["title"] for s in t.scenarios],
-                               reference=case.reference_brief)
+                               reference=case.reference_brief,
+                               llm=llm, embeddings=build_ragas_embeddings())
     assert scores.faithfulness >= 0.5

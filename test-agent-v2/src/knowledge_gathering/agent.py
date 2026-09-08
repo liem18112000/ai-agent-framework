@@ -80,8 +80,15 @@ class KgaRouter(BaseAgent):
 def build_root_agent() -> KgaRouter:
     from knowledge_gathering.agents.gather_agent import GatherAgent
     from knowledge_gathering.agents.refine_agent import build_refine_agent
+    from knowledge_gathering.explore.ask_llm import build_leads_agent
+    from knowledge_gathering.explore.hypothesize import build_hypothesize_agent
 
-    gather = GatherAgent(name="gather")
+    # D15: the two explore planners are built once and wired as GatherAgent sub_agents (correct
+    # ADK parent wiring). They only run behind KGA_LLM_HYPOTHESIZE / KGA_LLM_LEADS (default OFF).
+    hypothesize = build_hypothesize_agent()
+    leads = build_leads_agent()
+    gather = GatherAgent(name="gather", hypothesize_agent=hypothesize, leads_agent=leads,
+                         sub_agents=[hypothesize, leads])
     refine = build_refine_agent()
     return KgaRouter(name="knowledge_gathering", gather=gather, refine=refine, sub_agents=[gather, refine])
 

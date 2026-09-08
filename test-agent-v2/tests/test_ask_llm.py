@@ -1,102 +1,61 @@
-"""G4 external-LLM lead enumerator — `ask_llm_leads` (unit)."""
+"""G4 external-LLM lead enumerator (D15) — the `Leads` output_schema + the `LlmAgent` planner.
+No live model: a fake ADK `BaseLlm` returns canned structured JSON."""
 
 from __future__ import annotations
 
 import json
 
 import pytest
+from pydantic import ValidationError
 
-from knowledge_gathering.explore import ask_llm as al
+from knowledge_gathering.explore.ask_llm import OUTPUT_KEY, build_leads_agent
+from knowledge_gathering.explore.schemas import Leads
+from tests.conftest import fake_model, run_planner_agent
 
+# --- P0: the Leads output_schema (strip + dedup + cap that replaced `_coerce_leads`) --------------
 
-@pytest.fixture
-def vertex_on(monkeypatch):
-    """Flag ON + Vertex configured — the state in which the single LLM call actually fires."""
-    monkeypatch.setenv("KGA_LLM_LEADS", "1")
-    monkeypatch.setenv("VERTEX_PROJECT", "p")
-    monkeypatch.setenv("VERTEX_LOCATION", "us-east5")
-    monkeypatch.setenv("VERTEX_MODEL", "claude-sonnet-5")
-
-
-def test_returns_lead_list_from_json_array(vertex_on, monkeypatch):
-    canned = json.dumps(["restricted folders", "audit log", "bulk export"])
-    monkeypatch.setattr(al, "complete", lambda *a, **k: canned)
-    out = al.ask_llm_leads("Export fails for restricted folders", "a body", ["earchive"])
-    assert out == ["restricted folders", "audit log", "bulk export"]
+def test_as_leads_strips_dedups_and_is_order_stable():
+    assert Leads(phrases=["export", " export ", "  ", "audit"]).as_leads() == ["export", "audit"]
 
 
-def test_dedup_and_strip_and_coerce_non_string(vertex_on, monkeypatch):
-    canned = json.dumps(["export", " export ", "  ", "audit", None, 42])
-    monkeypatch.setattr(al, "complete", lambda *a, **k: canned)
-    assert al.ask_llm_leads("t") == ["export", "audit", "42"]
+def test_as_leads_caps_at_six_by_truncation_not_rejection():
+    # The old `ask_llm_leads` truncated; the schema carries NO max_length so an over-long reply
+    # still validates and is capped here (never degrades to []).
+    leads = Leads(phrases=[f"lead-{i}" for i in range(20)])
+    assert leads.as_leads() == [f"lead-{i}" for i in range(6)]
 
 
-def test_tolerates_json_code_fence(vertex_on, monkeypatch):
-    monkeypatch.setattr(al, "complete", lambda *a, **k: '```json\n["folders", "export"]\n```')
-    assert al.ask_llm_leads("t") == ["folders", "export"]
+def test_as_leads_empty_is_blank():
+    assert Leads().as_leads() == []
 
 
-@pytest.mark.parametrize("bad", [
-    "not json at all", "{}", '{"leads":["x"]}', '"just a string"', "42", "[]", "",
-])
-def test_malformed_or_non_array_returns_empty(vertex_on, monkeypatch, bad):
-    monkeypatch.setattr(al, "complete", lambda *a, **k: bad)
-    assert al.ask_llm_leads("Export fails") == []
+def test_schema_rejects_non_json():
+    with pytest.raises(ValidationError):
+        Leads.model_validate_json("not json at all")
 
 
-def test_caps_at_max_leads(vertex_on, monkeypatch):
-    canned = json.dumps([f"lead-{i}" for i in range(20)])
-    monkeypatch.setattr(al, "complete", lambda *a, **k: canned)
-    out = al.ask_llm_leads("t")
-    assert len(out) == al._MAX_LEADS == 6
-    assert out == [f"lead-{i}" for i in range(6)]
+def test_schema_rejects_bare_array():
+    # output_schema=Leads expects the OBJECT {"phrases":[...]}, not a bare array → ValidationError.
+    with pytest.raises(ValidationError):
+        Leads.model_validate_json('["audit log", "bulk export"]')
 
 
-def test_llm_raises_returns_empty_never_propagates(vertex_on, monkeypatch):
-    def boom(*a, **k):
-        raise RuntimeError("vertex down")
+# --- P1: the leads LlmAgent (fake model → validated dict in session.state[output_key]) ------------
 
-    monkeypatch.setattr(al, "complete", boom)
-    assert al.ask_llm_leads("Export fails") == []
-
-
-def test_flag_off_returns_empty_without_calling_llm(monkeypatch):
-    monkeypatch.delenv("KGA_LLM_LEADS", raising=False)
-    for k in ("VERTEX_PROJECT", "VERTEX_LOCATION", "VERTEX_MODEL"):
-        monkeypatch.setenv(k, "x")
-    calls = {"n": 0}
-
-    def spy(*a, **k):
-        calls["n"] += 1
-        return "[]"
-
-    monkeypatch.setattr(al, "complete", spy)
-    assert al.ask_llm_leads("Export fails") == []
-    assert calls["n"] == 0
+async def test_agent_writes_validated_dict_to_state():
+    canned = json.dumps({"phrases": ["restricted folders", "audit log", "bulk export"]})
+    model = fake_model(canned)
+    agent = build_leads_agent(model=model)
+    state = await run_planner_agent(
+        agent, {"title": "Export fails for restricted folders", "description": "b",
+                "labels": ["earchive"]}, output_key=OUTPUT_KEY)
+    assert Leads(**state).as_leads() == ["restricted folders", "audit log", "bulk export"]
+    assert len(model.calls) == 1
 
 
-def test_empty_title_returns_empty_without_calling_llm(vertex_on, monkeypatch):
-    calls = {"n": 0}
-
-    def spy(*a, **k):
-        calls["n"] += 1
-        return "[]"
-
-    monkeypatch.setattr(al, "complete", spy)
-    assert al.ask_llm_leads("   ") == []
-    assert calls["n"] == 0
-
-
-def test_vertex_unconfigured_returns_empty_without_calling_llm(monkeypatch):
-    monkeypatch.setenv("KGA_LLM_LEADS", "1")
-    for k in ("VERTEX_PROJECT", "VERTEX_LOCATION", "VERTEX_MODEL"):
-        monkeypatch.delenv(k, raising=False)
-    calls = {"n": 0}
-
-    def spy(*a, **k):
-        calls["n"] += 1
-        return "[]"
-
-    monkeypatch.setattr(al, "complete", spy)
-    assert al.ask_llm_leads("Export fails") == []
-    assert calls["n"] == 0
+async def test_agent_empty_object_yields_no_leads():
+    model = fake_model("{}")
+    agent = build_leads_agent(model=model)
+    state = await run_planner_agent(agent, {"title": "t", "description": "", "labels": []},
+                                    output_key=OUTPUT_KEY)
+    assert Leads(**state).as_leads() == []

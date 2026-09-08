@@ -56,7 +56,8 @@ def run_define_offline(bank: MemoryBank, ctx: str, *, seed: str = ""):
 
 
 def run_implement_offline(bank: MemoryBank, ctx: str, *, detail: bool = False):
-    return implement_plan(bank, ctx, run_id="eval", now="", detail=detail)
+    # implement_plan is async (the generators are ADK LlmAgents); drive it loop-safely.
+    return _run_sync(implement_plan(bank, ctx, run_id="eval", now="", detail=detail))
 
 
 def run_plan_offline(seed: str, fixture: str, *, ctx: str | None = None, depth: int = 1) -> PlanTrace:

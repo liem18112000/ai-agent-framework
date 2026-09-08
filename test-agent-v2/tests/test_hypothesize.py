@@ -1,172 +1,114 @@
-"""G2 hypothesize step — `hypothesize_terms` (unit) + its wiring into `run_gather`."""
+"""G2 hypothesize step (D15) — the `Hypothesis` output_schema + the `LlmAgent` planner + its wiring
+into the ADK GatherAgent. No live model: a fake ADK `BaseLlm` returns canned structured JSON."""
 
 from __future__ import annotations
 
 import json
 
 import pytest
+from pydantic import ValidationError
 
-from knowledge_gathering.explore import expand as expand_mod
-from knowledge_gathering.explore import hypothesize as hyp
-from knowledge_gathering.gather import _seed_probe
+from knowledge_gathering.explore.hypothesize import OUTPUT_KEY, build_hypothesize_agent
+from knowledge_gathering.explore.schemas import Hypothesis
+from tests.conftest import drive_gather_agent, fake_model, run_planner_agent
+from tests.eval.harness import recorded_client, run_gather_offline
 
+# --- P0: the Hypothesis output_schema (dedup + cap logic that replaced `_coerce_terms`) -----------
 
-@pytest.fixture
-def vertex_on(monkeypatch):
-    """Flag ON + Vertex configured — the state in which the single LLM call actually fires."""
-    monkeypatch.setenv("KGA_LLM_HYPOTHESIZE", "1")
-    monkeypatch.setenv("VERTEX_PROJECT", "p")
-    monkeypatch.setenv("VERTEX_LOCATION", "us-east5")
-    monkeypatch.setenv("VERTEX_MODEL", "claude-sonnet-5")
-
-
-def test_returns_union_terms_string(vertex_on, monkeypatch):
-    canned = json.dumps({
-        "key_phrases": ["restricted folder export"],
-        "entities": ["Folder", "Document"],
-        "subsystems": ["luz-docs", "export"],
-    })
-    monkeypatch.setattr(hyp, "complete", lambda *a, **k: canned)
-    out = hyp.hypothesize_terms("Export fails for restricted folders", "a body", ["earchive"])
-    assert out == "restricted folder export Folder Document luz-docs export"
+def test_as_terms_unions_fields_in_order():
+    h = Hypothesis(key_phrases=["restricted folder export"], entities=["Folder", "Document"],
+                   subsystems=["luz-docs", "export"])
+    # Byte-for-byte the string the old `_coerce_terms` + `" ".join(...)` produced → same focus,
+    # so the downstream promotions are identical (flag-on parity, §8).
+    assert h.as_terms() == "restricted folder export Folder Document luz-docs export"
 
 
-def test_dedup_and_scalar_field_coercion(vertex_on, monkeypatch):
-    canned = json.dumps({"key_phrases": ["export", "export"], "entities": "Folder",
-                         "subsystems": ["export"]})
-    monkeypatch.setattr(hyp, "complete", lambda *a, **k: canned)
-    assert hyp.hypothesize_terms("t") == "export Folder"
+def test_as_terms_dedups_and_is_order_stable():
+    h = Hypothesis(key_phrases=["export", "export"], entities=["Folder"], subsystems=["export"])
+    assert h.as_terms() == "export Folder"
 
 
-def test_tolerates_json_code_fence(vertex_on, monkeypatch):
-    monkeypatch.setattr(hyp, "complete", lambda *a, **k: '```json\n{"entities":["Folder"]}\n```')
-    assert hyp.hypothesize_terms("t") == "Folder"
+def test_as_terms_caps_at_eight():
+    h = Hypothesis(key_phrases=[f"t{i}" for i in range(20)])
+    assert h.as_terms() == "t0 t1 t2 t3 t4 t5 t6 t7"
 
 
-@pytest.mark.parametrize("bad", ["not json at all", "{}", '{"key_phrases":[]}', '[{"a":1}]', ""])
-def test_malformed_or_empty_json_returns_empty(vertex_on, monkeypatch, bad):
-    monkeypatch.setattr(hyp, "complete", lambda *a, **k: bad)
-    assert hyp.hypothesize_terms("Export fails") == ""
+def test_as_terms_empty_is_blank():
+    assert Hypothesis().as_terms() == ""
 
 
-def test_llm_raises_returns_empty_never_propagates(vertex_on, monkeypatch):
-    def boom(*a, **k):
-        raise RuntimeError("vertex down")
-
-    monkeypatch.setattr(hyp, "complete", boom)
-    assert hyp.hypothesize_terms("Export fails") == ""
+def test_schema_rejects_non_json():
+    # ADK validates the model reply the same way; malformed JSON → ValidationError (→ degrade).
+    with pytest.raises(ValidationError):
+        Hypothesis.model_validate_json("not json at all")
 
 
-def test_flag_off_returns_empty_without_calling_llm(monkeypatch):
-    monkeypatch.delenv("KGA_LLM_HYPOTHESIZE", raising=False)
-    for k in ("VERTEX_PROJECT", "VERTEX_LOCATION", "VERTEX_MODEL"):
-        monkeypatch.setenv(k, "x")
-    calls = {"n": 0}
+# --- P1: the hypothesize LlmAgent (fake model → validated dict in session.state[output_key]) ------
 
-    def spy(*a, **k):
-        calls["n"] += 1
-        return "{}"
-
-    monkeypatch.setattr(hyp, "complete", spy)
-    assert hyp.hypothesize_terms("Export fails") == ""
-    assert calls["n"] == 0
-
-
-def test_empty_title_returns_empty_without_calling_llm(vertex_on, monkeypatch):
-    calls = {"n": 0}
-
-    def spy(*a, **k):
-        calls["n"] += 1
-        return "{}"
-
-    monkeypatch.setattr(hyp, "complete", spy)
-    assert hyp.hypothesize_terms("   ") == ""
-    assert calls["n"] == 0
+async def test_agent_writes_validated_dict_to_state():
+    canned = json.dumps({"key_phrases": ["restricted folder export"],
+                         "entities": ["Folder", "Document"],
+                         "subsystems": ["luz-docs", "export"]})
+    model = fake_model(canned)
+    agent = build_hypothesize_agent(model=model)
+    state = await run_planner_agent(
+        agent, {"title": "Export fails for restricted folders", "description": "b",
+                "labels": ["earchive"]}, output_key=OUTPUT_KEY)
+    assert Hypothesis(**state).as_terms() == "restricted folder export Folder Document luz-docs export"
+    assert len(model.calls) == 1
 
 
-def test_vertex_unconfigured_returns_empty_without_calling_llm(monkeypatch):
-    monkeypatch.setenv("KGA_LLM_HYPOTHESIZE", "1")
-    for k in ("VERTEX_PROJECT", "VERTEX_LOCATION", "VERTEX_MODEL"):
-        monkeypatch.delenv(k, raising=False)
-    calls = {"n": 0}
-
-    def spy(*a, **k):
-        calls["n"] += 1
-        return "{}"
-
-    monkeypatch.setattr(hyp, "complete", spy)
-    assert hyp.hypothesize_terms("Export fails") == ""
-    assert calls["n"] == 0
+async def test_agent_empty_object_yields_no_terms():
+    model = fake_model("{}")
+    agent = build_hypothesize_agent(model=model)
+    state = await run_planner_agent(agent, {"title": "t", "description": "", "labels": []},
+                                    output_key=OUTPUT_KEY)
+    assert Hypothesis(**state).as_terms() == ""
 
 
-class _IssueClient:
-    """Returns one thin Jira issue (short body, no links/subtasks) → G1 fires."""
+# --- P3: the GatherAgent drives the planner behind KGA_LLM_HYPOTHESIZE ----------------------------
 
-    def __init__(self, summary="Export fails for restricted folders", labels=("earchive",)):
-        self._issue = {"fields": {
-            "summary": summary,
-            "description": {"type": "doc", "version": 1, "content": []},
-            "issuelinks": [], "subtasks": [], "labels": list(labels), "components": [],
-        }}
-
-    async def get_issue(self, key):
-        return self._issue
+async def test_flag_off_makes_zero_llm_calls(monkeypatch):
+    model = fake_model('{"key_phrases":["should not be used"]}')
+    reply, _bank = await drive_gather_agent(
+        "LUZ-501", monkeypatch, client=recorded_client("eval_rich"), hyp_model=model)
+    assert "Gather complete" in reply
+    assert model.calls == []                       # I1: default path is LLM-free
+    assert "Hypothesized focus" not in reply
 
 
-async def _run_gather(monkeypatch, *, flag_on, hyp_return="enriched export terms"):
-    """Drive the shared pre-crawl fan-out (expansion_round, as the ADK GatherAgent calls it) with
-    G0/G1 stubbed; return what each phase observed + the md_blocks the agent appends to its reply."""
-    seen = {"hyp_calls": 0, "self_seed_terms": None, "search_terms": None, "reply": None}
-
-    def fake_hyp(title, description="", labels=None):
-        seen["hyp_calls"] += 1
-        return hyp_return
-
-    def fake_self_seed(bank, seed, terms=""):
-        seen["self_seed_terms"] = terms
-        return [], ""
-
-    async def fake_search(client, terms, *, project=None, exclude=None, **kw):
-        seen["search_terms"] = terms
-        return [], ""
-
-    monkeypatch.setattr(expand_mod, "hypothesize_terms", fake_hyp)
-    monkeypatch.setattr(expand_mod, "memory_self_seed", fake_self_seed)
-    monkeypatch.setattr(expand_mod, "atlassian_search_seeds", fake_search)
-    if flag_on:
-        monkeypatch.setenv("KGA_LLM_HYPOTHESIZE", "1")
-    else:
-        monkeypatch.delenv("KGA_LLM_HYPOTHESIZE", raising=False)
-
-    client = _IssueClient()
-    probe = await _seed_probe(client, "LUZ-158390")
-    _new_seeds, md_blocks = await expand_mod.expansion_round(
-        object(), client, seed="LUZ-158390", terms=probe.terms, thin=probe.thin,
-        project=probe.project, title=probe.title, description=probe.description,
-        labels=probe.labels, parent=probe.parent, exclude=set())
-    seen["reply"] = "\n\n".join(md_blocks)
-    return seen
+async def test_flag_on_enriched_focus_reaches_reply(monkeypatch):
+    canned = json.dumps({"key_phrases": ["invoice charge job"], "entities": ["luz_finance"],
+                         "subsystems": []})
+    model = fake_model(canned)
+    reply, _bank = await drive_gather_agent(
+        "LUZ-501", monkeypatch, client=recorded_client("eval_rich"), hyp_model=model,
+        flags={"KGA_LLM_HYPOTHESIZE": "1"})
+    assert "Gather complete" in reply
+    assert model.calls and len(model.calls) == 1
+    assert "Hypothesized focus: invoice charge job luz_finance" in reply
 
 
-async def test_flag_off_no_llm_call_and_raw_terms_flow(monkeypatch):
-    seen = await _run_gather(monkeypatch, flag_on=False)
-    assert seen["hyp_calls"] == 0
-    assert "Export fails" in seen["self_seed_terms"] and "earchive" in seen["self_seed_terms"]
-    assert seen["search_terms"] == seen["self_seed_terms"]
-    assert "enriched" not in (seen["self_seed_terms"] or "")
-    assert "Hypothesized focus" not in seen["reply"]
+async def test_flag_on_empty_hyp_keeps_probe_terms(monkeypatch):
+    model = fake_model("{}")                        # valid but empty → as_terms() == ""
+    reply, _bank = await drive_gather_agent(
+        "LUZ-501", monkeypatch, client=recorded_client("eval_rich"), hyp_model=model,
+        flags={"KGA_LLM_HYPOTHESIZE": "1"})
+    assert "Gather complete" in reply
+    assert len(model.calls) == 1
+    assert "Hypothesized focus" not in reply        # kept probe terms, no enrichment block
 
 
-async def test_flag_on_enriched_terms_reach_g0_and_g1(monkeypatch):
-    seen = await _run_gather(monkeypatch, flag_on=True)
-    assert seen["hyp_calls"] == 1
-    assert seen["self_seed_terms"] == "enriched export terms"
-    assert seen["search_terms"] == "enriched export terms"
-    assert "Hypothesized focus: enriched export terms" in seen["reply"]
-
-
-async def test_flag_on_but_empty_hyp_keeps_raw_terms(monkeypatch):
-    seen = await _run_gather(monkeypatch, flag_on=True, hyp_return="")
-    assert seen["hyp_calls"] == 1
-    assert "Export fails" in seen["self_seed_terms"]
-    assert "Hypothesized focus" not in seen["reply"]
+async def test_flag_on_junk_reply_degrades_and_gathers(monkeypatch):
+    # §8 gate: a malformed reply fails output_schema validation → GatherAgent degrades to probe.terms.
+    model = fake_model("not json at all")
+    reply, bank = await drive_gather_agent(
+        "LUZ-501", monkeypatch, client=recorded_client("eval_rich"), hyp_model=model,
+        flags={"KGA_LLM_HYPOTHESIZE": "1"})
+    assert "Gather complete" in reply
+    assert len(model.calls) == 1
+    assert "Hypothesized focus" not in reply
+    # degraded path persists the SAME nodes as the default (flag-off) gather for this seed
+    baseline = run_gather_offline("LUZ-501", client=recorded_client("eval_rich"))
+    graph, _ = bank.load_index()
+    assert set(graph.nodes.keys()) == baseline.node_ids

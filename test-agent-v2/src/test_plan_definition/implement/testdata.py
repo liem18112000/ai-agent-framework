@@ -2,7 +2,6 @@
 
 import os
 
-from common.llm.vertex import vertex_config
 from common.memory.bank import _slug
 from test_plan_definition.models import FIXTURE, MOCK_DATA, TEST_ACCOUNT, TestData, TestPlan
 from test_plan_definition.pack import PlanPack
@@ -10,18 +9,16 @@ from test_plan_definition.pack import PlanPack
 _MAX_MOCKS = 8
 
 
-def generate_test_data(plan: TestPlan, plan_pack: PlanPack, *, now: str = "",
-                       detail: bool = False) -> list[TestData]:
-    """Detailed heuristic by default; opt into the Claude-on-Vertex generator per-call with"""
+async def generate_test_data(plan: TestPlan, plan_pack: PlanPack, *, now: str = "",
+                             detail: bool = False, model=None) -> list[TestData]:
+    """Detailed heuristic by default; opt into the TestDataGen ``LlmAgent`` per-call with
+    ``detail``/``TPD_LLM_DETAIL`` (kept off the I3 default path)."""
     if detail or os.environ.get("TPD_LLM_DETAIL"):
-        cfg = vertex_config()
-        if cfg:
-            proj, loc, model = cfg
-            from test_plan_definition.llm.testdata import claude_test_data
+        from test_plan_definition.llm.testdata import claude_test_data
 
-            td = claude_test_data(plan, plan_pack, project=proj, location=loc, model=model, now=now)
-            if td:
-                return td
+        td = await claude_test_data(plan, plan_pack, now=now, model=model)
+        if td:
+            return td
     return heuristic_test_data(plan, plan_pack, now=now)
 
 

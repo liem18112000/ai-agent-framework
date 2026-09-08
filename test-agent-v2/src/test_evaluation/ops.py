@@ -24,6 +24,9 @@ def render(r: EvalReport) -> str:
                      f"precision={r.retrieval.precision:.2f} leaked={r.retrieval.leaked}")
     if r.entities and r.entities.missing:
         lines.append("Missing entities: " + ", ".join(r.entities.missing))
+    if r.semantic is not None:  # judged tier only — None on the deterministic default path
+        lines.append(f"Semantic rubrics: names_the_ac={r.semantic.names_the_ac} "
+                     f"declares_gaps_honestly={r.semantic.declares_gaps_honestly}")
     return "\n".join(lines)
 
 

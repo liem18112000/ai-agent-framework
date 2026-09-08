@@ -7,6 +7,7 @@ from test_plan_definition import memory as store
 from test_plan_definition.define import define
 from test_plan_definition.implement import implement_plan
 from test_plan_definition.models import BOUNDARY, CONFIRMED, ERROR, HAPPY, NEGATIVE, TEST_SCENARIO
+from tests.tpd_fakes import full_fake_model
 
 
 async def _confirmed(bank):
@@ -19,7 +20,7 @@ async def test_implement_generates_and_persists_artifacts(pack_bucket):
     bank = MemoryBank(pack_bucket)
     await _confirmed(bank)
 
-    res = implement_plan(bank, "run-6f2a")
+    res = await implement_plan(bank, "run-6f2a")
     assert res.plan and res.scenarios and res.test_data and res.steps
     kinds = {s.kind for s in res.scenarios}
     assert {HAPPY, NEGATIVE, BOUNDARY, ERROR} <= kinds
@@ -39,7 +40,7 @@ async def test_implement_generates_and_persists_artifacts(pack_bucket):
 async def test_implement_adds_provenance_nodes_to_the_shared_index(pack_bucket):
     bank = MemoryBank(pack_bucket)
     await _confirmed(bank)
-    implement_plan(bank, "run-6f2a")
+    await implement_plan(bank, "run-6f2a")
 
     graph, _ = bank.load_index()
     node_types = {n["type"] for n in graph.nodes.values()}
@@ -50,19 +51,61 @@ async def test_implement_adds_provenance_nodes_to_the_shared_index(pack_bucket):
 
 async def test_implement_refuses_when_no_confirmed_plan(pack_bucket):
     bank = MemoryBank(pack_bucket)
-    res = implement_plan(bank, "run-6f2a")
+    res = await implement_plan(bank, "run-6f2a")
     assert not res.scenarios
     assert "run define first" in res.message
 
 
-def test_api_steps_are_request_then_assert(pack_bucket):
-    import asyncio
-
+async def test_api_steps_are_request_then_assert(pack_bucket):
     bank = MemoryBank(pack_bucket)
-    asyncio.run(_confirmed(bank))
-    res = implement_plan(bank, "run-6f2a")
+    await _confirmed(bank)
+    res = await implement_plan(bank, "run-6f2a")
     happy = next(s for s in res.scenarios if s.kind == HAPPY)
     steps = sorted((st for st in res.steps if st.scenario_id == happy.id), key=lambda s: s.order)
     assert len(steps) >= 3 and steps[0].order == 1
     assert steps[0].keyword == "Given" and any(s.keyword == "When" for s in steps)
     assert "request" in " ".join(s.action.lower() for s in steps) and steps[-1].expected
+
+
+# --- I3: the load-bearing call-count gate (default = 1 LLM call; detail = 3) --------------------
+
+async def test_implement_default_makes_exactly_one_llm_call(pack_bucket, monkeypatch):
+    """I3: a default implement (no detail, no TPD_LLM_DETAIL) makes exactly ONE LLM call — the
+    scenario agent. test-data + steps use the heuristic. This is the 'serial Vertex calls ->
+    Cloud Run timeout' guard; do not relax it."""
+    monkeypatch.delenv("TPD_LLM_DETAIL", raising=False)
+    bank = MemoryBank(pack_bucket)
+    await _confirmed(bank)
+    fake = full_fake_model()
+
+    res = await implement_plan(bank, "run-6f2a", model=fake)
+    assert fake.calls == 1, f"default implement must make 1 LLM call, made {fake.calls}"
+    # the one call is the scenario agent → its canned scenarios reached the result
+    assert {s.id for s in res.scenarios} == {"scenario:run-6f2a:a", "scenario:run-6f2a:b"}
+
+
+async def test_implement_detail_makes_three_llm_calls(pack_bucket, monkeypatch):
+    """detail on → test-data + scenarios + one steps-batch = 3 LLM calls."""
+    monkeypatch.delenv("TPD_LLM_DETAIL", raising=False)
+    bank = MemoryBank(pack_bucket)
+    await _confirmed(bank)
+    fake = full_fake_model()
+
+    await implement_plan(bank, "run-6f2a", detail=True, model=fake)
+    assert fake.calls == 3, f"detail implement must make 3 LLM calls, made {fake.calls}"
+
+
+async def test_implement_falls_back_to_heuristic_on_invalid_llm_output(pack_bucket, monkeypatch):
+    """Invalid model output degrades to the heuristic scenarios — never raises (best-effort)."""
+    monkeypatch.delenv("TPD_LLM_DETAIL", raising=False)
+    bank = MemoryBank(pack_bucket)
+    await _confirmed(bank)
+    fake = full_fake_model()
+    fake.scenarios_json = "not valid json at all"
+
+    res = await implement_plan(bank, "run-6f2a", model=fake)
+    assert fake.calls == 1  # the scenario agent still fired once before validation failed
+    # heuristic scenarios carry the '— happy path' style titles and the full kind matrix
+    kinds = {s.kind for s in res.scenarios}
+    assert {HAPPY, NEGATIVE, BOUNDARY, ERROR} <= kinds
+    assert any("happy path" in s.title for s in res.scenarios)

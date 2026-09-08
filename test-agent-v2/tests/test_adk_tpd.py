@@ -62,3 +62,28 @@ async def test_define_approve_implement(monkeypatch, pack_bucket):
     assert "scenarios" in impl
     assert store.read_scenarios_md(bank, ctx_id)
     assert store.read_scenarios_md(bank, ctx_id) in await turn(f"get-scenarios {ctx_id}")
+
+
+async def test_implement_via_graph_drives_scenario_llm_agent(monkeypatch, pack_bucket):
+    """End-to-end through the ADK graph with a fake model: the async ImplementAgent runs the
+    ScenarioGen LlmAgent (exactly once — I3) and its structured output reaches persistence."""
+    from tests.tpd_fakes import full_fake_model
+
+    ctx_id = "run-6f2a"
+    bank = MemoryBank(pack_bucket)
+    fake = full_fake_model()
+    monkeypatch.setattr("test_plan_definition.llm.scenarios.agent_model", lambda **k: fake)
+    turn = await _tpd_runner(bank, ctx_id, monkeypatch)
+
+    replies = [await turn(f"define {ctx_id}")]
+    for _ in range(6):
+        if "Plan definition complete" in replies[-1]:
+            break
+        replies.append(await turn("A"))
+    await turn(f"approve {ctx_id}")
+
+    impl = await turn(f"implement {ctx_id}")
+    assert "Implement complete" in impl
+    assert fake.calls == 1, f"scenario agent must fire exactly once via the graph, fired {fake.calls}"
+    from test_plan_definition import memory as store
+    assert "A happy" in (store.read_scenarios_md(bank, ctx_id) or "")

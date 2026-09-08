@@ -1,37 +1,33 @@
-"""Claude-on-Vertex generator for test scenarios from a confirmed plan."""
+"""ScenarioGen — the flagship implement ``LlmAgent`` (the one default LLM call, I3)."""
 
 from __future__ import annotations
 
-from common.llm.parse import loads_array
-from common.llm.vertex import complete
+from common.adk import agent_model
+from test_plan_definition.llm.adk import build_generator_agent, run_json_agent
 from test_plan_definition.llm.prompts import scenarios_prompt
-from test_plan_definition.models import HAPPY, TestData, TestPlan, TestScenario
+from test_plan_definition.llm.schemas import Scenarios
+from test_plan_definition.models import TestData, TestPlan, TestScenario
 from test_plan_definition.monitoring import get_logger
 
 log = get_logger("llm.scenarios")
 
-_FIELDS = ("id", "plan_id", "title", "kind", "methodology", "description", "rationale",
-           "preconditions", "data_refs", "source_refs", "created_at")
+_MAX_TOKENS = 6000
 
 
-def claude_scenarios(
-    plan: TestPlan, plan_pack, test_data: list[TestData], *,
-    project: str, location: str, model: str, now: str = "",
+async def claude_scenarios(
+    plan: TestPlan, plan_pack, test_data: list[TestData], *, now: str = "", model=None,
 ) -> list[TestScenario] | None:
-    raw = complete(
-        scenarios_prompt(plan, plan_pack.summary_text(), test_data),
-        project=project, location=location, model=model, max_tokens=6000,
-    )
-    items = loads_array(raw)
-    if not items:
-        log.warning("could not parse scenarios output as JSON; falling back to heuristic")
+    """Structured scenarios via the ScenarioGen ``LlmAgent``; ``None`` (→ heuristic) when unconfigured
+    or the model output fails schema validation."""
+    model = model or agent_model(max_tokens=_MAX_TOKENS)
+    if model is None:
         return None
-    default_method = plan.methodology[0] if plan.methodology else "api"
-    out = []
-    for it in items:
-        it.setdefault("plan_id", plan.id)
-        it.setdefault("kind", HAPPY)
-        it.setdefault("methodology", default_method)
-        it["created_at"] = now
-        out.append(TestScenario(**{k: it.get(k) for k in _FIELDS if k in it}))
-    return out
+    agent = build_generator_agent(
+        name="tpd_scenario_gen",
+        prompt=scenarios_prompt(plan, plan_pack.summary_text(), test_data),
+        output_schema=Scenarios, output_key="tpd_scenarios", model=model)
+    data = await run_json_agent(agent, output_key="tpd_scenarios")
+    if not data:
+        log.warning("no scenarios from generator; falling back to heuristic")
+        return None
+    return Scenarios(**data).to_scenarios(plan, now) or None

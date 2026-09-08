@@ -84,15 +84,20 @@ def test_claude_brief_path(vertex_env, monkeypatch):
     assert "Brief" in brief
 
 
-def test_generate_scenarios_uses_claude_then_falls_back(vertex_env, monkeypatch):
-    canned = json.dumps([{"id": "scenario:run-x:a", "title": "A", "kind": "happy",
-                          "source_refs": ["jira:LUZ-1"]}])
-    monkeypatch.setattr("test_plan_definition.llm.scenarios.complete", lambda *a, **k: canned)
-    scs = generate_scenarios(_plan(), _plan_pack(), [TestData(id="td", kind="mock-data")])
-    assert len(scs) == 1 and scs[0].id == "scenario:run-x:a" and scs[0].plan_id == "plan:run-x"
+async def test_generate_scenarios_uses_llm_agent_then_falls_back():
+    """ScenarioGen is an ADK LlmAgent driven by an injected fake model; invalid output → heuristic."""
+    from tests.tpd_fakes import FakeGeneratorModel, scenarios_json
 
-    monkeypatch.setattr("test_plan_definition.llm.scenarios.complete", lambda *a, **k: "oops")
-    scs2 = generate_scenarios(_plan(), _plan_pack(), [TestData(id="td", kind="mock-data")])
+    fake = FakeGeneratorModel(model="fake", scenarios_json=scenarios_json(
+        [{"id": "scenario:run-x:a", "title": "A", "kind": "happy", "source_refs": ["jira:LUZ-1"]}]))
+    scs = await generate_scenarios(
+        _plan(), _plan_pack(), [TestData(id="td", kind="mock-data")], model=fake)
+    assert len(scs) == 1 and scs[0].id == "scenario:run-x:a" and scs[0].plan_id == "plan:run-x"
+    assert fake.calls == 1
+
+    bad = FakeGeneratorModel(model="fake", scenarios_json="oops not json")
+    scs2 = await generate_scenarios(
+        _plan(), _plan_pack(), [TestData(id="td", kind="mock-data")], model=bad)
     assert scs2 == heuristic_scenarios(_plan(), _plan_pack(), [TestData(id="td", kind="mock-data")])
 
 

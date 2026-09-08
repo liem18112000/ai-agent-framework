@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from common.llm.vertex import vertex_config
 from common.memory.bank import _slug
 from test_plan_definition.models import (
     BOUNDARY,
@@ -40,19 +39,16 @@ def _coverage_kinds(plan: TestPlan) -> tuple[str, ...]:
     return _FULL_COVERAGE
 
 
-def generate_scenarios(
-    plan: TestPlan, plan_pack: PlanPack, test_data: list[TestData], *, now: str = ""
+async def generate_scenarios(
+    plan: TestPlan, plan_pack: PlanPack, test_data: list[TestData], *, now: str = "", model=None,
 ) -> list[TestScenario]:
-    """Claude-on-Vertex scenarios when VERTEX_* is configured (heuristic on miss), else heuristic."""
-    cfg = vertex_config()
-    if cfg:
-        proj, loc, model = cfg
-        from test_plan_definition.llm.scenarios import claude_scenarios
+    """The ScenarioGen ``LlmAgent`` (the one default implement LLM call, I3) with a heuristic
+    fallback — used whenever no model is configured or the model output is invalid."""
+    from test_plan_definition.llm.scenarios import claude_scenarios
 
-        scs = claude_scenarios(plan, plan_pack, test_data,
-                               project=proj, location=loc, model=model, now=now)
-        if scs:
-            return scs
+    scs = await claude_scenarios(plan, plan_pack, test_data, now=now, model=model)
+    if scs:
+        return scs
     return heuristic_scenarios(plan, plan_pack, test_data, now=now)
 
 

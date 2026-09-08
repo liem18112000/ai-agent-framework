@@ -181,6 +181,40 @@ Full rationale/milestones/gates live in that doc; the one-liners here keep the r
   `_agent_card()`; `test_main` asserts the ADK card (`name="knowledge_gathering"`, skills non-empty).
 - **Status:** **DONE (C4).**
 
+## D15 — KGA explore leaf LLM steps are ADK `LlmAgent(output_schema=…)`, driven by `GatherAgent`, via the provider
+- **Decision:** `hypothesize` + `ask_llm` (leads) become ADK `LlmAgent`s with a pydantic `output_schema`;
+  `GatherAgent` runs them under its `ctx` behind `KGA_LLM_HYPOTHESIZE`/`KGA_LLM_LEADS` (default OFF) and
+  feeds `terms=`/`leads=` into the unchanged deterministic `expansion_round`+`crawl`. Model via
+  `agent_model()` — the provider's first live `LlmAgent` consumer (I8). Raw `complete()`+`_coerce_*` deleted.
+- **Why/consequence:** realizes D10 "Option B" for the explore steps; deletes hand-rolled JSON coercion;
+  keeps I1 (flags off → zero LLM calls, identical nodes). `output_schema` ⇒ no tools/transfer (fine, pure
+  enumerators).
+- **Status:** **DONE (P0–P3, P5).** P4 (ctx-less loop shim) deferred — the loop is inert under the ADK
+  GatherAgent (A1). See [`ENHANCEMENT-explore-llmagent.md`](ENHANCEMENT-explore-llmagent.md).
+
+## D16 — TPD implement generators are ADK `LlmAgent(output_schema=…)`, leaf-first, via the provider, preserving I3
+- **Decision:** the implement generators (`scenarios` flagship + detail-gated `test_data`/`steps`) become
+  ADK `LlmAgent`s with pydantic `output_schema`, driven by `ImplementAgent`; `implement_plan` is async
+  (no `to_thread`). Model via `agent_model()` (I8); `complete()`+`loads_array` deleted from the implement
+  `llm/*`. Heuristic fallback on invalid output preserved.
+- **Why/consequence:** reuses ADK's agent machinery, deletes hand-parsers; **I3 preserved** — default
+  implement = exactly 1 LLM call (scenarios), `test_data`/`steps` stay behind `detail`/`TPD_LLM_DETAIL`
+  (locked by call-count tests: default=1, detail=3).
+- **Status:** **DONE (T0–T5).** T6 (QuestionGen/brief via the shared `common/adk/interrogation.py`, KGA
+  refine rides on it) deferred as a coordinated follow-up. See [`ENHANCEMENT-tpd-llmagent.md`](ENHANCEMENT-tpd-llmagent.md).
+
+## D17 — TEV's judged tier runs through the provider + ADK-native judged metrics; the live scorer stays deterministic
+- **Decision:** add a provider-sourced judge/embeddings factory (`eval/judge.py`, from `agent_model()`);
+  route RAGAS through it (no silent OpenAI default — `ragas_judge.judge` raises on `None`); wire the
+  defined-but-unwired `judge_semantic` as an opt-in judged rubric; wire ADK-native `JUDGED_METRICS` into
+  `eval/config.py`+`runner.py`, creds-gated. The live `evaluate_pack`/`evaluate_plan` A2A path stays
+  **deterministic + LLM-free** (asserted by a zero-LLM-call test).
+- **Why/consequence:** the only genuine "reuse ADK more" for an evaluator is a provider-sourced judge (I8)
+  + ADK's native judged harness — NOT agent-ifying deterministic scoring (that would destroy PQS/TPS
+  reproducibility). Realizes the "Open: judged eval tier" item.
+- **Status:** **DONE (V0–V4).** Live RAGAS tier needs `langchain-community`/`langchain-google-vertexai`
+  in the `eval` extra (never imported offline; follow-up). See [`ENHANCEMENT-tev-adk-reuse.md`](ENHANCEMENT-tev-adk-reuse.md).
+
 ---
 
 ## Open (not yet decided / deferred to the deploy milestone)

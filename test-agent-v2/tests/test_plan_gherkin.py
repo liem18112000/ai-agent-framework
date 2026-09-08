@@ -11,7 +11,7 @@ from test_plan_definition.render import export_features, render_feature
 
 async def _implemented(bank):
     await define(bank, "run-6f2a", seed="LUZ-158390")
-    return implement_plan(bank, "run-6f2a")
+    return await implement_plan(bank, "run-6f2a")
 
 
 async def test_implement_auto_exports_a_feature(pack_bucket):

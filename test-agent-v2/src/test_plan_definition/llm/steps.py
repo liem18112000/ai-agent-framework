@@ -1,43 +1,34 @@
-"""Claude-on-Vertex generator for detailed step-by-step STEPS."""
+"""StepsGen — the detail-gated implement ``LlmAgent`` for step-by-step STEPS (batched upstream)."""
 
 from __future__ import annotations
 
-from common.llm.parse import loads_array
-from common.llm.vertex import complete
+from common.adk import agent_model
+from test_plan_definition.llm.adk import build_generator_agent, run_json_agent
 from test_plan_definition.llm.prompts import steps_prompt
+from test_plan_definition.llm.schemas import StepsList
 from test_plan_definition.models import TestPlan, TestScenario, TestStep
 from test_plan_definition.monitoring import get_logger
 
 log = get_logger("llm.steps")
 
+_MAX_TOKENS = 8000
 
-def claude_steps(
-    scenarios: list[TestScenario], plan: TestPlan, plan_pack, test_data, *,
-    project: str, location: str, model: str, now: str = "",
+
+async def claude_steps(
+    scenarios: list[TestScenario], plan: TestPlan, plan_pack, test_data, *, now: str = "", model=None,
 ) -> dict[str, list[TestStep]] | None:
-    summary = plan_pack.summary_text() if plan_pack is not None else ""
-    raw = complete(
-        steps_prompt(scenarios, plan, summary, test_data),
-        project=project, location=location, model=model, max_tokens=8000,
-    )
-    items = loads_array(raw)
-    if not items:
-        log.warning("could not parse steps output as JSON; falling back to heuristic")
+    """Structured steps for one scenario batch via the ``LlmAgent`` (batching is done by the caller);
+    ``None`` (→ heuristic) when unconfigured or the model output fails schema validation."""
+    model = model or agent_model(max_tokens=_MAX_TOKENS)
+    if model is None:
         return None
-    data_refs = [d.id for d in test_data]
-    by_id: dict[str, list[TestStep]] = {}
-    for it in items:
-        sid = it.get("scenario_id")
-        if not sid:
-            continue
-        steps = []
-        for i, s in enumerate(it.get("steps") or [], start=1):
-            order = s.get("order", i)
-            steps.append(TestStep(
-                id=f"{sid}#s{order}", scenario_id=sid, order=order,
-                action=s.get("action", ""), expected=s.get("expected", ""),
-                keyword=s.get("keyword", ""), data_refs=data_refs,
-            ))
-        if steps:
-            by_id[sid] = steps
-    return by_id or None
+    summary = plan_pack.summary_text() if plan_pack is not None else ""
+    agent = build_generator_agent(
+        name="tpd_steps_gen",
+        prompt=steps_prompt(scenarios, plan, summary, test_data),
+        output_schema=StepsList, output_key="tpd_steps", model=model)
+    data = await run_json_agent(agent, output_key="tpd_steps")
+    if not data:
+        log.warning("could not parse steps output; falling back to heuristic")
+        return None
+    return StepsList(**data).to_steps(test_data) or None

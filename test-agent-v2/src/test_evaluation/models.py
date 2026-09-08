@@ -138,6 +138,9 @@ class EvalReport:
     retrieval: RetrievalScore | None = None
     entities: EntitiesScore | None = None
     rubrics: RubricsReport | None = None
+    # Judged tier only (V2): set by eval/judged.py's opt-in path, NEVER by evaluate_pack (stays
+    # None on the deterministic default path — the LLM-free product property).
+    semantic: SemanticRubricResult | None = None
     tiers: list[str] = field(default_factory=list)
 
 

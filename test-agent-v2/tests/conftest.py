@@ -6,7 +6,9 @@ import os
 import pathlib
 
 import pytest
+from google.adk.models.base_llm import BaseLlm
 from google.api_core.exceptions import PreconditionFailed
+from pydantic import Field
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
 
@@ -131,3 +133,91 @@ async def drive_adk(build_root_agent, text, *, session_id="s"):
             if getattr(p, "text", None) and getattr(c, "role", None) != "user":
                 out.append(p.text)
     return " ".join(out)
+
+
+# --- Offline fake ADK model for LlmAgent(output_schema=...) planner tests (D15) ---------------
+# ADK has no built-in test double, so we subclass BaseLlm to yield ONE canned reply. The LlmAgent
+# turns the reply text into session.state[output_key] via ADK's own output_schema validation, so a
+# valid canned JSON exercises the real save path and a malformed one exercises the ValidationError →
+# degrade path. `calls` records each request so tests can assert zero-LLM (flag off) vs one call.
+class FakeStructuredModel(BaseLlm):
+    """A `BaseLlm` that returns `canned` as the model's only reply — no network."""
+
+    model: str = "fake-structured"
+    canned: str = "{}"
+    calls: list = Field(default_factory=list)
+
+    async def generate_content_async(self, llm_request, stream=False):
+        from google.adk.models.llm_response import LlmResponse
+        from google.genai import types
+
+        self.calls.append(llm_request)
+        yield LlmResponse(
+            content=types.Content(role="model", parts=[types.Part(text=self.canned)]))
+
+
+def fake_model(canned: str = "{}") -> FakeStructuredModel:
+    """Build a `FakeStructuredModel` returning `canned` (a JSON string, or junk to force degrade)."""
+    return FakeStructuredModel(canned=canned)
+
+
+async def drive_gather_agent(seed, monkeypatch, *, client, hyp_model=None, leads_model=None,
+                             flags=None):
+    """Drive the D15 GatherAgent as root with INJECTED planner models (fakes) over a recorded client.
+
+    Returns (reply_text, bank). The planners run only behind KGA_LLM_HYPOTHESIZE / KGA_LLM_LEADS.
+    """
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+    from google.genai import types
+
+    import knowledge_gathering.agents.gather_agent as ga
+    from common.memory import MemoryBank
+    from knowledge_gathering.agents.gather_agent import GatherAgent
+    from knowledge_gathering.explore.ask_llm import build_leads_agent
+    from knowledge_gathering.explore.hypothesize import build_hypothesize_agent
+
+    for k, v in (flags or {}).items():
+        monkeypatch.setenv(k, v)
+    bank = MemoryBank(FakeBucket())
+    monkeypatch.setattr(ga, "build_client", lambda: client)
+    monkeypatch.setattr(ga, "build_bank", lambda: bank)
+
+    hyp = build_hypothesize_agent(model=hyp_model)
+    leads = build_leads_agent(model=leads_model)
+    gather = GatherAgent(name="gather", hypothesize_agent=hyp, leads_agent=leads,
+                         sub_agents=[hyp, leads])
+    ctx_id = f"t-{seed}"
+    svc = InMemorySessionService()
+    await svc.create_session(app_name="kga", user_id="u", session_id=ctx_id)
+    runner = Runner(app_name="kga", agent=gather, session_service=svc)
+    out: list[str] = []
+    async for ev in runner.run_async(
+        user_id="u", session_id=ctx_id,
+        new_message=types.Content(role="user", parts=[types.Part(text=f"gather {seed}")])):
+        c = getattr(ev, "content", None)
+        for p in getattr(c, "parts", None) or []:
+            if getattr(p, "text", None) and getattr(c, "role", None) != "user":
+                out.append(p.text)
+    return " ".join(out), bank
+
+
+async def run_planner_agent(agent, plan_input: dict, *, output_key: str):
+    """Run a planner LlmAgent once via a Runner with `plan_input` seeded into state; return the state
+    value at `output_key` (ADK applies the validated output_schema dict to the session)."""
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+    from google.genai import types
+
+    from knowledge_gathering.explore.schemas import PLAN_INPUT_KEY
+
+    svc = InMemorySessionService()
+    await svc.create_session(app_name="t", user_id="u", session_id="s",
+                             state={PLAN_INPUT_KEY: plan_input})
+    runner = Runner(app_name="t", agent=agent, session_service=svc)
+    async for _ in runner.run_async(
+        user_id="u", session_id="s",
+        new_message=types.Content(role="user", parts=[types.Part(text="go")])):
+        pass
+    sess = await svc.get_session(app_name="t", user_id="u", session_id="s")
+    return sess.state.get(output_key)

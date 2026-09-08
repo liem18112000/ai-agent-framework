@@ -92,12 +92,18 @@ def test_topic_adherence_curve():
 
 
 def test_ragas_faithfulness_relevancy(refined):
-    if not ragas_judge.available():
-        pytest.skip("ragas not installed — runs only in the nightly/[eval] job")
+    # V1 — route RAGAS through the PROVIDER-sourced judge (no silent OpenAI default, I8). Skips
+    # cleanly offline: build_ragas_llm() is None without the `eval` extra OR VERTEX_* creds.
+    from test_evaluation.eval.judge import build_ragas_embeddings, build_ragas_llm
+
+    llm = build_ragas_llm()
+    if llm is None:
+        pytest.skip("no provider-sourced RAGAS judge (`eval` extra or VERTEX_* creds absent)")
     case, t = refined
     scores = ragas_judge.judge(seed_summary=f"Test plan for {case['seed']}",
                                understanding=t.understanding, note_synopses=t.node_texts,
-                               reference=case["reference_understanding"])
+                               reference=case["reference_understanding"],
+                               llm=llm, embeddings=build_ragas_embeddings())
     assert scores.faithfulness >= 0.5
 
 

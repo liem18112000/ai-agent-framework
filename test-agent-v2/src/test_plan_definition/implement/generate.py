@@ -22,8 +22,8 @@ from test_plan_definition.render.gherkin import export_features
 log = get_logger("implement.generate")
 
 
-def implement_plan(bank, context_id: str, *, run_id: str = "implement", now: str = "",
-                   detail: bool = False) -> ImplementResult:
+async def implement_plan(bank, context_id: str, *, run_id: str = "implement", now: str = "",
+                         detail: bool = False, model=None) -> ImplementResult:
     plan = store.read_plan(bank, context_id)
     if plan is None:
         return ImplementResult(message=f"No test plan for {context_id}; run define first.")
@@ -34,9 +34,11 @@ def implement_plan(bank, context_id: str, *, run_id: str = "implement", now: str
                     "(resolve open gaps) before implementing.")
 
     plan_pack = load_plan_pack(bank, context_id)
-    test_data = generate_test_data(plan, plan_pack, now=now, detail=detail)
-    scenarios = generate_scenarios(plan, plan_pack, test_data, now=now)
-    steps = generate_all_steps(scenarios, plan, plan_pack, test_data, now=now, detail=detail)
+    # I3: only `scenarios` runs an LLM on the default path; test-data/steps stay behind `detail`.
+    test_data = await generate_test_data(plan, plan_pack, now=now, detail=detail, model=model)
+    scenarios = await generate_scenarios(plan, plan_pack, test_data, now=now, model=model)
+    steps = await generate_all_steps(scenarios, plan, plan_pack, test_data, now=now,
+                                     detail=detail, model=model)
 
     store.write_test_data(bank, context_id, test_data)
     store.write_scenarios(bank, context_id, scenarios, steps)

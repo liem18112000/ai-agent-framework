@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import datetime
 
 from google.adk.agents import BaseAgent
@@ -23,8 +22,8 @@ class ImplementAgent(BaseAgent):
         ctx_id = ctx.session.id
         detail = "detail" in text.lower().split()
         bank = build_bank()
-        result = await asyncio.to_thread(
-            implement_plan, bank, ctx_id, run_id=f"impl-{ctx_id[:8]}", now=_now(), detail=detail)
+        result = await implement_plan(
+            bank, ctx_id, run_id=f"impl-{ctx_id[:8]}", now=_now(), detail=detail)
         _capture_implement(bank, ctx_id, result)
         if not result.scenarios:
             yield text_event(self.name, result.message or f"Nothing generated for {ctx_id}.")

@@ -13,7 +13,18 @@ def available() -> bool:
 
 def judge(seed_summary: str, understanding: str, note_synopses: list[str], reference: str,
           *, llm=None, embeddings=None) -> RagasScore:
-    """Score one {question, answer, contexts, reference} sample into a RagasScore."""
+    """Score one {question, answer, contexts, reference} sample into a RagasScore.
+
+    The `llm` and `embeddings` MUST be provider-sourced (I8, V1): passing `None` would let RAGAS
+    fall back to its OpenAI default, so we refuse it up front (before importing ragas). Build them
+    via `eval.judge.build_ragas_llm()` / `build_ragas_embeddings()`.
+    """
+    if llm is None or embeddings is None:
+        raise ValueError(
+            "ragas_judge.judge requires a provider-sourced llm AND embeddings (I8); refusing "
+            "RAGAS's OpenAI default. Build them via eval.judge.build_ragas_llm() / "
+            "build_ragas_embeddings()."
+        )
     from ragas import evaluate
     from ragas.dataset_schema import EvaluationDataset
     from ragas.metrics import answer_relevancy, faithfulness

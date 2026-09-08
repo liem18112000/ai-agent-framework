@@ -5,7 +5,6 @@ from __future__ import annotations
 from common.models import Graph
 from knowledge_gathering.explore import expand as expand_mod
 from knowledge_gathering.explore.ground_leads import ground_leads
-from knowledge_gathering.gather import _seed_probe
 
 
 def _node(nid: str, ntype: str = "jira-issue", title: str = "") -> dict:
@@ -163,90 +162,113 @@ async def test_any_failure_degrades_to_empty():
     assert grounded == [] and unconfirmed == ["z"]
 
 
-class _IssueClient:
-    """One thin Jira issue (short body, no links/subtasks) so the probe yields a title."""
-
-    def __init__(self, summary="Export fails for restricted folders", labels=("earchive",)):
-        self._issue = {"fields": {
-            "summary": summary,
-            "description": {"type": "doc", "version": 1, "content": []},
-            "issuelinks": [], "subtasks": [], "labels": list(labels), "components": [],
-        }}
-        self.jql_calls = 0
-
-    async def get_issue(self, key):
-        return self._issue
-
-    async def search_jql(self, jql, *, max_results=10):
-        self.jql_calls += 1
-        return []
-
-    async def search_cql(self, cql, *, limit=10):
-        return []
+# --- P2: expansion_round runs the DETERMINISTIC ground_leads gate on caller-supplied leads --------
+# (The LLM lead enumeration moved out to the GatherAgent under D15; expansion_round only grounds a
+# supplied `leads` list now. `expand_mod` is imported at the top of this module.)
 
 
-async def _run_gather(monkeypatch, *, flag_on, leads=None, grounded=None, unconfirmed=None):
-    """Drive the shared pre-crawl fan-out (expansion_round) with G0/G1/G4-internals stubbed; return
-    what each phase saw + the md_blocks the ADK GatherAgent appends to its reply. seen['extra_seeds']
-    is the new_seeds expansion_round hands the crawl."""
-    seen = {"lead_calls": 0, "extra_seeds": None, "reply": None, "ground_calls": 0}
+def _stub_deterministic_phases(monkeypatch):
+    """Silence G0/G1 so a wiring test observes only the leads-grounding path."""
+    monkeypatch.setattr(expand_mod, "memory_self_seed", lambda bank, seed, focus="": ([], ""))
 
-    def fake_ask_llm(title, description="", labels=None):
-        seen["lead_calls"] += 1
-        return leads if leads is not None else ["a lead"]
+    async def _sem(bank, seed, focus, *, exclude=None):
+        return [], ""
+
+    async def _search(client, terms, *, project=None, exclude=None, **kw):
+        return [], ""
+
+    monkeypatch.setattr(expand_mod, "semantic_self_seed", _sem)
+    monkeypatch.setattr(expand_mod, "atlassian_search_seeds", _search)
+
+
+async def test_expansion_round_grounds_supplied_leads(monkeypatch):
+    _stub_deterministic_phases(monkeypatch)
+    seen = {"calls": 0, "leads_in": None}
 
     async def fake_ground(client, bank, leads_in, *, project=None, exclude=None,
                           max_seeds=5, max_searches=4):
-        seen["ground_calls"] += 1
-        md = "External-LLM leads — grounded X, unconfirmed Y:" if leads_in else ""
-        return (grounded or []), (unconfirmed or []), md
+        seen["calls"] += 1
+        seen["leads_in"] = list(leads_in)
+        return ["jira:LUZ-77"], ["ghost feature"], "External-LLM leads — grounded 1, unconfirmed 1:"
 
-    def fake_self_seed(bank, seed, terms=""):
-        return [], ""
-
-    async def fake_search(client, terms, *, project=None, exclude=None, **kw):
-        return [], ""
-
-    monkeypatch.setattr(expand_mod, "ask_llm_leads", fake_ask_llm)
     monkeypatch.setattr(expand_mod, "ground_leads", fake_ground)
-    monkeypatch.setattr(expand_mod, "memory_self_seed", fake_self_seed)
-    monkeypatch.setattr(expand_mod, "atlassian_search_seeds", fake_search)
-    monkeypatch.delenv("KGA_LLM_HYPOTHESIZE", raising=False)
-    if flag_on:
-        monkeypatch.setenv("KGA_LLM_LEADS", "1")
-    else:
-        monkeypatch.delenv("KGA_LLM_LEADS", raising=False)
-
-    client = _IssueClient()
-    probe = await _seed_probe(client, "LUZ-158390")
-    new_seeds, md_blocks = await expand_mod.expansion_round(
-        object(), client, seed="LUZ-158390", terms=probe.terms, thin=probe.thin,
-        project=probe.project, title=probe.title, description=probe.description,
-        labels=probe.labels, parent=probe.parent, exclude=set())
-    seen["extra_seeds"] = new_seeds
-    seen["reply"] = "\n\n".join(md_blocks)
-    return seen
+    new_seeds, md = await expand_mod.expansion_round(
+        _FakeBank(Graph()), _FakeSearchClient(), seed="LUZ-158390", terms="export",
+        thin=False, project="LUZ", leads=["audit log", "ghost feature"])
+    assert seen["calls"] == 1
+    assert seen["leads_in"] == ["audit log", "ghost feature"]
+    assert "jira:LUZ-77" in new_seeds
+    assert "ghost feature" not in new_seeds
+    assert any("External-LLM leads" in m for m in md)
 
 
-async def test_flag_off_makes_no_lead_call(monkeypatch):
-    seen = await _run_gather(monkeypatch, flag_on=False)
-    assert seen["lead_calls"] == 0 and seen["ground_calls"] == 0
-    assert "External-LLM leads" not in (seen["reply"] or "")
+async def test_expansion_round_no_leads_skips_grounding(monkeypatch):
+    _stub_deterministic_phases(monkeypatch)
+    calls = {"n": 0}
+
+    async def fake_ground(*a, **k):
+        calls["n"] += 1
+        return [], [], ""
+
+    monkeypatch.setattr(expand_mod, "ground_leads", fake_ground)
+    new_seeds, md = await expand_mod.expansion_round(
+        _FakeBank(Graph()), _FakeSearchClient(), seed="LUZ-158390", terms="export",
+        thin=False, project="LUZ", leads=None)
+    assert calls["n"] == 0
+    assert new_seeds == []
+    assert not any("External-LLM leads" in m for m in md)
 
 
-async def test_flag_on_grounded_leads_reach_extra_seeds(monkeypatch):
-    seen = await _run_gather(
-        monkeypatch, flag_on=True,
-        leads=["audit log", "ghost feature"],
-        grounded=["jira:LUZ-77"], unconfirmed=["ghost feature"])
-    assert seen["lead_calls"] == 1
-    assert "jira:LUZ-77" in seen["extra_seeds"]
-    assert "ghost feature" not in seen["extra_seeds"]
-    assert "External-LLM leads" in seen["reply"]
+async def test_expansion_round_empty_leads_skips_grounding(monkeypatch):
+    _stub_deterministic_phases(monkeypatch)
+    calls = {"n": 0}
+
+    async def fake_ground(*a, **k):
+        calls["n"] += 1
+        return [], [], ""
+
+    monkeypatch.setattr(expand_mod, "ground_leads", fake_ground)
+    _new_seeds, _md = await expand_mod.expansion_round(
+        _FakeBank(Graph()), _FakeSearchClient(), seed="LUZ-158390", terms="export",
+        thin=False, project="LUZ", leads=[])
+    assert calls["n"] == 0
 
 
-async def test_flag_on_all_unconfirmed_adds_no_seeds(monkeypatch):
-    seen = await _run_gather(
-        monkeypatch, flag_on=True, leads=["ghost"], grounded=[], unconfirmed=["ghost"])
-    assert seen["lead_calls"] == 1
-    assert seen["extra_seeds"] == []
+# --- P3: the GatherAgent drives the leads LlmAgent behind KGA_LLM_LEADS ----------------------------
+
+async def test_gather_flag_off_makes_zero_lead_llm_calls(monkeypatch):
+    from tests.conftest import drive_gather_agent, fake_model
+    from tests.eval.harness import recorded_client
+
+    model = fake_model('{"phrases":["should not be used"]}')
+    reply, _bank = await drive_gather_agent(
+        "LUZ-501", monkeypatch, client=recorded_client("eval_rich"), leads_model=model)
+    assert "Gather complete" in reply
+    assert model.calls == []                       # I1: default path is LLM-free
+    assert "External-LLM leads" not in reply
+
+
+async def test_gather_flag_on_runs_lead_planner_and_grounds(monkeypatch):
+    from tests.conftest import drive_gather_agent, fake_model
+    from tests.eval.harness import recorded_client
+
+    model = fake_model('{"phrases":["audit log", "ghost feature"]}')
+    reply, _bank = await drive_gather_agent(
+        "LUZ-501", monkeypatch, client=recorded_client("eval_rich"), leads_model=model,
+        flags={"KGA_LLM_LEADS": "1"})
+    assert "Gather complete" in reply
+    assert len(model.calls) == 1
+    assert "External-LLM leads" in reply           # grounding gate ran on the planner's phrases
+
+
+async def test_gather_flag_on_junk_reply_degrades(monkeypatch):
+    from tests.conftest import drive_gather_agent, fake_model
+    from tests.eval.harness import recorded_client
+
+    model = fake_model("not json at all")
+    reply, _bank = await drive_gather_agent(
+        "LUZ-501", monkeypatch, client=recorded_client("eval_rich"), leads_model=model,
+        flags={"KGA_LLM_LEADS": "1"})
+    assert "Gather complete" in reply
+    assert len(model.calls) == 1
+    assert "External-LLM leads" not in reply       # degraded to no leads
