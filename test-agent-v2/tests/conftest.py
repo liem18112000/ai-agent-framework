@@ -87,9 +87,9 @@ def pack_bucket() -> FakeBucket:
 
 
 # --- ADK-native in-process A2A backend + agent-module patch helpers (C5) ---
-_KGA_BANK_TARGETS = ["knowledge_gathering.agent", "knowledge_gathering.agents.gather_agent",
+_KGA_BANK_TARGETS = ["knowledge_gathering.agent", "knowledge_gathering.gather.agent",
                      "common.adk.interrogation", "common.adk.tools"]
-_TPD_BANK_TARGETS = ["test_plan_definition.agent", "test_plan_definition.agents.implement_agent",
+_TPD_BANK_TARGETS = ["test_plan_definition.agent", "test_plan_definition.implement.agent",
                      "common.adk.interrogation", "common.adk.tools"]
 _TEV_BANK_TARGETS = ["test_evaluation.agent"]
 
@@ -100,7 +100,7 @@ def patch_bank(monkeypatch, bank, targets):
 
 
 def patch_client(monkeypatch, client):
-    monkeypatch.setattr("knowledge_gathering.agents.gather_agent.build_client", lambda c=client: c)
+    monkeypatch.setattr("knowledge_gathering.gather.agent.build_client", lambda c=client: c)
 
 
 def adk_a2a_app(build_root_agent):
@@ -161,24 +161,21 @@ def fake_model(canned: str = "{}") -> FakeStructuredModel:
     return FakeStructuredModel(canned=canned)
 
 
-async def drive_gather_agent(seed, monkeypatch, *, client, hyp_model=None, leads_model=None,
-                             flags=None):
+async def drive_gather_agent(seed, monkeypatch, *, client, hyp_model=None, leads_model=None):
     """Drive the D15 GatherAgent as root with INJECTED planner models (fakes) over a recorded client.
 
-    Returns (reply_text, bank). The planners run only behind KGA_LLM_HYPOTHESIZE / KGA_LLM_LEADS.
+    Returns (reply_text, bank). The planners always run (D15); inject hyp_model/leads_model fakes.
     """
     from google.adk.runners import Runner
     from google.adk.sessions import InMemorySessionService
     from google.genai import types
 
-    import knowledge_gathering.agents.gather_agent as ga
+    import knowledge_gathering.gather.agent as ga
     from common.memory import MemoryBank
-    from knowledge_gathering.agents.gather_agent import GatherAgent
-    from knowledge_gathering.explore.ask_llm import build_leads_agent
-    from knowledge_gathering.explore.hypothesize import build_hypothesize_agent
+    from knowledge_gathering.gather.agent import GatherAgent
+    from knowledge_gathering.gather.explore.planners.ask_llm import build_leads_agent
+    from knowledge_gathering.gather.explore.planners.hypothesize import build_hypothesize_agent
 
-    for k, v in (flags or {}).items():
-        monkeypatch.setenv(k, v)
     bank = MemoryBank(FakeBucket())
     monkeypatch.setattr(ga, "build_client", lambda: client)
     monkeypatch.setattr(ga, "build_bank", lambda: bank)
@@ -209,7 +206,7 @@ async def run_planner_agent(agent, plan_input: dict, *, output_key: str):
     from google.adk.sessions import InMemorySessionService
     from google.genai import types
 
-    from knowledge_gathering.explore.schemas import PLAN_INPUT_KEY
+    from knowledge_gathering.gather.explore.planners.schemas import PLAN_INPUT_KEY
 
     svc = InMemorySessionService()
     await svc.create_session(app_name="t", user_id="u", session_id="s",

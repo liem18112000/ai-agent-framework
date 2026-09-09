@@ -1,7 +1,1 @@
-"""Claude-on-Vertex generators for the define/implement stages (selected by vertex_config())."""
-
-from test_plan_definition.llm.plan import claude_brief
-from test_plan_definition.llm.questions import claude_plan_questions
-from test_plan_definition.llm.scenarios import claude_scenarios
-
-__all__ = ["claude_brief", "claude_plan_questions", "claude_scenarios"]
+"""Shared Claude-on-Vertex generator infrastructure - adk, prompts, schemas."""

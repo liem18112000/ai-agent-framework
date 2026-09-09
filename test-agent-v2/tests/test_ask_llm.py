@@ -8,8 +8,8 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from knowledge_gathering.explore.ask_llm import OUTPUT_KEY, build_leads_agent
-from knowledge_gathering.explore.schemas import Leads
+from knowledge_gathering.gather.explore.planners.ask_llm import OUTPUT_KEY, build_leads_agent
+from knowledge_gathering.gather.explore.planners.schemas import Leads
 from tests.conftest import fake_model, run_planner_agent
 
 # --- P0: the Leads output_schema (strip + dedup + cap that replaced `_coerce_leads`) --------------

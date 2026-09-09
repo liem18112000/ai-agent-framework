@@ -8,10 +8,10 @@ import pytest
 from common.extract import extract_issue_links
 from common.memory import MemoryBank
 from common.models import EXTERNAL_WEB, JIRA_ISSUE, Scope
-from knowledge_gathering.loop import crawl
-from knowledge_gathering.loop.crawl import _fetchable
-from knowledge_gathering.loop.fetch import web
-from knowledge_gathering.loop.fetch.base import NodeFetcher
+from knowledge_gathering.gather.crawl import crawl
+from knowledge_gathering.gather.crawl.crawl import _fetchable
+from knowledge_gathering.gather.crawl.fetch import web
+from knowledge_gathering.gather.crawl.fetch.base import NodeFetcher
 
 BASE = "https://axonivy.atlassian.net"
 

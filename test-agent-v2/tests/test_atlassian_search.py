@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from knowledge_gathering.explore.atlassian_search import _escape, atlassian_search_seeds
-from knowledge_gathering.gather import SeedProbe, _seed_probe
+from knowledge_gathering.gather import SeedProbe, seed_probe
+from knowledge_gathering.gather.explore.seeds.atlassian_search import (
+    _escape,
+    atlassian_search_seeds,
+)
 
 
 class _FakeSearchClient:
@@ -120,7 +123,7 @@ async def test_no_hits_yields_empty_md():
 
 async def test_probe_thin_when_no_body_links_or_subtasks():
     c = _FakeIssueClient(_issue(summary="Export fails", labels=["earchive"], components=["Export"]))
-    p = await _seed_probe(c, "LUZ-158390")
+    p = await seed_probe(c, "LUZ-158390")
     assert p.thin is True
     assert "Export fails" in p.terms and "earchive" in p.terms and "Export" in p.terms
     assert p.project == "LUZ"
@@ -129,24 +132,24 @@ async def test_probe_thin_when_no_body_links_or_subtasks():
 
 async def test_probe_not_thin_with_long_description():
     c = _FakeIssueClient(_issue(summary="X", desc="detail " * 60))
-    p = await _seed_probe(c, "LUZ-1")
+    p = await seed_probe(c, "LUZ-1")
     assert p.thin is False
     assert p.description.startswith("detail")
 
 
 async def test_probe_not_thin_with_issuelinks():
     c = _FakeIssueClient(_issue(summary="X", links=["LUZ-2"]))
-    assert (await _seed_probe(c, "LUZ-1")).thin is False
+    assert (await seed_probe(c, "LUZ-1")).thin is False
 
 
 async def test_probe_not_thin_with_subtasks():
     c = _FakeIssueClient(_issue(summary="X", subtasks=["LUZ-2"]))
-    assert (await _seed_probe(c, "LUZ-1")).thin is False
+    assert (await seed_probe(c, "LUZ-1")).thin is False
 
 
 async def test_probe_non_jira_seed_returns_neutral():
     c = _FakeIssueClient(_issue(summary="X"))
-    assert await _seed_probe(c, "12345") == SeedProbe()
+    assert await seed_probe(c, "12345") == SeedProbe()
 
 
 async def test_probe_never_raises():
@@ -154,4 +157,4 @@ async def test_probe_never_raises():
         async def get_issue(self, key):
             raise RuntimeError("boom")
 
-    assert await _seed_probe(_Broken(), "LUZ-1") == SeedProbe()
+    assert await seed_probe(_Broken(), "LUZ-1") == SeedProbe()

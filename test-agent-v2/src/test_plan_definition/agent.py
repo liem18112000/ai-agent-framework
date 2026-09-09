@@ -8,7 +8,7 @@ from common.adk.events import incoming_text, text_event
 from common.interrogate import present
 from common.memory.factory import build_bank
 from test_plan_definition import memory as store
-from test_plan_definition.define_ops import wants_define
+from test_plan_definition.define.agent import wants_define
 from test_plan_definition.models import CONFIRMED
 
 
@@ -19,27 +19,22 @@ class TpdRouter(BaseAgent):
     async def _run_async_impl(self, ctx):
         text = incoming_text(ctx).strip()
         low = text.lower()
-
         if low.startswith(("get-test-plan", "get-scenarios")):
             yield text_event(self.name, self._read_helper(text))
             return
         if low.startswith("approve"):
             yield text_event(self.name, self._approve(ctx, text))
             return
-
-        bank = build_bank()
-        st = store.read_plan_state(bank, ctx.session.id) or {}
-        live = bool(st) and not st.get("done")
-        if live or wants_define(text):
+        st = store.read_plan_state(build_bank(), ctx.session.id) or {}
+        if (st and not st.get("done")) or wants_define(text):
             async for ev in self.define.run_async(ctx):
                 yield ev
-            return
-        if low.startswith("implement"):
+        elif low.startswith("implement"):
             async for ev in self.implement.run_async(ctx):
                 yield ev
-            return
-        yield text_event(self.name, "Provide: define <ctx> | approve <ctx> | implement <ctx> | "
-                                    "get-test-plan <ctx> | get-scenarios <ctx>.")
+        else:
+            yield text_event(self.name, "Provide: define <ctx> | approve <ctx> | implement <ctx> | "
+                                        "get-test-plan <ctx> | get-scenarios <ctx>.")
 
     def _read_helper(self, text: str) -> str:
         ctx_id = present.extract_ctx(text, ("get-test-plan", "get-scenarios"))
@@ -65,11 +60,9 @@ class TpdRouter(BaseAgent):
 
 
 def build_root_agent() -> TpdRouter:
-    from test_plan_definition.agents.define_agent import build_define_agent
-    from test_plan_definition.agents.implement_agent import ImplementAgent
-
-    define = build_define_agent()
-    implement = ImplementAgent(name="implement")
+    from test_plan_definition.define.agent import build_define_agent
+    from test_plan_definition.implement.agent import ImplementAgent
+    define, implement = build_define_agent(), ImplementAgent(name="implement")
     return TpdRouter(name="test_plan_definition", define=define, implement=implement,
                      sub_agents=[define, implement])
 

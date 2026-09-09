@@ -76,7 +76,7 @@ async def generate_all_steps(
     """Detailed keyworded heuristic steps by default; opt into the batched StepsGen ``LlmAgent`` per
     ``detail``/``TPD_LLM_DETAIL`` (one LLM call per ``_STEP_BATCH`` chunk — kept off the I3 default)."""
     if detail or os.environ.get("TPD_LLM_DETAIL"):
-        from test_plan_definition.llm.steps import claude_steps
+        from test_plan_definition.implement.llm import claude_steps
 
         by_id: dict[str, list[TestStep]] = {}
         for i in range(0, len(scenarios), _STEP_BATCH):

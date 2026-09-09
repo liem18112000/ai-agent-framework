@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 from common.llm.vertex import vertex_config
 from common.models import Question
-from test_plan_definition.models import ASSUMPTION, CONFIRMED, DRAFT, PlanDecision, TestPlan
+from test_plan_definition.models import ASSUMPTION, DRAFT, PlanDecision, TestPlan
 from test_plan_definition.pack import PlanPack
 
 _METHODOLOGIES = ("api", "e2e", "ui")
@@ -70,7 +70,7 @@ def make_restater() -> Restater:
     cfg = vertex_config()
     if cfg:
         proj, loc, model = cfg
-        from test_plan_definition.llm.plan import claude_brief
+        from test_plan_definition.define.llm import claude_brief
 
         def restater(plan: TestPlan, plan_pack: PlanPack, opens: list[Question]) -> str:
             return claude_brief(plan, plan_pack, opens, project=proj, location=loc, model=model)
@@ -106,7 +106,3 @@ def heuristic_brief(plan: TestPlan, plan_pack: PlanPack, open_questions: list[Qu
               bullets([q.question for q in open_questions]) if open_questions
               else "- none above the confidence bar"]
     return "\n".join(lines) + "\n"
-
-
-def is_confirmed(plan: TestPlan) -> bool:
-    return plan.status == CONFIRMED

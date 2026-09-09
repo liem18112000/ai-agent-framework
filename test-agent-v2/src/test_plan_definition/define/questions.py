@@ -21,7 +21,7 @@ def make_generator(understanding: str = "") -> Generator:
     cfg = vertex_config()
     if cfg:
         proj, loc, model = cfg
-        from test_plan_definition.llm.questions import claude_plan_questions
+        from test_plan_definition.define.llm import claude_plan_questions
 
         def generator(pack: Pack, round_name: str) -> list[Question]:
             qs = claude_plan_questions(

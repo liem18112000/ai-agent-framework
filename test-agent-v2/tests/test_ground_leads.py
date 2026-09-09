@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from common.models import Graph
-from knowledge_gathering.explore import expand as expand_mod
-from knowledge_gathering.explore.ground_leads import ground_leads
+from knowledge_gathering.gather.explore import expand as expand_mod
+from knowledge_gathering.gather.explore.seeds.ground_leads import ground_leads
 
 
 def _node(nid: str, ntype: str = "jira-issue", title: str = "") -> dict:
@@ -234,19 +234,7 @@ async def test_expansion_round_empty_leads_skips_grounding(monkeypatch):
     assert calls["n"] == 0
 
 
-# --- P3: the GatherAgent drives the leads LlmAgent behind KGA_LLM_LEADS ----------------------------
-
-async def test_gather_flag_off_makes_zero_lead_llm_calls(monkeypatch):
-    from tests.conftest import drive_gather_agent, fake_model
-    from tests.eval.harness import recorded_client
-
-    model = fake_model('{"phrases":["should not be used"]}')
-    reply, _bank = await drive_gather_agent(
-        "LUZ-501", monkeypatch, client=recorded_client("eval_rich"), leads_model=model)
-    assert "Gather complete" in reply
-    assert model.calls == []                       # I1: default path is LLM-free
-    assert "External-LLM leads" not in reply
-
+# --- P3: the GatherAgent always drives the leads LlmAgent (D15) ------------------------------------
 
 async def test_gather_flag_on_runs_lead_planner_and_grounds(monkeypatch):
     from tests.conftest import drive_gather_agent, fake_model
@@ -254,8 +242,7 @@ async def test_gather_flag_on_runs_lead_planner_and_grounds(monkeypatch):
 
     model = fake_model('{"phrases":["audit log", "ghost feature"]}')
     reply, _bank = await drive_gather_agent(
-        "LUZ-501", monkeypatch, client=recorded_client("eval_rich"), leads_model=model,
-        flags={"KGA_LLM_LEADS": "1"})
+        "LUZ-501", monkeypatch, client=recorded_client("eval_rich"), leads_model=model)
     assert "Gather complete" in reply
     assert len(model.calls) == 1
     assert "External-LLM leads" in reply           # grounding gate ran on the planner's phrases
@@ -267,8 +254,7 @@ async def test_gather_flag_on_junk_reply_degrades(monkeypatch):
 
     model = fake_model("not json at all")
     reply, _bank = await drive_gather_agent(
-        "LUZ-501", monkeypatch, client=recorded_client("eval_rich"), leads_model=model,
-        flags={"KGA_LLM_LEADS": "1"})
+        "LUZ-501", monkeypatch, client=recorded_client("eval_rich"), leads_model=model)
     assert "Gather complete" in reply
     assert len(model.calls) == 1
     assert "External-LLM leads" not in reply       # degraded to no leads

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
+from common.memory.graph_index import match_index_nodes
 from common.models import Graph
-from knowledge_gathering.explore.index import match_index_nodes
-from knowledge_gathering.explore.self_seed import memory_self_seed
+from knowledge_gathering.gather.explore.seeds.self_seed import memory_self_seed
 
 
 def _graph(*nodes: dict) -> Graph:
@@ -137,7 +137,7 @@ def test_small_index_ranks_by_idf_without_hub_suppression():
 
 def test_graph_grounded_requires_structural_connection():
     """B5: graph_grounded is True only when the candidate IS an anchor or shares an index edge with"""
-    from knowledge_gathering.explore.index import graph_grounded
+    from common.memory.graph_index import graph_grounded
 
     g = Graph()
     g.nodes = {n["id"]: n for n in (

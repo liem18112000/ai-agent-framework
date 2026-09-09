@@ -15,7 +15,7 @@ async def _run_adk_gather(seed_text: str, ctx_id: str, client, monkeypatch) -> M
     from google.adk.runners import Runner
     from google.adk.sessions import InMemorySessionService
 
-    import knowledge_gathering.agents.gather_agent as ga
+    import knowledge_gathering.gather.agent as ga
     from knowledge_gathering.agent import build_root_agent
 
     bank = MemoryBank(FakeBucket())

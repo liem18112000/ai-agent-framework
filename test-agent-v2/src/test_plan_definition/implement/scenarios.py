@@ -44,7 +44,7 @@ async def generate_scenarios(
 ) -> list[TestScenario]:
     """The ScenarioGen ``LlmAgent`` (the one default implement LLM call, I3) with a heuristic
     fallback — used whenever no model is configured or the model output is invalid."""
-    from test_plan_definition.llm.scenarios import claude_scenarios
+    from test_plan_definition.implement.llm import claude_scenarios
 
     scs = await claude_scenarios(plan, plan_pack, test_data, now=now, model=model)
     if scs:

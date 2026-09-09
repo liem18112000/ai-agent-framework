@@ -80,13 +80,6 @@ module "kga" {
           { name = "ATLASSIAN_BITBUCKET_APP_PASSWORD", secret = google_secret_manager_secret.bitbucket_app_password.secret_id },
           { name = "A2A_BEARER_TOKEN", secret = google_secret_manager_secret.a2a_bearer.secret_id },
         ],
-        # G2-G5 self-exploration stack (default OFF; enabled via var.kga_self_explore).
-        var.kga_self_explore ? [
-          { name = "KGA_LLM_HYPOTHESIZE", value = "1" },
-          { name = "KGA_FOLLOW_WEB", value = "1" },
-          { name = "KGA_LLM_LEADS", value = "1" },
-          { name = "KGA_EXPLORE_LOOP", value = "1" },
-        ] : [],
         [
           { name = "KGA_CAPTURE_LESSONS", value = "1" }, # L2/L3 self-learning capture
           { name = "KGA_RECALL_LESSONS", value = "1" },  # L4 recall prior grounded lessons

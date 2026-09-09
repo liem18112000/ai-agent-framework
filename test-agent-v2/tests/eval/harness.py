@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import patch
@@ -75,18 +73,6 @@ def recorded_client(name: str) -> RecordedAtlassianClient:
     return RecordedAtlassianClient(load_atlassian_fixture(name))
 
 
-@contextmanager
-def env(flags: dict):
-    """Temporarily set env flags (e.g. {'KGA_EXPLORE_LOOP': '1'}), restoring prior values after."""
-    old = {k: os.environ.get(k) for k in flags}
-    os.environ.update({k: str(v) for k, v in flags.items()})
-    try:
-        yield
-    finally:
-        for k, v in old.items():
-            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
-
-
 def _run_sync(coro):
     """Run a coroutine to completion whether or not the caller already has a running event loop."""
     try:
@@ -104,7 +90,7 @@ async def _adk_gather(text: str, context_id: str, client, bank: MemoryBank) -> s
     from google.adk.sessions import InMemorySessionService
     from google.genai import types
 
-    import knowledge_gathering.agents.gather_agent as ga
+    import knowledge_gathering.gather.agent as ga
     from knowledge_gathering.agent import build_root_agent
 
     with patch.object(ga, "build_client", lambda: client), \
@@ -162,13 +148,12 @@ class RunTrace:
 
 
 def run_gather_offline(seed: str, *, client: RecordedAtlassianClient, bank: MemoryBank | None = None,
-                       flags: dict | None = None, text: str | None = None,
+                       text: str | None = None,
                        context_id: str | None = None) -> RunTrace:
     """Drive one gather through the ADK KGA agent with a recorded client. Returns a RunTrace."""
     bank = bank or MemoryBank(FakeBucket())
     context_id = context_id or f"eval-{seed}"
-    with env(flags or {}):
-        reply = _run_sync(_adk_gather(text or f"gather {seed}", context_id, client, bank))
+    reply = _run_sync(_adk_gather(text or f"gather {seed}", context_id, client, bank))
     return RunTrace(seed=seed, reply=reply, bank=bank, context_id=context_id, client=client)
 
 

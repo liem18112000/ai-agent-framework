@@ -15,8 +15,8 @@ async def test_autonomous_pipeline_end_to_end(monkeypatch):
     from google.adk.runners import Runner
     from google.adk.sessions import InMemorySessionService
 
-    import knowledge_gathering.agents.gather_agent as ga
-    import test_plan_definition.agents.implement_agent as ia
+    import knowledge_gathering.gather.agent as ga
+    import test_plan_definition.implement.agent as ia
     import testing_agent.subagents.approve_agent as approve_mod
     import testing_agent.subagents.define_agent as define_mod
     import testing_agent.subagents.refine_agent as refine_mod

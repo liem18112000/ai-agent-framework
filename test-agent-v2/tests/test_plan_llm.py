@@ -55,7 +55,7 @@ def test_make_generator_uses_claude_when_configured(vertex_env, monkeypatch):
     canned = json.dumps([{"id": "Q-mth-1", "question": "Which methodology?",
                           "options": [{"label": "API", "implication": "x"}],
                           "recommendation": "API", "status": "open"}])
-    monkeypatch.setattr("test_plan_definition.llm.questions.complete", lambda *a, **k: canned)
+    monkeypatch.setattr("test_plan_definition.define.llm.complete", lambda *a, **k: canned)
     gen = make_generator("understanding")
     qs = gen(_plan_pack().pack, "methodology")
     assert len(qs) == 1 and qs[0].id == "Q-mth-1" and qs[0].round == "methodology"
@@ -65,13 +65,13 @@ def test_claude_question_coerces_list_applies_to(vertex_env, monkeypatch):
     canned = json.dumps([{"id": "Q-sco-1", "question": "Scope?", "applies_to": ["LUZ-1", "LUZ-2"],
                           "options": [{"label": "In", "implication": "x"}],
                           "recommendation": "In", "status": "open"}])
-    monkeypatch.setattr("test_plan_definition.llm.questions.complete", lambda *a, **k: canned)
+    monkeypatch.setattr("test_plan_definition.define.llm.complete", lambda *a, **k: canned)
     qs = make_generator("u")(_plan_pack().pack, "scope")
     assert isinstance(qs[0].applies_to, str) and qs[0].applies_to == "LUZ-1, LUZ-2"
 
 
 def test_make_generator_falls_back_to_heuristic_when_claude_empty(vertex_env, monkeypatch):
-    monkeypatch.setattr("test_plan_definition.llm.questions.complete", lambda *a, **k: "oops")
+    monkeypatch.setattr("test_plan_definition.define.llm.complete", lambda *a, **k: "oops")
     qs = make_generator("understanding")(_plan_pack().pack, "methodology")
     assert qs and qs[0].round == "methodology"
     assert [q.id for q in qs] == [
@@ -79,7 +79,7 @@ def test_make_generator_falls_back_to_heuristic_when_claude_empty(vertex_env, mo
 
 
 def test_claude_brief_path(vertex_env, monkeypatch):
-    monkeypatch.setattr("test_plan_definition.llm.plan.complete", lambda *a, **k: "## Brief\nok")
+    monkeypatch.setattr("test_plan_definition.define.llm.complete", lambda *a, **k: "## Brief\nok")
     brief = make_restater()(_plan(), _plan_pack(), [])
     assert "Brief" in brief
 

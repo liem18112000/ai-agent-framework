@@ -216,12 +216,6 @@ variable "tpd_llm_detail" {
   default     = false
 }
 
-variable "kga_self_explore" {
-  type        = bool
-  description = "Enable the KGA self-exploration stack G2-G5 (KGA_LLM_HYPOTHESIZE + KGA_FOLLOW_WEB + KGA_LLM_LEADS + KGA_EXPLORE_LOOP). Turns the single pre-crawl fan-out into a bounded, resumable multi-round explore loop with optional LLM-focused search terms/leads and external-web following. Off = single fan-out, byte-for-byte unchanged. Bounds are conservative (3 rounds / 300s total, under the 600s timeout)."
-  default     = false
-}
-
 # ---------------------------------------------------------------------------
 # Single MCP gateway (G2) — the one endpoint Claude connects to; fronts the 3 A2A agents.
 # ---------------------------------------------------------------------------

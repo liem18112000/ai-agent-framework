@@ -8,12 +8,12 @@ from common.codegraph.store import read_code_meta, read_index, store_code_graph
 from common.extract import classify_url
 from common.memory.bank import MemoryBank
 from common.models import CODEGRAPH
-from knowledge_gathering.loop.crawl import _fetchable
-from knowledge_gathering.loop.fetch import (  # noqa: F401 — triggers registration
+from knowledge_gathering.gather.crawl.crawl import _fetchable
+from knowledge_gathering.gather.crawl.fetch import (  # noqa: F401 — triggers registration
     NodeFetcher,
     fetch_node,
 )
-from knowledge_gathering.loop.seed import normalize_seed
+from knowledge_gathering.gather.crawl.seed import normalize_seed
 
 REPORT = """# Graph Report - luz_docs_import
 
@@ -117,8 +117,8 @@ def test_codegraph_fetcher_registered():
 
 async def test_crawl_builds_codegraph_note(monkeypatch, fake_bucket):
     """Full flow through the real crawl(): a repo seed → CodeGraphFetcher → distilled note persisted."""
-    from knowledge_gathering.loop import crawl as crawl_fn
-    from knowledge_gathering.loop.fetch import codegraph as cg_mod
+    from knowledge_gathering.gather.crawl import crawl as crawl_fn
+    from knowledge_gathering.gather.crawl.fetch import codegraph as cg_mod
 
     bank = MemoryBank(fake_bucket)
     monkeypatch.setattr(cg_mod, "build_bank", lambda: bank)

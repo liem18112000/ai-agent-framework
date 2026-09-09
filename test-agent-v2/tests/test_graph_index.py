@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from common.memory import graph_index
+from common.memory import graph_index as shim
 from common.models import Graph
-from knowledge_gathering.explore import index as shim
 
 
 def _g(nodes, edges=()):

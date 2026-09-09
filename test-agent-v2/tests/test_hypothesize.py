@@ -8,8 +8,11 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from knowledge_gathering.explore.hypothesize import OUTPUT_KEY, build_hypothesize_agent
-from knowledge_gathering.explore.schemas import Hypothesis
+from knowledge_gathering.gather.explore.planners.hypothesize import (
+    OUTPUT_KEY,
+    build_hypothesize_agent,
+)
+from knowledge_gathering.gather.explore.planners.schemas import Hypothesis
 from tests.conftest import drive_gather_agent, fake_model, run_planner_agent
 from tests.eval.harness import recorded_client, run_gather_offline
 
@@ -66,24 +69,14 @@ async def test_agent_empty_object_yields_no_terms():
     assert Hypothesis(**state).as_terms() == ""
 
 
-# --- P3: the GatherAgent drives the planner behind KGA_LLM_HYPOTHESIZE ----------------------------
-
-async def test_flag_off_makes_zero_llm_calls(monkeypatch):
-    model = fake_model('{"key_phrases":["should not be used"]}')
-    reply, _bank = await drive_gather_agent(
-        "LUZ-501", monkeypatch, client=recorded_client("eval_rich"), hyp_model=model)
-    assert "Gather complete" in reply
-    assert model.calls == []                       # I1: default path is LLM-free
-    assert "Hypothesized focus" not in reply
-
+# --- P3: the GatherAgent always drives the hypothesize planner (D15) ------------------------------
 
 async def test_flag_on_enriched_focus_reaches_reply(monkeypatch):
     canned = json.dumps({"key_phrases": ["invoice charge job"], "entities": ["luz_finance"],
                          "subsystems": []})
     model = fake_model(canned)
     reply, _bank = await drive_gather_agent(
-        "LUZ-501", monkeypatch, client=recorded_client("eval_rich"), hyp_model=model,
-        flags={"KGA_LLM_HYPOTHESIZE": "1"})
+        "LUZ-501", monkeypatch, client=recorded_client("eval_rich"), hyp_model=model)
     assert "Gather complete" in reply
     assert model.calls and len(model.calls) == 1
     assert "Hypothesized focus: invoice charge job luz_finance" in reply
@@ -92,8 +85,7 @@ async def test_flag_on_enriched_focus_reaches_reply(monkeypatch):
 async def test_flag_on_empty_hyp_keeps_probe_terms(monkeypatch):
     model = fake_model("{}")                        # valid but empty → as_terms() == ""
     reply, _bank = await drive_gather_agent(
-        "LUZ-501", monkeypatch, client=recorded_client("eval_rich"), hyp_model=model,
-        flags={"KGA_LLM_HYPOTHESIZE": "1"})
+        "LUZ-501", monkeypatch, client=recorded_client("eval_rich"), hyp_model=model)
     assert "Gather complete" in reply
     assert len(model.calls) == 1
     assert "Hypothesized focus" not in reply        # kept probe terms, no enrichment block
@@ -103,8 +95,7 @@ async def test_flag_on_junk_reply_degrades_and_gathers(monkeypatch):
     # §8 gate: a malformed reply fails output_schema validation → GatherAgent degrades to probe.terms.
     model = fake_model("not json at all")
     reply, bank = await drive_gather_agent(
-        "LUZ-501", monkeypatch, client=recorded_client("eval_rich"), hyp_model=model,
-        flags={"KGA_LLM_HYPOTHESIZE": "1"})
+        "LUZ-501", monkeypatch, client=recorded_client("eval_rich"), hyp_model=model)
     assert "Gather complete" in reply
     assert len(model.calls) == 1
     assert "Hypothesized focus" not in reply
