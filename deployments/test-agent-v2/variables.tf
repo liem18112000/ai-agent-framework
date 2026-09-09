@@ -128,7 +128,7 @@ variable "cpu" {
 
 variable "memory" {
   type    = string
-  default = "512Mi"
+  default = "2Gi" # 512Mi OOMs during gather (crawl + ADK + always-on Vertex hypothesize/leads planners)
 }
 
 variable "ingress" {
