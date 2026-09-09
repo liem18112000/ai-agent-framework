@@ -20,13 +20,11 @@ def _memory_ids(graph, lead: str) -> list[str]:
 
 def _render(grounded_seeds: list[str], unconfirmed: list[str]) -> str:
     """Compact block for the gather reply: grounded ids, then unconfirmed phrases (never seeds)."""
-    lines = [
-        f"External-LLM leads — grounded {len(grounded_seeds)}, unconfirmed {len(unconfirmed)}:"
-    ]
-    lines += [f"- {sid}" for sid in grounded_seeds]
+    lines = [f"External-LLM leads — grounded {len(grounded_seeds)}, unconfirmed {len(unconfirmed)}:",
+             *[f"- {sid}" for sid in grounded_seeds]]
     if unconfirmed:
-        lines.append("Unconfirmed leads (not searched into the pack; chase manually):")
-        lines += [f"- {lead}" for lead in unconfirmed]
+        lines += ["Unconfirmed leads (not searched into the pack; chase manually):",
+                  *[f"- {lead}" for lead in unconfirmed]]
     return "\n".join(lines)
 
 

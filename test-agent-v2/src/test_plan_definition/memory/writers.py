@@ -37,9 +37,7 @@ def read_questions(bank, context_id: str) -> list[Question]:
 def write_answers(bank, context_id: str, answers: list[Answer]) -> str:
     """Append-only answer log."""
     path = f"{_dir(context_id)}/answers.json"
-    existing = bank.get_json(path, [])
-    existing.extend(asdict(a) for a in answers)
-    return bank.put_json(path, existing)
+    return bank.put_json(path, bank.get_json(path, []) + [asdict(a) for a in answers])
 
 
 def read_answers(bank, context_id: str) -> list[Answer]:
@@ -83,8 +81,8 @@ def read_test_data(bank, context_id: str) -> list[TestData]:
 def write_scenarios(bank, context_id: str, scenarios: list[TestScenario],
                     steps: list[TestStep] | None = None) -> str:
     bank.put_json(f"{_dir(context_id)}/scenarios.json", [asdict(s) for s in scenarios])
-    md = render_scenarios_md(context_id, scenarios, steps or [])
-    return bank.put_text(f"{_dir(context_id)}/scenarios.md", md)
+    return bank.put_text(f"{_dir(context_id)}/scenarios.md",
+                         render_scenarios_md(context_id, scenarios, steps or []))
 
 
 def read_scenarios(bank, context_id: str) -> list[TestScenario]:

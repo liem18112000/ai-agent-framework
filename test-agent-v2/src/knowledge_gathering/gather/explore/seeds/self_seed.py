@@ -18,33 +18,22 @@ _FETCHABLE = ("jira:", "confluence:")
 
 def salient_tokens(text: str) -> list[str]:
     """Distinct usable tokens of `text` — lowercased, len >= 3, non-stopword, order-preserving."""
-    out: list[str] = []
-    for tok in text.split():
-        t = tok.strip().lower()
-        if len(t) >= 3 and t not in _STOPWORDS and t not in out:
-            out.append(t)
-    return out
+    return list(dict.fromkeys(t for tok in text.split() if len(t := tok.strip().lower()) >= 3 and t not in _STOPWORDS))
 
 
 def _queries(seed_key: str, terms: str) -> list[str]:
     """Distinct match queries: the seed's own key + each usable token in `terms`."""
-    out: list[str] = []
-    for tok in [seed_key.strip().lower(), *salient_tokens(terms)]:
-        if len(tok) >= 3 and tok not in _STOPWORDS and tok not in out:
-            out.append(tok)
-    return out
+    return list(dict.fromkeys(tok for tok in [seed_key.strip().lower(), *salient_tokens(terms)]
+                              if len(tok) >= 3 and tok not in _STOPWORDS))
 
 
 def _render(matched: dict[str, dict], *, limit: int = 8) -> str:
     """Compact markdown block for the gather reply — insight nodes called out first."""
     nodes = sorted(matched.values(), key=lambda n: n.get("id", ""))
-    insights = [n for n in nodes if (n.get("type") or "") == INSIGHT]
-    others = [n for n in nodes if (n.get("type") or "") != INSIGHT]
-    ordered = insights + others
-    lines = [f"Prior knowledge from memory ({len(nodes)} related node(s)):"]
-    for n in ordered[:limit]:
-        title = n.get("title") or ""
-        lines.append(f"- {n['id']} [{n.get('type', '?')}]" + (f" — {title}" if title else ""))
+    ordered = sorted(nodes, key=lambda n: (n.get("type") or "") != INSIGHT)
+    lines = [f"Prior knowledge from memory ({len(nodes)} related node(s)):",
+             *[f"- {n['id']} [{n.get('type', '?')}]" + (f" — {t}" if (t := n.get("title") or "") else "")
+               for n in ordered[:limit]]]
     if len(ordered) > limit:
         lines.append(f"- … +{len(ordered) - limit} more (search-memory to list)")
     return "\n".join(lines)
@@ -54,15 +43,10 @@ def memory_self_seed(bank, seed: str, terms: str = "", *, max_seeds: int = 5) ->
     """Return `(extra_seeds, prior_md)` from the memory index for `seed` (+ optional terms)."""
     try:
         self_id = normalize_seed(seed)
-        seed_key = self_id.split(":", 1)[-1]
-        queries = _queries(seed_key, terms)
+        queries = _queries(self_id.split(":", 1)[-1], terms)
         graph, _ = bank.load_index()
-        matched: dict[str, dict] = {}
-        for q in queries:
-            for n in match_index_nodes(graph, q):
-                nid = n.get("id", "")
-                if nid and nid != self_id:
-                    matched[nid] = n
+        matched = {nid: n for q in queries for n in match_index_nodes(graph, q)
+                   if (nid := n.get("id", "")) and nid != self_id}
         if not matched:
             return [], ""
         extra_seeds = rank_promotions(graph, queries, prefixes=_FETCHABLE,
@@ -96,8 +80,7 @@ def _neighbors(graph, node_id: str) -> set[str]:
 
 
 def _render_semantic(ids: list[str]) -> str:
-    return "\n".join([f"Semantically-related prior seeds ({len(ids)}), grounded to this ticket:",
-                      *[f"- {i}" for i in ids]])
+    return "\n".join([f"Semantically-related prior seeds ({len(ids)}), grounded to this ticket:", *[f"- {i}" for i in ids]])
 
 
 async def semantic_self_seed(bank, seed: str, terms: str = "", *, exclude: set[str] | None = None,
@@ -109,6 +92,8 @@ async def semantic_self_seed(bank, seed: str, terms: str = "", *, exclude: set[s
 
         if not _semantic_enabled() or retrieve.backend() == "gcs":
             return [], ""
+        import itertools
+
         from common.memory.graph_index import graph_grounded
         from common.memory.pg import build_store
         from common.memory.pg.embed import aembed_query, embed_configured
@@ -118,20 +103,13 @@ async def semantic_self_seed(bank, seed: str, terms: str = "", *, exclude: set[s
             return [], ""
         self_id = normalize_seed(seed)
         graph, _ = bank.load_index()
-        anchors = _neighbors(graph, self_id)
-        if not anchors:
+        if not (anchors := _neighbors(graph, self_id)):
             return [], ""
         q_embed = await aembed_query(terms) if terms else None
-        rows = await store.search(q_text=terms, q_embed=q_embed,
-                                  types=list(_FETCHABLE_TYPES), k=max_seeds * 4)
-        out: list[str] = []
-        for r in rows:
-            nid = r.get("id", "")
-            if (nid and nid != self_id and nid not in exclude and nid.startswith(_FETCHABLE)
-                    and graph_grounded(graph, nid, anchors)):
-                out.append(nid)
-                if len(out) >= max_seeds:
-                    break
+        rows = await store.search(q_text=terms, q_embed=q_embed, types=list(_FETCHABLE_TYPES), k=max_seeds * 4)
+        out = list(itertools.islice(
+            (nid for r in rows if (nid := r.get("id", "")) and nid != self_id and nid not in exclude
+             and nid.startswith(_FETCHABLE) and graph_grounded(graph, nid, anchors)), max_seeds))
         return out, (_render_semantic(out) if out else "")
     except Exception as exc:  # noqa: BLE001 — semantic seed must never break gather
         log.warning("semantic self-seed skipped for %s (%s)", seed, exc)

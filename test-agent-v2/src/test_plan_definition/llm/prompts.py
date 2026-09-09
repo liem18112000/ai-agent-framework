@@ -34,10 +34,9 @@ ROUND_FOCUS = {
 
 
 def question_prompt(summary: str, understanding: str, round_name: str) -> str:
-    focus = ROUND_FOCUS.get(round_name, round_name)
     return (
         f"You are the QA Testing Agent DEFINING A TEST PLAN, running the '{round_name}' round.\n"
-        f"Focus: {focus}\n\n"
+        f"Focus: {ROUND_FOCUS.get(round_name, round_name)}\n\n"
         "Rules:\n"
         "- Don't ask what the confirmed understanding + pack already settle — self-answer it "
         "(status 'self-answered') with your recommendation as the answer.\n"

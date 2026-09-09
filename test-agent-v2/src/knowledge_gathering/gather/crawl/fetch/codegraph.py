@@ -20,14 +20,11 @@ def _bb_auth() -> tuple[str, str] | None:
 class CodeGraphFetcher(NodeFetcher):
     kind = "codegraph"
 
-    async def fetch(
-        self, client, ident: str, nid: str, scope: Scope
-    ) -> tuple[list[LinkRecord], Note, str]:
+    async def fetch(self, client, ident: str, nid: str, scope: Scope) -> tuple[list[LinkRecord], Note, str]:
         ws, _, repo = ident.partition("/")
         result = await asyncio.to_thread(build_and_store, build_bank(), ws, repo, bb_auth=_bb_auth())
         md = distill_code_note(result)
-        note = Note(
+        return [], Note(
             id=nid, type=CODEGRAPH, title=f"{ws}/{repo}",
             source_url=f"https://bitbucket.org/{ws}/{repo}", links=[], synopsis=md,
-        )
-        return [], note, md
+        ), md

@@ -19,23 +19,19 @@ Generator = Callable[[Pack, str], list[Question]]
 def make_generator(understanding: str = "") -> Generator:
     """Select the generator: Claude-on-Vertex when VERTEX_* is configured, else the heuristic."""
     cfg = vertex_config()
-    if cfg:
-        proj, loc, model = cfg
-        from test_plan_definition.define.llm import claude_plan_questions
-
-        def generator(pack: Pack, round_name: str) -> list[Question]:
-            qs = claude_plan_questions(
-                pack, understanding, round_name, project=proj, location=loc, model=model)
-            if not qs:
-                log.warning(
-                    "round %s: LLM returned no questions — using heuristic fallback", round_name)
-                qs = heuristic_questions(pack, understanding, round_name)
-            return qs
-
-        return generator
+    if not cfg:
+        return lambda pack, round_name: heuristic_questions(pack, understanding, round_name)
+    proj, loc, model = cfg
+    from test_plan_definition.define.llm import claude_plan_questions
 
     def generator(pack: Pack, round_name: str) -> list[Question]:
-        return heuristic_questions(pack, understanding, round_name)
+        qs = claude_plan_questions(
+            pack, understanding, round_name, project=proj, location=loc, model=model)
+        if not qs:
+            log.warning(
+                "round %s: LLM returned no questions — using heuristic fallback", round_name)
+            qs = heuristic_questions(pack, understanding, round_name)
+        return qs
 
     return generator
 

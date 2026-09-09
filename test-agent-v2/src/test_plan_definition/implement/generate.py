@@ -28,10 +28,8 @@ async def implement_plan(bank, context_id: str, *, run_id: str = "implement", no
     if plan is None:
         return ImplementResult(message=f"No test plan for {context_id}; run define first.")
     if plan.status != CONFIRMED:
-        return ImplementResult(
-            plan=plan,
-            message=f"Test plan for {context_id} is {plan.status}; approve it "
-                    "(resolve open gaps) before implementing.")
+        return ImplementResult(plan=plan, message=f"Test plan for {context_id} is {plan.status}; "
+                              "approve it (resolve open gaps) before implementing.")
 
     plan_pack = load_plan_pack(bank, context_id)
     # I3: only `scenarios` runs an LLM on the default path; test-data/steps stay behind `detail`.
@@ -59,7 +57,7 @@ async def implement_plan(bank, context_id: str, *, run_id: str = "implement", no
 
 
 def _project_nodes(bank, plan: TestPlan, scenarios: list[TestScenario]) -> None:
-    """Enqueue the plan + scenario index nodes for the pgvector projector (no-op under"""
+    """Enqueue plan + scenario index nodes for the pgvector projector (best-effort)."""
     try:
         from common.memory.pg.project import index_on_write
 

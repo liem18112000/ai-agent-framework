@@ -16,7 +16,6 @@ OUTPUT_KEY = "kga_leads"
 
 def _prompt(title: str, description: str, labels: list[str]) -> str:
     """Prompt for speculative LEADS from world knowledge — related work ELSEWHERE, to widen search."""
-    lbls = ", ".join(labels) if labels else "(none)"
     return (
         "You are the QA Testing Agent's lead-generation step. Given a ticket's title, short "
         "description, and labels, list related concepts/features/subsystems/edge-cases that "
@@ -26,7 +25,7 @@ def _prompt(title: str, description: str, labels: list[str]) -> str:
         "(1-4 words each). Do NOT invent ticket ids, issue keys, or URLs.\n\n"
         f"Title: {title}\n"
         f"Description: {description[:_DESC_CAP] or '(none)'}\n"
-        f"Labels: {lbls}\n"
+        f"Labels: {', '.join(labels) if labels else '(none)'}\n"
     )
 
 
@@ -38,10 +37,5 @@ def _instruction(ctx: ReadonlyContext) -> str:
 
 def build_leads_agent(*, model=None, name: str = "leads") -> LlmAgent:
     """The G4 planner as an ADK `LlmAgent(output_schema=Leads)`."""
-    return LlmAgent(
-        name=name,
-        model=model or agent_model(max_tokens=_MAX_TOKENS) or "",
-        instruction=_instruction,
-        output_schema=Leads,
-        output_key=OUTPUT_KEY,
-    )
+    return LlmAgent(name=name, model=model or agent_model(max_tokens=_MAX_TOKENS) or "",
+                     instruction=_instruction, output_schema=Leads, output_key=OUTPUT_KEY)

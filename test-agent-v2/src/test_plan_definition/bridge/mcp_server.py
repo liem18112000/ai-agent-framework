@@ -31,15 +31,13 @@ def register_tools(mcp: MCPServer, session: BridgeSession) -> dict:
     @mcp.tool()
     async def implement_plan(context_id: str, detail: bool = False) -> str:
         """Generate the test data / scenarios (happy + negative) / steps from the confirmed plan."""
-        text = f"implement {context_id}" + (" detail" if detail else "")
-        return (await session.ask(text, context_id=context_id)).text
+        return (await session.ask(f"implement {context_id}" + (" detail" if detail else ""),
+                                  context_id=context_id)).text
 
     @mcp.tool()
     async def get_scenarios(context_id: str) -> str:
         """Return the generated test scenarios + steps for a context id (read-only)."""
         return (await session.ask(f"get-scenarios {context_id}", context_id=context_id)).text
 
-    return {
-        "define_plan": define_plan, "get_plan": get_plan, "approve_plan": approve_plan,
-        "implement_plan": implement_plan, "get_scenarios": get_scenarios,
-    }
+    return {"define_plan": define_plan, "get_plan": get_plan, "approve_plan": approve_plan,
+           "implement_plan": implement_plan, "get_scenarios": get_scenarios}

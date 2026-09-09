@@ -20,20 +20,14 @@ def register_tools(mcp: MCPServer, session: BridgeSession) -> dict:
     ) -> str:
         """Crawl a Jira issue / Confluence page / URL read-only and distill it to the memory bank."""
         ctx = context_id or f"run-{uuid.uuid4().hex[:8]}"
-        msg: dict = {"seed": seed, "depth": depth}
-        if repo:
-            msg["repo"] = repo
-        if exclude:
-            msg["exclude"] = exclude
-        res = await session.ask(json.dumps(msg), context_id=ctx)
-        return f"context_id: {ctx}\n\n{res.text}"
+        msg: dict = {"seed": seed, "depth": depth, **({"repo": repo} if repo else {}), **({"exclude": exclude} if exclude else {})}
+        return f"context_id: {ctx}\n\n{(await session.ask(json.dumps(msg), context_id=ctx)).text}"
 
     @mcp.tool()
     async def gather_codebase(repo: str, context_id: str | None = None) -> str:
         """Build a graphify code graph for a Bitbucket repo — code-base intelligence for the pack."""
         ctx = context_id or f"run-{uuid.uuid4().hex[:8]}"
-        res = await session.ask(json.dumps({"seed": repo, "depth": 1}), context_id=ctx)
-        return f"context_id: {ctx}\n\n{res.text}"
+        return f"context_id: {ctx}\n\n{(await session.ask(json.dumps({'seed': repo, 'depth': 1}), context_id=ctx)).text}"
 
     @mcp.tool()
     async def refine(context_id: str, answer: str | None = None) -> str:
@@ -77,10 +71,7 @@ def register_tools(mcp: MCPServer, session: BridgeSession) -> dict:
         understanding = (await session.ask(f"get-understanding {context_id}", context_id=context_id)).text
         questions = (await session.ask(f"get-questions {context_id}", context_id=context_id)).text
         session.tasks.pop(context_id, None)
-        return (
-            f"APPROVED {context_id}\n\n## Confirmed understanding\n{understanding}\n\n"
-            f"## Questions & answers\n{questions}"
-        )
+        return f"APPROVED {context_id}\n\n## Confirmed understanding\n{understanding}\n\n## Questions & answers\n{questions}"
 
     return {
         "gather_knowledge": gather_knowledge, "gather_codebase": gather_codebase, "refine": refine,

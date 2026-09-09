@@ -32,11 +32,9 @@ _KIND_RATIONALE = {
 
 
 def _coverage_kinds(plan: TestPlan) -> tuple[str, ...]:
-    """Which scenario kinds to generate per behaviour: the full matrix unless the plan's"""
+    """Full matrix unless the plan's metrics call for happy-only coverage."""
     metrics = " ".join(plan.metrics).lower()
-    if "happy only" in metrics or "happy-only" in metrics:
-        return (HAPPY,)
-    return _FULL_COVERAGE
+    return (HAPPY,) if "happy only" in metrics or "happy-only" in metrics else _FULL_COVERAGE
 
 
 async def generate_scenarios(
@@ -47,9 +45,7 @@ async def generate_scenarios(
     from test_plan_definition.implement.llm import claude_scenarios
 
     scs = await claude_scenarios(plan, plan_pack, test_data, now=now, model=model)
-    if scs:
-        return scs
-    return heuristic_scenarios(plan, plan_pack, test_data, now=now)
+    return scs or heuristic_scenarios(plan, plan_pack, test_data, now=now)
 
 
 def heuristic_scenarios(
@@ -60,19 +56,14 @@ def heuristic_scenarios(
     data_refs = [d.id for d in test_data]
     kinds = _coverage_kinds(plan)
 
-    targets = [(n.id, n.title) for n in plan_pack.pack.grounded[:_MAX_NOTES]]
-    if not targets:
-        targets = [(s, s) for s in plan.scope[:_MAX_NOTES]]
+    targets = ([(n.id, n.title) for n in plan_pack.pack.grounded[:_MAX_NOTES]]
+              or [(s, s) for s in plan.scope[:_MAX_NOTES]])
 
-    out: list[TestScenario] = []
-    for ref, title in targets:
-        base = _slug(ref)
-        for kind in kinds:
-            out.append(TestScenario(
-                id=f"scenario:{ctx}:{base}:{kind}", plan_id=plan.id,
-                title=f"{title} — {_KIND_SUFFIX[kind]}",
-                kind=kind, methodology=method,
-                description=f"Exercise the {kind} case for '{title}' via {method}.",
-                rationale=_KIND_RATIONALE[kind],
-                data_refs=data_refs, source_refs=[ref], created_at=now))
-    return out
+    return [
+        TestScenario(
+            id=f"scenario:{ctx}:{_slug(ref)}:{kind}", plan_id=plan.id,
+            title=f"{title} — {_KIND_SUFFIX[kind]}", kind=kind, methodology=method,
+            description=f"Exercise the {kind} case for '{title}' via {method}.",
+            rationale=_KIND_RATIONALE[kind], data_refs=data_refs, source_refs=[ref], created_at=now)
+        for ref, title in targets for kind in kinds
+    ]

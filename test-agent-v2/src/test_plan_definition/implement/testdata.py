@@ -26,9 +26,7 @@ def heuristic_test_data(plan: TestPlan, plan_pack: PlanPack, *, now: str = "") -
     ctx = plan.context_id
     method = plan.methodology[0] if plan.methodology else "api"
     out = [TestData(
-        id=f"test-data:{ctx}:account",
-        kind=TEST_ACCOUNT,
-        plan_id=plan.id,
+        id=f"test-data:{ctx}:account", kind=TEST_ACCOUNT, plan_id=plan.id,
         spec={
             "purpose": "authenticated caller for the API tests",
             "role": "standard",
@@ -36,30 +34,22 @@ def heuristic_test_data(plan: TestPlan, plan_pack: PlanPack, *, now: str = "") -
             "auth": "bearer token",
             "permissions": ["read", "write"],
         },
-        source_refs=plan.source_refs[:1],
-        created_at=now,
+        source_refs=plan.source_refs[:1], created_at=now,
     )]
-    for n in plan_pack.pack.grounded[:_MAX_MOCKS]:
-        out.append(TestData(
-            id=f"test-data:{ctx}:mock:{_slug(n.id)}",
-            kind=MOCK_DATA,
-            plan_id=plan.id,
-            spec={
-                "entity": n.title,
-                "from_note": n.id,
-                "fields": {"id": "<generated>", "status": "<expected>"},
-                "notes": "representative valid record; mutate fields for the negative/boundary cases",
-            },
-            source_refs=[n.id],
-            created_at=now,
-        ))
+    out += [TestData(
+        id=f"test-data:{ctx}:mock:{_slug(n.id)}", kind=MOCK_DATA, plan_id=plan.id,
+        spec={
+            "entity": n.title,
+            "from_note": n.id,
+            "fields": {"id": "<generated>", "status": "<expected>"},
+            "notes": "representative valid record; mutate fields for the negative/boundary cases",
+        },
+        source_refs=[n.id], created_at=now,
+    ) for n in plan_pack.pack.grounded[:_MAX_MOCKS]]
     if method == "api":
         out.append(TestData(
-            id=f"test-data:{ctx}:fixture",
-            kind=FIXTURE,
-            plan_id=plan.id,
+            id=f"test-data:{ctx}:fixture", kind=FIXTURE, plan_id=plan.id,
             spec={"kind": "request-payload", "format": "json", "purpose": "valid request-body baseline"},
-            source_refs=plan.source_refs[:1],
-            created_at=now,
+            source_refs=plan.source_refs[:1], created_at=now,
         ))
     return out

@@ -31,18 +31,14 @@ async def expansion_round(
     focus = terms
 
     def _add(candidates: list[str]) -> None:
-        for s in candidates:
-            if s not in new_seeds and s not in exclude:
-                new_seeds.append(s)
+        new_seeds.extend(s for s in candidates if s not in new_seeds and s not in exclude)
 
     climbed = False
-    if thin and parent:
-        parent_norm = normalize_seed(parent)
-        if parent_norm not in exclude and parent_norm != seed_norm:
-            _add([parent_norm])
-            climb_md = f"Thin seed — climbed to structural parent {parent}"
-            climbed = True
-            log.info("A2A gather: thin seed=%s → climbed to parent %s", seed, parent)
+    if thin and parent and (parent_norm := normalize_seed(parent)) not in exclude and parent_norm != seed_norm:
+        _add([parent_norm])
+        climb_md = f"Thin seed — climbed to structural parent {parent}"
+        climbed = True
+        log.info("A2A gather: thin seed=%s → climbed to parent %s", seed, parent)
 
     if not climbed:
         prior_seeds, prior_md = memory_self_seed(bank, seed, focus)

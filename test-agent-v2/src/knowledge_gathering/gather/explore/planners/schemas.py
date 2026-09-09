@@ -10,9 +10,19 @@ _MAX_LEADS = 6
 PLAN_INPUT_KEY = "kga_plan_in"
 
 
+def _dedupe(items, cap: int) -> list[str]:
+    """Strip + drop empties + dedupe (order-stable) + cap — shared by `as_terms`/`as_leads`."""
+    out: list[str] = []
+    for s in items:
+        s = (s or "").strip()
+        if s and s not in out:
+            out.append(s)
+    return out[:cap]
+
+
 class PlanInput(BaseModel):
-    """The ticket facts a planner reads from `session.state[PLAN_INPUT_KEY]` to build its prompt —
-    written by the GatherAgent (`from_probe`), read back by each planner's `InstructionProvider`."""
+    """Ticket facts a planner reads from `session.state[PLAN_INPUT_KEY]` (written via `from_probe`,
+    read back by each planner's `InstructionProvider`)."""
 
     title: str = ""
     description: str = ""
@@ -33,12 +43,7 @@ class Hypothesis(BaseModel):
 
     def as_terms(self, cap: int = _MAX_TERMS) -> str:
         """Flatten the three fields into a deduped, order-stable, capped space-joined string."""
-        seen: list[str] = []
-        for s in (*self.key_phrases, *self.entities, *self.subsystems):
-            s = (s or "").strip()
-            if s and s not in seen:
-                seen.append(s)
-        return " ".join(seen[:cap])
+        return " ".join(_dedupe((*self.key_phrases, *self.entities, *self.subsystems), cap))
 
 
 class Leads(BaseModel):
@@ -48,9 +53,4 @@ class Leads(BaseModel):
 
     def as_leads(self, cap: int = _MAX_LEADS) -> list[str]:
         """Deduped, order-stable, capped list of non-empty lead phrases (mirrors `_coerce_leads`)."""
-        out: list[str] = []
-        for item in self.phrases:
-            s = (item or "").strip()
-            if s and s not in out:
-                out.append(s)
-        return out[:cap]
+        return _dedupe(self.phrases, cap)

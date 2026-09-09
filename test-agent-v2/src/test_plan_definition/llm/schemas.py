@@ -89,17 +89,13 @@ class StepsList(BaseModel):
         data_refs = [d.id for d in test_data]
         by_id: dict[str, list[TestStep]] = {}
         for it in self.items:
-            sid = it.scenario_id
-            if not sid:
+            if not it.scenario_id:
                 continue
-            steps: list[TestStep] = []
-            for i, s in enumerate(it.steps or [], start=1):
-                order = s.get("order", i)
-                steps.append(TestStep(
-                    id=f"{sid}#s{order}", scenario_id=sid, order=order,
-                    action=s.get("action", ""), expected=s.get("expected", ""),
-                    keyword=s.get("keyword", ""), data_refs=data_refs,
-                ))
+            steps = [TestStep(id=f"{it.scenario_id}#s{(order := s.get('order', i))}",
+                              scenario_id=it.scenario_id, order=order, action=s.get("action", ""),
+                              expected=s.get("expected", ""), keyword=s.get("keyword", ""),
+                              data_refs=data_refs)
+                     for i, s in enumerate(it.steps or [], start=1)]
             if steps:
-                by_id[sid] = steps
+                by_id[it.scenario_id] = steps
         return by_id

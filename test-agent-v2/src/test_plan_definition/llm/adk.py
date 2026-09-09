@@ -21,15 +21,9 @@ log = get_logger("llm.adk")
 
 def build_generator_agent(*, name: str, prompt: str, output_schema, output_key: str, model):
     """A structured-output leaf ``LlmAgent`` for one generator (model via the provider, I8)."""
-    return LlmAgent(
-        name=name,
-        model=model,
-        output_schema=output_schema,
-        output_key=output_key,
-        instruction=lambda _ctx: prompt,
-        disallow_transfer_to_parent=True,
-        disallow_transfer_to_peers=True,
-    )
+    return LlmAgent(name=name, model=model, output_schema=output_schema, output_key=output_key,
+                    instruction=lambda _ctx: prompt, disallow_transfer_to_parent=True,
+                    disallow_transfer_to_peers=True)
 
 
 async def run_json_agent(agent: LlmAgent, *, output_key: str) -> dict | None:
@@ -42,10 +36,8 @@ async def run_json_agent(agent: LlmAgent, *, output_key: str) -> dict | None:
     await svc.create_session(app_name="tpd-gen", user_id="tpd", session_id="gen")
     runner = Runner(app_name="tpd-gen", agent=agent, session_service=svc)
     try:
-        async for _ in runner.run_async(
-            user_id="tpd", session_id="gen",
-            new_message=types.Content(role="user", parts=[types.Part(text="generate")]),
-        ):
+        async for _ in runner.run_async(user_id="tpd", session_id="gen", new_message=types.Content(
+                role="user", parts=[types.Part(text="generate")])):
             pass
     except Exception as exc:  # noqa: BLE001 — invalid/empty output degrades to heuristic, never raises
         log.warning("%s: generator run failed (%s); falling back to heuristic", agent.name, exc)

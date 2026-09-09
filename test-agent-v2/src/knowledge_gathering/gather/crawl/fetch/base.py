@@ -21,8 +21,6 @@ class NodeFetcher(ABC):
             NodeFetcher.registry[cls.kind] = cls()
 
     @abstractmethod
-    async def fetch(
-        self, client, ident: str, nid: str, scope: Scope
-    ) -> tuple[list[LinkRecord], Note, str]:
+    async def fetch(self, client, ident: str, nid: str, scope: Scope) -> tuple[list[LinkRecord], Note, str]:
         """Fetch node ``nid`` (``ident`` is the part after the ``kind:`` prefix)."""
         raise NotImplementedError

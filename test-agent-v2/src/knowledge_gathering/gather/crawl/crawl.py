@@ -16,30 +16,19 @@ log = get_logger("loop")
 
 
 async def crawl(
-    client,
-    bank,
-    seed: str,
-    *,
-    scope: Scope | None = None,
-    depth: int = 2,
-    max_nodes: int = 40,
-    max_seconds: float = 180.0,
-    run_id: str = "run",
-    distiller=None,
-    concurrency: int = 8,
+    client, bank, seed: str, *, scope: Scope | None = None, depth: int = 2, max_nodes: int = 40,
+    max_seconds: float = 180.0, run_id: str = "run", distiller=None, concurrency: int = 8,
     extra_seeds: list[str] | None = None,
 ) -> CrawlResult:
     scope = scope or Scope()
     distiller = distiller or heuristic_distill
     sem = asyncio.Semaphore(concurrency)
     start = time.monotonic()
-
     frontier: list[tuple[str, int]] = [(normalize_seed(s), 0) for s in [seed, *(extra_seeds or [])]]
     visited: set[str] = set()
     web_promoted: set[str] = set()
     result = CrawlResult()
-    log.info("crawl start: seed=%s extra=%s depth=%s max_nodes=%s",
-             seed, extra_seeds or [], depth, max_nodes)
+    log.info("crawl start: seed=%s extra=%s depth=%s max_nodes=%s", seed, extra_seeds or [], depth, max_nodes)
 
     async def fetch(nid: str):
         async with sem:
@@ -54,9 +43,7 @@ async def crawl(
         frontier = []
         log.debug("level: fetching %d nodes (visited=%d)", len(level_items), len(visited))
 
-        fetched = await asyncio.gather(
-            *(fetch(nid) for nid, _ in level_items), return_exceptions=True
-        )
+        fetched = await asyncio.gather(*(fetch(nid) for nid, _ in level_items), return_exceptions=True)
         for (nid, d), res in zip(level_items, fetched):
             visited.add(nid)
             if isinstance(res, BaseException):
@@ -100,14 +87,11 @@ async def crawl(
 def _fetchable(canonical: str, scope: Scope) -> bool:
     """Which canonical node ids can be fetched + followed. external-web canonicals ARE the raw"""
     kind = canonical.split(":", 1)[0]
-    if kind in ("http", "https"):
-        return scope.follow_web
-    return kind in ("jira", "confluence", "bitbucket", "codegraph")
+    return scope.follow_web if kind in ("http", "https") else kind in ("jira", "confluence", "bitbucket", "codegraph")
 
 
 def _add_all(notes: list[Note]):
     def mutate(graph):
         for note in notes:
             graph.add_note(note)
-
     return mutate

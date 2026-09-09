@@ -42,8 +42,7 @@ _HAPPY_STEPS = [
 def _pass_metric(plan: TestPlan) -> str:
     """The metric that states what 'passed' means — not the coverage-bar metric."""
     for m in plan.metrics:
-        low = m.lower()
-        if "negative" not in low and "coverage" not in low and "happy" not in low:
+        if not any(k in m.lower() for k in ("negative", "coverage", "happy")):
             return m
     return plan.metrics[0] if plan.metrics else "the expected end state holds"
 
@@ -58,15 +57,13 @@ def generate_steps(scenario: TestScenario, plan: TestPlan) -> list[TestStep]:
                          expected=passed, data_refs=scenario.data_refs)]
 
     template = _KIND_STEPS.get(scenario.kind, _HAPPY_STEPS)
-    out = []
-    for order, (kw, action, expected) in enumerate(template, start=1):
-        action = action.replace("the test data", data)
-        out.append(TestStep(
+    return [
+        TestStep(
             id=f"{scenario.id}#s{order}", scenario_id=scenario.id, order=order, keyword=kw,
-            action=action, expected=passed if expected == "PASS_METRIC" else expected,
-            data_refs=scenario.data_refs,
-        ))
-    return out
+            action=action.replace("the test data", data),
+            expected=passed if expected == "PASS_METRIC" else expected, data_refs=scenario.data_refs)
+        for order, (kw, action, expected) in enumerate(template, start=1)
+    ]
 
 
 async def generate_all_steps(

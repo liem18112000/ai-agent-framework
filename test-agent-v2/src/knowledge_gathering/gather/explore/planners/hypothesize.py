@@ -20,7 +20,6 @@ OUTPUT_KEY = "kga_hypothesis"
 
 def _prompt(title: str, description: str, labels: list[str]) -> str:
     """Prompt for a FEW distinctive search terms as strict JSON — no ids/URLs. Demands rare/precise."""
-    lbls = ", ".join(labels) if labels else "(none)"
     return (
         "You are the QA Testing Agent's search-planning step. Given a ticket's title, short "
         "description, and labels, return the MOST distinctive, specific search terms to find "
@@ -36,7 +35,7 @@ def _prompt(title: str, description: str, labels: list[str]) -> str:
         "specific tickets.\n\n"
         f"Title: {title}\n"
         f"Description: {description[:_DESC_CAP] or '(none)'}\n"
-        f"Labels: {lbls}\n"
+        f"Labels: {', '.join(labels) if labels else '(none)'}\n"
     )
 
 
@@ -48,10 +47,5 @@ def _instruction(ctx: ReadonlyContext) -> str:
 
 def build_hypothesize_agent(*, model=None, name: str = "hypothesize") -> LlmAgent:
     """The G2 planner as an ADK `LlmAgent(output_schema=Hypothesis)`."""
-    return LlmAgent(
-        name=name,
-        model=model or agent_model(max_tokens=_MAX_TOKENS) or "",
-        instruction=_instruction,
-        output_schema=Hypothesis,
-        output_key=OUTPUT_KEY,
-    )
+    return LlmAgent(name=name, model=model or agent_model(max_tokens=_MAX_TOKENS) or "",
+                     instruction=_instruction, output_schema=Hypothesis, output_key=OUTPUT_KEY)

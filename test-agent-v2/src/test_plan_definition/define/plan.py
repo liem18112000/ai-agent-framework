@@ -17,19 +17,12 @@ Restater = Callable[[TestPlan, PlanPack, list[Question]], str]
 def confidence(decisions: list[PlanDecision], open_questions: list[Question]) -> str:
     if open_questions:
         return "low"
-    if any(d.kind == ASSUMPTION or d.confidence == "low" for d in decisions):
-        return "medium"
-    return "high"
+    return "medium" if any(d.kind == ASSUMPTION or d.confidence == "low" for d in decisions) else "high"
 
 
 def assemble_plan(
-    plan_pack: PlanPack,
-    decisions: list[PlanDecision],
-    *,
-    conf: str,
-    status: str = DRAFT,
-    run_id: str = "",
-    now: str = "",
+    plan_pack: PlanPack, decisions: list[PlanDecision], *, conf: str, status: str = DRAFT,
+    run_id: str = "", now: str = "",
 ) -> TestPlan:
     methodology: list[str] = []
     scope: list[str] = []
@@ -51,36 +44,28 @@ def assemble_plan(
                          | {n.id for n in plan_pack.pack.insights})
     ctx = plan_pack.context_id
     return TestPlan(
-        id=f"plan:{ctx}",
-        context_id=ctx,
-        methodology=methodology or ["api"],
-        scope=scope,
-        out_of_scope=out_of_scope,
-        metrics=metrics,
-        confidence=conf,
-        source_refs=source_refs,
-        status=status,
-        created_at=now,
-        run_id=run_id,
+        id=f"plan:{ctx}", context_id=ctx, methodology=methodology or ["api"], scope=scope,
+        out_of_scope=out_of_scope, metrics=metrics, confidence=conf, source_refs=source_refs,
+        status=status, created_at=now, run_id=run_id,
     )
 
 
 def make_restater() -> Restater:
     """Claude-on-Vertex prose brief when VERTEX_* is configured, else the heuristic assembly."""
     cfg = vertex_config()
-    if cfg:
-        proj, loc, model = cfg
-        from test_plan_definition.define.llm import claude_brief
+    if not cfg:
+        return heuristic_brief
+    proj, loc, model = cfg
+    from test_plan_definition.define.llm import claude_brief
 
-        def restater(plan: TestPlan, plan_pack: PlanPack, opens: list[Question]) -> str:
-            return claude_brief(plan, plan_pack, opens, project=proj, location=loc, model=model)
+    def restater(plan: TestPlan, plan_pack: PlanPack, opens: list[Question]) -> str:
+        return claude_brief(plan, plan_pack, opens, project=proj, location=loc, model=model)
 
-        return restater
-    return heuristic_brief
+    return restater
 
 
 def restate(plan: TestPlan, plan_pack: PlanPack, open_questions: list[Question],
-            *, restater: Restater | None = None) -> str:
+           *, restater: Restater | None = None) -> str:
     return (restater or make_restater())(plan, plan_pack, open_questions)
 
 
@@ -103,6 +88,6 @@ def heuristic_brief(plan: TestPlan, plan_pack: PlanPack, open_questions: list[Qu
     if plan.out_of_scope:
         lines += ["**Out of scope:**", bullets(plan.out_of_scope), ""]
     lines += ["**Passed means:**", bullets(plan.metrics), "", "**Open questions:**",
-              bullets([q.question for q in open_questions]) if open_questions
-              else "- none above the confidence bar"]
+             bullets([q.question for q in open_questions]) if open_questions
+             else "- none above the confidence bar"]
     return "\n".join(lines) + "\n"

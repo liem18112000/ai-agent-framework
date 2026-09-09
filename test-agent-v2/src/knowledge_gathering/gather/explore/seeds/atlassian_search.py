@@ -14,9 +14,7 @@ def _escape(s: str) -> str:
 
 
 def _render(seeds: list[str]) -> str:
-    lines = [f"Atlassian search (seed was thin) surfaced {len(seeds)} related item(s):"]
-    lines += [f"- {sid}" for sid in seeds]
-    return "\n".join(lines)
+    return "\n".join([f"Atlassian search (seed was thin) surfaced {len(seeds)} related item(s):", *[f"- {sid}" for sid in seeds]])
 
 
 async def atlassian_search_seeds(

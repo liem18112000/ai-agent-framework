@@ -31,17 +31,14 @@ async def _dev_status(client, issue: dict) -> list[dict]:
 class JiraFetcher(NodeFetcher):
     kind = "jira"
 
-    async def fetch(
-        self, client, ident: str, nid: str, scope: Scope
-    ) -> tuple[list[LinkRecord], Note, str]:
+    async def fetch(self, client, ident: str, nid: str, scope: Scope) -> tuple[list[LinkRecord], Note, str]:
         issue = await client.get_issue(ident)
         remote = await client.get_issue_remote_links(ident)
         dev = await _dev_status(client, issue)
         links = extract_issue_links(issue, remote, dev, base_url=client.base_url, scope=scope)
         f = issue.get("fields", {})
         body = adf_text(f.get("description"))
-        note = Note(
+        return links, Note(
             id=nid, type=JIRA_ISSUE, title=f.get("summary", ""),
             source_url=f"{client.base_url}/browse/{ident}", links=links, synopsis=body[:1500],
-        )
-        return links, note, body
+        ), body

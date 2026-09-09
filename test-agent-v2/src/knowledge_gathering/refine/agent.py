@@ -24,8 +24,6 @@ def wants_refine(text: str) -> bool:
 
 def build_refine_agent(name: str = "refine") -> InterrogationAgent:
     return InterrogationAgent(
-        name=name,
-        rounds=tuple(ROUNDS),
-        agent_prefix="KGA",
+        name=name, rounds=tuple(ROUNDS), agent_prefix="KGA",
         header="Refinement questions — answer each as `Q-id: your choice`.",
     )
