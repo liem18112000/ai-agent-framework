@@ -13,7 +13,7 @@ from knowledge_gathering.gather.crawl.fetch import (  # noqa: F401 — triggers 
     NodeFetcher,
     fetch_node,
 )
-from knowledge_gathering.gather.crawl.seed import normalize_seed
+from knowledge_gathering.gather.seed import normalize_seed
 
 REPORT = """# Graph Report - luz_docs_import
 

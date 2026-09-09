@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from common.memory.graph_index import match_index_nodes, rank_promotions
 from common.models import INSIGHT
-from knowledge_gathering.gather.crawl.seed import normalize_seed
+from knowledge_gathering.gather.seed import normalize_seed
 from knowledge_gathering.monitoring import get_logger
 
 log = get_logger("explore.self_seed")
@@ -79,10 +79,6 @@ def _neighbors(graph, node_id: str) -> set[str]:
     return out
 
 
-def _render_semantic(ids: list[str]) -> str:
-    return "\n".join([f"Semantically-related prior seeds ({len(ids)}), grounded to this ticket:", *[f"- {i}" for i in ids]])
-
-
 async def semantic_self_seed(bank, seed: str, terms: str = "", *, exclude: set[str] | None = None,
                              max_seeds: int = 5) -> tuple[list[str], str]:
     """G0.5: promote VECTOR-nearest fetchable prior seeds, each **B5-grounded** to the seed's graph"""
@@ -110,7 +106,7 @@ async def semantic_self_seed(bank, seed: str, terms: str = "", *, exclude: set[s
         out = list(itertools.islice(
             (nid for r in rows if (nid := r.get("id", "")) and nid != self_id and nid not in exclude
              and nid.startswith(_FETCHABLE) and graph_grounded(graph, nid, anchors)), max_seeds))
-        return out, (_render_semantic(out) if out else "")
+        return out, ("\n".join([f"Semantically-related prior seeds ({len(out)}), grounded to this ticket:", *[f"- {i}" for i in out]]) if out else "")
     except Exception as exc:  # noqa: BLE001 — semantic seed must never break gather
         log.warning("semantic self-seed skipped for %s (%s)", seed, exc)
         return [], ""

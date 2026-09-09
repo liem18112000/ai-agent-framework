@@ -5,18 +5,30 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import asdict
+from typing import NamedTuple
 
 from common import learn
 from common.extract import adf_text
 from common.models import CODEGRAPH
 from knowledge_gathering.gather.crawl import CrawlResult
-from knowledge_gathering.gather.crawl.seed import normalize_seed
-from knowledge_gathering.models import SeedProbe
+from knowledge_gathering.gather.seed import normalize_seed
 from knowledge_gathering.monitoring import get_logger
 
 log = get_logger("kga.gather")
 
 _JIRA_KEY = re.compile(r"[A-Z][A-Z0-9]+-\d+")
+
+
+class SeedProbe(NamedTuple):
+    """One best-effort seed fetch shared by the pre-crawl G0/G1/G2 phases (defaults = neutral)."""
+
+    terms: str = ""
+    thin: bool = False
+    project: str | None = None
+    title: str = ""
+    description: str = ""
+    labels: list[str] | None = None
+    parent: str | None = None
 
 
 def capture_gather(bank, *, context_id: str, seed: str, result) -> None:

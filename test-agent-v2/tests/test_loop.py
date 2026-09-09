@@ -5,7 +5,8 @@ from __future__ import annotations
 from google.api_core.exceptions import PreconditionFailed
 
 from common.memory import MemoryBank
-from knowledge_gathering.gather.crawl import crawl, normalize_seed
+from knowledge_gathering.gather.crawl import crawl
+from knowledge_gathering.gather.seed import normalize_seed
 
 BASE = "https://axonivy.atlassian.net"
 

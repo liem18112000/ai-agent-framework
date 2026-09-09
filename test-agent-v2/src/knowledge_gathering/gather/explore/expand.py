@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from knowledge_gathering.gather.crawl.seed import normalize_seed
 from knowledge_gathering.gather.explore.seeds.atlassian_search import atlassian_search_seeds
 from knowledge_gathering.gather.explore.seeds.ground_leads import ground_leads
 from knowledge_gathering.gather.explore.seeds.self_seed import memory_self_seed, semantic_self_seed
+from knowledge_gathering.gather.seed import normalize_seed
 from knowledge_gathering.monitoring import get_logger
 
 log = get_logger("explore.expand")

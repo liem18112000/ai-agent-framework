@@ -5,8 +5,8 @@ from __future__ import annotations
 import common.memory.pg.embed as emb
 from common.memory import pg
 from common.models import Graph
-from knowledge_gathering.gather.crawl.seed import normalize_seed
 from knowledge_gathering.gather.explore.seeds.self_seed import semantic_self_seed
+from knowledge_gathering.gather.seed import normalize_seed
 
 
 def _graph(nodes, edges):
