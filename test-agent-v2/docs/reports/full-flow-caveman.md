@@ -59,12 +59,12 @@ Rock say **"We start here."** 👉
 Extra rock that CHECK the knowledge pack quality: did robot grab right stuff? leak wrong stuff?
 → give **Pack Quality Score (PQS)**. Just look, never block. Run AFTER gather, BEFORE plan.
 
-**② Two-Tier Memory (CQRS) — ONLY PLAN, not built yet.** 📐
+**② Two-Tier Memory (CQRS) — BUILT M0–M6 · LIVE (klara-nonprod).** ✅
 Make robot brain smarter — find by MEANING not just word-match.
 - **GCS** = big truth book (append-only, never lie). 📖
 - **Cloud SQL + pgvector** = fast recall brain (vector 768 + text search); reuses `kga-v2-taskstore`. ⚡
 - Read both way, mix, pick best, keep de-bias. Flip switch `MEMORY_BACKEND`. Postgres die? → fall back to GCS book. Hunt never break. 🛡️
-- More detail rock: `two-tier-agent-memory-pgvector.*` + `PROPOSAL-*.md`.
+- More detail rock: `two-tier-agent-memory-pgvector.*`.
 
 ---
 
