@@ -14,6 +14,7 @@ _Single-file merge of everything under `test-agent-v2/docs/` — the build guide
 9. [Enhancement — explore steps as LlmAgents](#doc-enh-explore)
 10. [Enhancement — TPD generators as LlmAgents](#doc-enh-tpd)
 11. [Enhancement — evaluator ADK reuse](#doc-enh-tev)
+12. [Diagrams (v2) + caveman summaries](#doc-diagrams)
 
 
 ---
@@ -2631,3 +2632,36 @@ offline), driven by the provider-sourced judge from ①. It must never enter `ev
 - `tests/test_adk_eval.py` — add the ADK-native judged-metric wiring (creds-gated) + the
   **zero-LLM-call** assertion on the default scorer.
 - `tests/eval/test_metrics.py` — unchanged (regex rubrics + deterministic metrics).
+
+---
+
+<a id="doc-diagrams"></a>
+
+## Diagrams (v2) + caveman summaries
+
+The v2 diagram set — regenerated from the v1 originals, widened, and updated to the single-gateway / A2A-only / ADK-native topology. Each `.png` renders from its `.excalidraw`; each has a grunt-voice "caveman" companion under [`reports/`](reports/). Ground-truth topology: [the gateway target diagram](#doc-design-gateway).
+
+### Architecture (v2 topology)
+
+| Diagram | Source | Caveman |
+|---|---|---|
+| **deployment-architecture** — Where the four v2 services live on Cloud Run — the single MCP gateway + three A2A-only agents, shared Cloud SQL + GCS. | [`.excalidraw`](deployment-architecture.excalidraw) · [`.png`](deployment-architecture.png) | [caveman](reports/deployment-architecture-caveman.md) |
+| **full-flow** — The end-to-end pipeline (gather → refine → approve → define → approve → implement) — what the agents *do*. | [`.excalidraw`](full-flow.excalidraw) · [`.png`](full-flow.png) | [caveman](reports/full-flow-caveman.md) |
+| **agents-software-architecture** — The software layers — `common/adk`, the `ModelProvider(VertexClaude)`, `main:app = to_a2a(root_agent)`; sidecars gone. | [`.excalidraw`](agents-software-architecture.excalidraw) · [`.png`](agents-software-architecture.png) | [caveman](reports/agents-software-architecture-caveman.md) |
+| **agents-overview-flow** — The agents overview — Claude → the one `mcp-gateway-v2` → A2A to each agent. | [`.excalidraw`](agents-overview-flow.excalidraw) · [`.png`](agents-overview-flow.png) | [caveman](reports/agents-overview-flow-caveman.md) |
+| **agents-swimlane-detail** — The per-step swimlane / sequence: every tool call rides Claude → gateway (MCP) → agent (A2A). | [`.excalidraw`](agents-swimlane-detail.excalidraw) · [`.png`](agents-swimlane-detail.png) | [caveman](reports/agents-swimlane-detail-caveman.md) |
+| **adk-vs-current-stack** — v1 (a2a-sdk-direct) vs the adopted **v2 ADK-native** stack — the decision, now reality. | [`.excalidraw`](adk-vs-current-stack.excalidraw) · [`.png`](adk-vs-current-stack.png) | [caveman](reports/adk-vs-current-stack-caveman.md) |
+
+### Concept (framework-neutral — v2 doc-set copies, concept unchanged from v1)
+
+| Diagram | Source | Caveman |
+|---|---|---|
+| **agentic-qa-assured-loop** — The assured test-generation loop (the missing execution + self-heal stage). | [`.excalidraw`](agentic-qa-assured-loop.excalidraw) · [`.png`](agentic-qa-assured-loop.png) | [caveman](reports/agentic-qa-assured-loop-caveman.md) |
+| **agentic-qa-enhancement-roadmap** — The phased agentic-QA enhancement roadmap. | [`.excalidraw`](agentic-qa-enhancement-roadmap.excalidraw) · [`.png`](agentic-qa-enhancement-roadmap.png) | [caveman](reports/agentic-qa-enhancement-roadmap-caveman.md) |
+| **kga-evaluation-adk-ragas** — Scoring the Knowledge-Gathering agent (ADK trajectory + RAGAS) → Pack Quality Score. | [`.excalidraw`](kga-evaluation-adk-ragas.excalidraw) · [`.png`](kga-evaluation-adk-ragas.png) | [caveman](reports/kga-evaluation-adk-ragas-caveman.md) |
+| **tpd-evaluation-adk-testsuite** — Scoring the Test-Plan agent (ADK groundedness + test-suite adequacy) → Test-Plan Score. | [`.excalidraw`](tpd-evaluation-adk-testsuite.excalidraw) · [`.png`](tpd-evaluation-adk-testsuite.png) | [caveman](reports/tpd-evaluation-adk-testsuite-caveman.md) |
+| **cqrs-split-record-vs-recall** — CQRS split — GCS event-log (record) vs semantic recall (query). | [`.excalidraw`](cqrs-split-record-vs-recall.excalidraw) · [`.png`](cqrs-split-record-vs-recall.png) | [caveman](reports/cqrs-split-record-vs-recall-caveman.md) |
+| **two-tier-agent-memory-pgvector** — Two-tier memory: GCS event-log + Cloud SQL/pgvector semantic recall. | [`.excalidraw`](two-tier-agent-memory-pgvector.excalidraw) · [`.png`](two-tier-agent-memory-pgvector.png) | [caveman](reports/two-tier-agent-memory-pgvector-caveman.md) |
+| **self-learning-memory-loop** — Auto-record cited lessons to the memory bank after each step. | [`.excalidraw`](self-learning-memory-loop.excalidraw) · [`.png`](self-learning-memory-loop.png) | [caveman](reports/self-learning-memory-loop-caveman.md) |
+| **self-explore-memory-bias** — The memory-bias (B0–B6) the de-bias gates fight. | [`.excalidraw`](self-explore-memory-bias.excalidraw) · [`.png`](self-explore-memory-bias.png) | [caveman](reports/self-explore-memory-bias-caveman.md) |
+| **self-exploring-knowledge-gather** — Turn the KGA from a link-follower into a self-explorer reaching 3 source tiers. | [`.excalidraw`](self-exploring-knowledge-gather.excalidraw) · [`.png`](self-exploring-knowledge-gather.png) | [caveman](reports/self-exploring-knowledge-gather-caveman.md) |
