@@ -10,7 +10,6 @@ import json
 
 import httpx
 import pytest
-from starlette.applications import Starlette
 
 from common.bridge import A2ABridgeClient
 from common.memory import MemoryBank
@@ -121,4 +120,6 @@ async def test_gateway_http_app_gated_when_env_set(monkeypatch):
 
 async def test_gateway_http_app_open_when_env_unset(monkeypatch):
     monkeypatch.delenv("GATEWAY_BEARER_TOKEN", raising=False)
-    assert isinstance(gw.http_app(), Starlette)
+    app = gw.http_app()
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t/") as c:
+        assert (await c.get("/livez")).status_code == 200

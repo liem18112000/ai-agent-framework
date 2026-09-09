@@ -1,4 +1,4 @@
-"""Inbound bearer auth for a bridge's Streamable-HTTP endpoint (shared by both bridges)."""
+"""Open `/livez` health + inbound bearer auth for a bridge's Streamable-HTTP endpoint."""
 
 from __future__ import annotations
 
@@ -6,15 +6,20 @@ import os
 
 
 class _BearerASGIMiddleware:
-    """Bearer gate for a bridge's Streamable-HTTP endpoint."""
+    """Open `/livez` health + optional inbound-bearer gate for a bridge's Streamable-HTTP endpoint."""
 
-    def __init__(self, app, token: str) -> None:
+    def __init__(self, app, token: str | None) -> None:
         self.app, self.token = app, token
 
     async def __call__(self, scope, receive, send) -> None:
         if scope["type"] == "http":
+            if scope.get("path", "") == "/livez":
+                await send({"type": "http.response.start", "status": 200,
+                            "headers": [(b"content-type", b"application/json")]})
+                await send({"type": "http.response.body", "body": b'{"status":"ok"}'})
+                return
             got = dict(scope["headers"]).get(b"authorization", b"").decode()
-            if got != f"Bearer {self.token}":
+            if self.token and got != f"Bearer {self.token}":
                 await send({"type": "http.response.start", "status": 401,
                             "headers": [(b"content-type", b"application/json")]})
                 await send({"type": "http.response.body", "body": b'{"error":"unauthorized"}'})
@@ -23,7 +28,7 @@ class _BearerASGIMiddleware:
 
 
 def build_http_app(mcp, env_prefix: str):
-    """Streamable-HTTP ASGI app for a bridge's `mcp`, gated by `<env_prefix>_BEARER_TOKEN`."""
+    """Streamable-HTTP ASGI app for a bridge's `mcp` — open `/livez` + `<env_prefix>_BEARER_TOKEN` gate."""
     from mcp.server.transport_security import TransportSecuritySettings
 
     stateless = os.environ.get(f"{env_prefix}_STATELESS", "").lower() in ("1", "true", "yes", "on")
@@ -36,5 +41,4 @@ def build_http_app(mcp, env_prefix: str):
         )
     )
     app = mcp.streamable_http_app(stateless_http=stateless, transport_security=sec)
-    token = os.environ.get(f"{env_prefix}_BEARER_TOKEN")
-    return _BearerASGIMiddleware(app, token) if token else app
+    return _BearerASGIMiddleware(app, os.environ.get(f"{env_prefix}_BEARER_TOKEN"))

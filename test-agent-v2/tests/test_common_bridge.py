@@ -82,3 +82,17 @@ async def test_bearer_middleware_allows_correct_token_rejects_others():
         assert (await c.get("/x", headers={"Authorization": "Bearer sekret"})).status_code == 200
         assert (await c.get("/x")).status_code == 401
         assert (await c.get("/x", headers={"Authorization": "Bearer nope"})).status_code == 401
+
+
+async def test_bearer_middleware_livez_open():
+    gated = _BearerASGIMiddleware(_ok_app, "sekret")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=gated), base_url="http://t/") as c:
+        r = await c.get("/livez")
+        assert r.status_code == 200 and r.json() == {"status": "ok"}
+
+
+async def test_bearer_middleware_passthrough_when_no_token():
+    open_app = _BearerASGIMiddleware(_ok_app, None)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=open_app), base_url="http://t/") as c:
+        assert (await c.get("/x")).status_code == 200
+        assert (await c.get("/livez")).status_code == 200

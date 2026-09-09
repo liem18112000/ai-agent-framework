@@ -256,7 +256,8 @@ module "gateway" {
       memory                 = var.bridge_memory
       cpu_idle               = false
       startup_cpu_boost      = true
-      startup_probe_tcp_port = 8080
+      startup_probe_http_path  = "/livez"
+      liveness_probe_http_path = "/livez"
       env = [
         { name = "GATEWAY_TRANSPORT", value = "http" },
         { name = "KGA_A2A_URL", value = var.deploy_bridge ? "${module.kga.uri}/" : "" },
