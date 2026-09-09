@@ -40,6 +40,7 @@ register_spec("plan", SessionSpec(
     read_state=lambda bank, cid: store.read_plan_state(bank, cid),
     mark_done=lambda bank, cid: store.write_plan_state(bank, cid, {"done": True}),
     summarize=summarize_define,
+    pack_of=lambda s: s.plan_pack.pack,  # PlanSession nests the Pack under plan_pack (L4 recall)
 ))
 
 

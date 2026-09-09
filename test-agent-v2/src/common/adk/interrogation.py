@@ -18,13 +18,14 @@ log = get_logger("adk.interrogation")
 
 @dataclass(frozen=True)
 class SessionSpec:
-    """The four things that differ between refine (KGA) and define (TPD)."""
+    """The things that differ between refine (KGA) and define (TPD)."""
 
     make: Callable
     rehydrate: Callable
     read_state: Callable
     mark_done: Callable
     summarize: Callable
+    pack_of: Callable = lambda s: s.pack  # locate the Pack on the session (for L4 lesson recall)
 
 
 _SPECS: dict[str, SessionSpec] = {}
@@ -58,6 +59,8 @@ class InterrogationAgent(BaseAgent):
             if incoming := incoming_text(ctx):
                 await session.submit(incoming)
 
+        await _recall_into(bank, spec.pack_of(session), self.agent_prefix)  # L4: prior lessons → pack
+
         rnd = await asyncio.to_thread(session.next_questions)
         if rnd is None:
             result = await asyncio.to_thread(session.finalize)
@@ -73,6 +76,27 @@ class InterrogationAgent(BaseAgent):
 
     def _context_id(self, ctx) -> str:
         return (ctx.session.state or {}).get("io_pack_ctx") or ctx.session.id
+
+
+async def _recall_into(bank, pack, prefix: str) -> None:
+    """L4: inject prior lessons into the pack so the interrogation doesn't re-learn them — structural
+    ∪ semantic under a DB backend (M4b, two-tier), structural-only on GCS. Flag-gated (RECALL_LESSONS,
+    default off) + best-effort, so the default path is unchanged. Runs every turn (mirrors v1's
+    executor `_recall_into`); `pack.lessons` renders into the question prompt via `summary_text`."""
+    from common import learn
+
+    if pack is None or not learn.recall_enabled(prefix):
+        return
+    try:
+        from common.memory import retrieve
+
+        grounded = pack.grounded
+        pack.lessons = await retrieve.recall_lessons(
+            bank, seed_refs={n.id for n in grounded},
+            query_text=" ".join(n.title for n in grounded if n.title),
+        )
+    except Exception as exc:  # noqa: BLE001 — recall is best-effort; never block the interrogation
+        log.warning("interrogation: lesson recall skipped (%s)", exc)
 
 
 def _refine_summary(result) -> str:
