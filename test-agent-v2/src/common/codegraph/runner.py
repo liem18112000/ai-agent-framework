@@ -35,18 +35,13 @@ class CodeGraphResult:
 
     def meta(self) -> dict:
         """The compact registry/meta row (no heavy graph_json / report_md)."""
-        d = asdict(self)
-        d.pop("graph_json", None)
-        d.pop("report_md", None)
-        return d
+        return {k: v for k, v in asdict(self).items() if k not in ("graph_json", "report_md")}
 
 
 def run_graphify(source_dir: Path, *, graphify_bin: str = GRAPHIFY_BIN, timeout: float = 300.0) -> Path:
     """Build/refresh the graph in ``source_dir`` and return the graphify-out dir."""
-    subprocess.run(
-        [graphify_bin, "update", str(source_dir), "--force"],
-        check=True, capture_output=True, text=True, timeout=timeout,
-    )
+    subprocess.run([graphify_bin, "update", str(source_dir), "--force"],
+                    check=True, capture_output=True, text=True, timeout=timeout)
     out = source_dir / "graphify-out"
     if not (out / "graph.json").exists():
         raise RuntimeError("graphify finished but graph.json is missing")
@@ -73,15 +68,13 @@ def scan_api_surface(graph: dict) -> dict:
         sf = (n.get("source_file") or "").replace("\\", "/")
         if not sf:
             continue
-        low = sf.lower()
-        base = sf.rsplit("/", 1)[-1]
+        low, base = sf.lower(), sf.rsplit("/", 1)[-1]
         if "/rest/client/" in low or base.endswith(("RestClient.java", "Client.java")):
             rest_clients.add(sf)
         elif base.endswith(("Resource.java", "Controller.java", "Endpoint.java")) or "/resource/" in low:
             endpoints.add(sf)
         if "/enum/" in low or "/enums/" in low:
-            label = n.get("label", "")
-            kind = (n.get("metadata") or {}).get("kind", "")
+            label, kind = n.get("label", ""), (n.get("metadata") or {}).get("kind", "")
             if label and kind not in ("file", ""):
                 enums.setdefault(sf, set()).add(label)
     return {
@@ -99,8 +92,7 @@ def build_code_graph(
     out = run_graphify(source_dir, graphify_bin=graphify_bin, timeout=timeout)
     graph = json.loads((out / "graph.json").read_text(encoding="utf-8"))
     report = (out / "GRAPH_REPORT.md").read_text(encoding="utf-8") if (out / "GRAPH_REPORT.md").exists() else ""
-    parsed = parse_report(report)
-    api = scan_api_surface(graph)
+    parsed, api = parse_report(report), scan_api_surface(graph)
     c = parsed["counts"]
     return CodeGraphResult(
         repo=repo, commit=commit, built_at=built_at, tool=tool,

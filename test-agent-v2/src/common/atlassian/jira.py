@@ -21,9 +21,7 @@ class JiraMixin:
     async def get_issue_remote_links(self, key: str) -> list[dict]:
         return await self._get(f"/rest/api/3/issue/{key}/remotelink")
 
-    async def get_issue_dev_status(
-        self, issue_id: str, data_type: str, application_type: str = "bitbucket"
-    ) -> dict:
+    async def get_issue_dev_status(self, issue_id: str, data_type: str, application_type: str = "bitbucket") -> dict:
         """Development-panel detail (PRs / commits / branches) for an issue."""
         return await self._get(
             "/rest/dev-status/1.0/issue/detail",

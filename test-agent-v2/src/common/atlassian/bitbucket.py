@@ -10,9 +10,7 @@ class BitbucketMixin:
         )
         return resp.json()
 
-    async def get_bitbucket_src(
-        self, workspace: str, repo: str, path: str, ref: str = "main"
-    ) -> str:
+    async def get_bitbucket_src(self, workspace: str, repo: str, path: str, ref: str = "main") -> str:
         """Raw file content at `path` on `ref` (returns text, not JSON)."""
         resp = await self._request(
             f"{self.bitbucket_base}/repositories/{workspace}/{repo}/src/{ref}/{path}",

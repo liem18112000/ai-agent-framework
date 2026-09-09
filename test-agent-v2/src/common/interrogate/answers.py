@@ -22,12 +22,12 @@ def parse_raw_answers(raw) -> dict:
     text = str(raw).strip()
     if text.startswith(("{", "[")):
         return parse_raw_answers(json.loads(text))
-    out: dict[str, str] = {}
-    for line in text.splitlines():
-        key, sep, val = line.partition(":")
-        if sep and key.strip():
-            out[key.strip()] = val.strip()
-    return out
+    return {
+        key.strip(): val.strip()
+        for line in text.splitlines()
+        for key, sep, val in [line.partition(":")]
+        if sep and key.strip()
+    }
 
 
 def _coerce(value) -> tuple[str, str, str | None]:
@@ -44,11 +44,7 @@ def _coerce(value) -> tuple[str, str, str | None]:
 
 def _match_option(text: str, options: list[dict]) -> str:
     low = text.lower()
-    for opt in options:
-        label = opt.get("label", "")
-        if label and (label.lower() in low or low in label.lower()):
-            return label
-    return ""
+    return next((o["label"] for o in options if o.get("label") and (o["label"].lower() in low or low in o["label"].lower())), "")
 
 
 def ingest(questions: list[Question], raw, *, now: str = "", answered_by: str = "human") -> IngestResult:
@@ -67,10 +63,7 @@ def ingest(questions: list[Question], raw, *, now: str = "", answered_by: str = 
         if not chosen:
             chosen = _match_option(text, q.options)
         q.status = "answered"
-        result.answers.append(Answer(
-            question_id=qid, answered_by=answered_by, chosen_option=chosen,
-            text=text, answered_at=now, new_seed=seed,
-        ))
+        result.answers.append(Answer(question_id=qid, answered_by=answered_by, chosen_option=chosen, text=text, answered_at=now, new_seed=seed))
         result.answered.append(q)
     answered_ids = {a.question_id for a in result.answers}
     result.carried = [q for q in questions if q.status == "open" and q.id not in answered_ids]

@@ -29,9 +29,7 @@ class LoggingToggle:
         logger.propagate = False
         if not logger.handlers:
             handler = logging.StreamHandler()
-            handler.setFormatter(
-                logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s", "%H:%M:%S")
-            )
+            handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s", "%H:%M:%S"))
             logger.addHandler(handler)
         chosen = (level or os.environ.get(self._level_env) or "INFO").upper()
         logger.setLevel(chosen if enabled else _OFF)

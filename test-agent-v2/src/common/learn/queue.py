@@ -36,11 +36,9 @@ def drain(bank, *, distiller: Distiller | None = None, now: str = "", max_jobs: 
     done: list[str] = []
     for raw in pending[:max_jobs]:
         try:
-            capture_lessons(
-                bank, context_id=raw["context_id"], run_id=raw.get("run_id", ""),
-                step=raw.get("step", ""), now=now, distiller=distiller,
-                signals=[LessonSignal(**s) for s in raw.get("signals", [])],
-            )
+            capture_lessons(bank, context_id=raw["context_id"], run_id=raw.get("run_id", ""),
+                            step=raw.get("step", ""), now=now, distiller=distiller,
+                            signals=[LessonSignal(**s) for s in raw.get("signals", [])])
             done.append(raw["id"])
         except Exception as exc:  # noqa: BLE001 — one bad job must not block the drain
             log.warning("learn: job %s failed (%s); left for retry", raw.get("id"), exc)

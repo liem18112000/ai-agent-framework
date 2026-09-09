@@ -14,8 +14,6 @@ def iter_lessons(bank, *, active_only: bool = True):
         if node.get("type") != INSIGHT:
             continue
         ins = bank.read_insight(node["id"])
-        if ins is None or ins.kind not in _KINDS:
-            continue
-        if active_only and ins.status != "active":
+        if ins is None or ins.kind not in _KINDS or (active_only and ins.status != "active"):
             continue
         yield ins

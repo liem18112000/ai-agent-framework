@@ -21,13 +21,8 @@ _FIELDS = (
 )
 
 
-def claude_questions(
-    pack: Pack, round_name: str, *, project: str, location: str, model: str
-) -> list[Question]:
-    raw = complete(
-        question_prompt(pack, round_name),
-        project=project, location=location, model=model, max_tokens=6000,
-    )
+def claude_questions(pack: Pack, round_name: str, *, project: str, location: str, model: str) -> list[Question]:
+    raw = complete(question_prompt(pack, round_name), project=project, location=location, model=model, max_tokens=6000)
     return _parse(raw, round_name)
 
 
@@ -36,10 +31,8 @@ def _parse(raw: str, round_name: str) -> list[Question]:
     if items is None:
         log.warning("round %s: could not parse generator output as JSON", round_name)
         return []
-    out = []
     for it in items:
         it.setdefault("round", round_name)
         if "applies_to" in it:
             it["applies_to"] = coerce_str(it["applies_to"])
-        out.append(Question(**{k: it.get(k) for k in _FIELDS if k in it}))
-    return out
+    return [Question(**{k: it.get(k) for k in _FIELDS if k in it}) for it in items]

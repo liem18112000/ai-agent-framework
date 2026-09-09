@@ -18,16 +18,12 @@ def veto_lesson(bank, insight_id: str) -> bool:
 
 def _drop_node(graph, node_id: str) -> None:
     graph.nodes.pop(node_id, None)
-    for key in [k for k, e in graph.edges.items()
-                if e.get("source_id") == node_id or e.get("target") == node_id]:
+    for key in [k for k, e in graph.edges.items() if e.get("source_id") == node_id or e.get("target") == node_id]:
         graph.edges.pop(key, None)
 
 
 def search_lessons(bank, query: str = "") -> list[dict]:
     """Active lessons whose statement matches `query` (all if empty). Read-only."""
     q = query.lower()
-    return [
-        {"id": i.id, "kind": i.kind, "statement": i.statement,
-         "confidence": i.confidence, "source_refs": i.source_refs}
-        for i in iter_lessons(bank) if not q or q in i.statement.lower()
-    ]
+    return [{"id": i.id, "kind": i.kind, "statement": i.statement, "confidence": i.confidence,
+             "source_refs": i.source_refs} for i in iter_lessons(bank) if not q or q in i.statement.lower()]

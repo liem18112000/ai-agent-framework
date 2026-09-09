@@ -46,9 +46,7 @@ class InterrogationAgent(BaseAgent):
         spec = _SPECS[self.kind]
         bank = await asyncio.to_thread(build_bank)
         ctx_id = self._context_id(ctx)
-        state = spec.read_state(bank, ctx_id) or {}
-        live = bool(state) and not state.get("done")
-        incoming = incoming_text(ctx)
+        live = bool(state := spec.read_state(bank, ctx_id) or {}) and not state.get("done")
 
         if not live:
             session = spec.make(bank, ctx_id, self.rounds, now())
@@ -57,7 +55,7 @@ class InterrogationAgent(BaseAgent):
                 return
         else:
             session = spec.rehydrate(bank, ctx_id)
-            if incoming:
+            if incoming := incoming_text(ctx):
                 await session.submit(incoming)
 
         rnd = await asyncio.to_thread(session.next_questions)
@@ -78,10 +76,9 @@ class InterrogationAgent(BaseAgent):
 
 
 def _refine_summary(result) -> str:
-    gaps = getattr(result, "open_gaps", None) or getattr(result, "gaps", []) or []
-    conf = getattr(result, "confidence", "")
-    n = len(getattr(result, "insights", []) or [])
-    return f"Refinement complete (confidence: {conf}). {n} insights, {len(gaps)} open gaps."
+    return (f"Refinement complete (confidence: {getattr(result, 'confidence', '')}). "
+            f"{len(getattr(result, 'insights', []) or [])} insights, "
+            f"{len(getattr(result, 'open_gaps', None) or getattr(result, 'gaps', []) or [])} open gaps.")
 
 
 def _register_refine_spec() -> None:

@@ -9,8 +9,7 @@ from common.models import Answer, Insight, LinkRecord, Note, Question
 
 def note_from_dict(d: dict) -> Note:
     names = {f.name for f in fields(Note)} - {"links"}
-    links = [LinkRecord(**lr) for lr in d.get("links", [])]
-    return Note(**{k: v for k, v in d.items() if k in names}, links=links)
+    return Note(**{k: v for k, v in d.items() if k in names}, links=[LinkRecord(**lr) for lr in d.get("links", [])])
 
 
 def _from(cls, d: dict):
@@ -19,16 +18,13 @@ def _from(cls, d: dict):
     return cls(**{k: v for k, v in d.items() if k in names})
 
 
-def question_from_dict(d: dict) -> Question:
-    return _from(Question, d)
+def question_from_dict(d: dict) -> Question: return _from(Question, d)
 
 
-def answer_from_dict(d: dict) -> Answer:
-    return _from(Answer, d)
+def answer_from_dict(d: dict) -> Answer: return _from(Answer, d)
 
 
-def insight_from_dict(d: dict) -> Insight:
-    return _from(Insight, d)
+def insight_from_dict(d: dict) -> Insight: return _from(Insight, d)
 
 
 def merge_notes(old: Note, new: Note) -> Note:

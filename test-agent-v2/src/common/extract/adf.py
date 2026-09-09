@@ -14,14 +14,10 @@ def _walk_adf(node, out: list[tuple[str, str]]) -> None:
     if isinstance(node, dict):
         if node.get("type") == "text":
             for mark in node.get("marks", []):
-                if mark.get("type") == "link":
-                    href = mark.get("attrs", {}).get("href")
-                    if href:
-                        out.append((href, node.get("text", "")))
-        elif node.get("type") in ("inlineCard", "blockCard", "embedCard"):
-            url = node.get("attrs", {}).get("url")
-            if url:
-                out.append((url, ""))
+                if mark.get("type") == "link" and (href := mark.get("attrs", {}).get("href")):
+                    out.append((href, node.get("text", "")))
+        elif node.get("type") in ("inlineCard", "blockCard", "embedCard") and (url := node.get("attrs", {}).get("url")):
+            out.append((url, ""))
         for child in node.get("content", []) or []:
             _walk_adf(child, out)
     elif isinstance(node, list):

@@ -17,37 +17,17 @@ def _db_config() -> dict | None:
     direct = os.environ.get("TASK_DB_URL")
     if direct:
         return {"kind": "url", "url": direct}
-
-    conn = os.environ.get("DB_INSTANCE_CONNECTION_NAME")
-    host = os.environ.get("DB_HOST")
+    conn, host = os.environ.get("DB_INSTANCE_CONNECTION_NAME"), os.environ.get("DB_HOST")
     if not (conn or host):
         return None
-
-    user = os.environ.get("DB_USER")
-    password = os.environ.get("DB_PASSWORD")
-    name = os.environ.get("DB_NAME")
+    user, password, name = os.environ.get("DB_USER"), os.environ.get("DB_PASSWORD"), os.environ.get("DB_NAME")
     missing = [k for k, v in (("DB_USER", user), ("DB_PASSWORD", password), ("DB_NAME", name)) if not v]
     if missing:
         log.warning("DB target set but %s missing — treating as no-DB (in-memory / gcs)", ", ".join(missing))
         return None
-
     if conn:
-        return {
-            "kind": "connector",
-            "instance": conn,
-            "user": user,
-            "password": password,
-            "database": name,
-            "private_ip": os.environ.get("DB_USE_PRIVATE_IP", "").lower() in ("1", "true", "yes"),
-        }
-    return {
-        "kind": "tcp",
-        "username": user,
-        "password": password,
-        "database": name,
-        "host": host,
-        "port": int(os.environ.get("DB_PORT", "5432")),
-    }
+        return {"kind": "connector", "instance": conn, "user": user, "password": password, "database": name, "private_ip": os.environ.get("DB_USE_PRIVATE_IP", "").lower() in ("1", "true", "yes")}
+    return {"kind": "tcp", "username": user, "password": password, "database": name, "host": host, "port": int(os.environ.get("DB_PORT", "5432"))}
 
 
 def _connector_engine(cfg: dict):
@@ -62,12 +42,7 @@ def _connector_engine(cfg: dict):
         if state["connector"] is None:
             state["connector"] = await create_async_connector()
         return await state["connector"].connect_async(
-            cfg["instance"],
-            "asyncpg",
-            user=cfg["user"],
-            password=cfg["password"],
-            db=cfg["database"],
-            ip_type=ip_type,
+            cfg["instance"], "asyncpg", user=cfg["user"], password=cfg["password"], db=cfg["database"], ip_type=ip_type
         )
 
     return create_async_engine("postgresql+asyncpg://", async_creator=getconn, pool_pre_ping=True)

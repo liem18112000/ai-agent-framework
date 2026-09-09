@@ -12,5 +12,4 @@ def build_bank():
     from common.memory import MemoryBank
     from common.memory.pg.project import index_on_write
 
-    client = storage.Client(project=os.environ.get("GCP_PROJECT") or os.environ.get("VERTEX_PROJECT"))
-    return MemoryBank(client.bucket(os.environ["GCS_BUCKET"]), on_write=index_on_write)
+    return MemoryBank(storage.Client(project=os.environ.get("GCP_PROJECT") or os.environ.get("VERTEX_PROJECT")).bucket(os.environ["GCS_BUCKET"]), on_write=index_on_write)

@@ -28,9 +28,10 @@ def distill_code_note(result: CodeGraphResult) -> str:
         _basenames(r.rest_clients),
     ]
     if r.enums:
-        lines += ["", "## Key enums (states / codes)"]
-        for path, members in list(r.enums.items())[:10]:
-            lines.append(f"- **{path.rsplit('/', 1)[-1]}**: {', '.join(members[:16])}")
+        lines += ["", "## Key enums (states / codes)"] + [
+            f"- **{path.rsplit('/', 1)[-1]}**: {', '.join(members[:16])}"
+            for path, members in list(r.enums.items())[:10]
+        ]
     if r.god_nodes:
         hubs = ", ".join(f"{g['name']} ({g['edges']})" for g in r.god_nodes[:10])
         lines += ["", "## Core abstractions (most-connected)", hubs]

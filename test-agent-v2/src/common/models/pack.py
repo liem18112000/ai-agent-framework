@@ -44,11 +44,9 @@ class Pack:
             lines.append(f"\n## {n.type}: {n.id} — {n.title}")
             if n.synopsis:
                 lines.append(n.synopsis)
-            followed = [lr for lr in n.links if lr.in_scope]
-            recorded = [lr for lr in n.links if not lr.in_scope]
-            if followed:
+            if followed := [lr for lr in n.links if lr.in_scope]:
                 lines.append("followed links: " + ", ".join(f"{lr.canonical_url}" for lr in followed))
-            if recorded:
+            if recorded := [lr for lr in n.links if not lr.in_scope]:
                 lines.append("recorded-only: " + ", ".join(f"{lr.type}:{lr.url}" for lr in recorded))
         if self.gaps:
             lines.append("\n## Declared gaps (unreachable/broken)\n" + "\n".join(f"- {g}" for g in self.gaps))

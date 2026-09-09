@@ -38,8 +38,6 @@ def build_and_store(
             ws, repo, ref, Path(tmp),
             bb_auth=bb_auth, local_root=Path(local_root) if local_root else None, timeout=timeout,
         )
-        result = build_code_graph(
-            src, repo, commit, _now(), tool="graphify", timeout=timeout,
-        )
+        result = build_code_graph(src, repo, commit, _now(), tool="graphify", timeout=timeout)
     store_code_graph(bank, result)
     return result

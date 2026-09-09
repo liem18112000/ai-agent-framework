@@ -11,21 +11,13 @@ def match_index_nodes(graph, query: str) -> list[dict]:
     q = query.lower()
     if not q:
         return nodes
-    return [
-        n for n in nodes
-        if q in n.get("id", "").lower()
-        or q in (n.get("title") or "").lower()
-        or q in (n.get("type") or "").lower()
-    ]
+    return [n for n in nodes if q in n.get("id", "").lower() or q in (n.get("title") or "").lower() or q in (n.get("type") or "").lower()]
 
 
 _HUB_MIN_INDEX = 20
 
 
-def rank_promotions(
-    graph, queries: list[str], *, prefixes: tuple[str, ...], max_seeds: int,
-    exclude: set[str] | None = None, hub_ratio: float = 0.4,
-) -> list[str]:
+def rank_promotions(graph, queries: list[str], *, prefixes: tuple[str, ...], max_seeds: int, exclude: set[str] | None = None, hub_ratio: float = 0.4) -> list[str]:
     """IDF-rarity rank of index nodes matched by `queries` — the B4 hub-penalty de-bias."""
     n_total = max(len(graph.nodes), 1)
     suppress_hubs = n_total >= _HUB_MIN_INDEX
@@ -34,14 +26,11 @@ def rank_promotions(
     for q in queries:
         if not q:
             continue
-        hits = match_index_nodes(graph, q)
-        df = len(hits)
-        if df == 0 or (suppress_hubs and df / n_total > hub_ratio):
+        if (df := len(hits := match_index_nodes(graph, q))) == 0 or (suppress_hubs and df / n_total > hub_ratio):
             continue
         idf = math.log(n_total / (1 + df))
         for node in hits:
-            nid = node.get("id", "")
-            if nid.startswith(prefixes) and nid not in exclude:
+            if (nid := node.get("id", "")).startswith(prefixes) and nid not in exclude:
                 scores[nid] = scores.get(nid, 0.0) + idf
     ranked = sorted(scores, key=lambda nid: (-scores[nid], nid))
     return ranked[:max_seeds]

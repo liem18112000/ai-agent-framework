@@ -13,27 +13,18 @@ Understander = Callable[[Pack, list[Insight], list[Question], list[Question], st
 
 
 def restate(
-    pack: Pack,
-    insights: list[Insight],
-    *,
-    open_questions: list[Question] | None = None,
-    deferred: list[Question] | None = None,
-    understander: Understander | None = None,
+    pack: Pack, insights: list[Insight], *, open_questions: list[Question] | None = None,
+    deferred: list[Question] | None = None, understander: Understander | None = None,
 ) -> tuple[str, str]:
     open_questions = list(open_questions or [])
     deferred = list(deferred or [])
     confidence = _confidence(insights, open_questions)
     understander = understander or make_understander()
-    md = understander(pack, insights, open_questions, deferred, confidence)
-    return md, confidence
+    return understander(pack, insights, open_questions, deferred, confidence), confidence
 
 
 def _confidence(insights: list[Insight], open_questions: list[Question]) -> str:
-    if open_questions:
-        return "low"
-    if any(i.confidence == "low" for i in insights):
-        return "medium"
-    return "high"
+    return "low" if open_questions else "medium" if any(i.confidence == "low" for i in insights) else "high"
 
 
 def make_understander() -> Understander:
@@ -42,21 +33,14 @@ def make_understander() -> Understander:
         proj, loc, model = cfg
 
         def understander(pack, insights, opens, deferred, confidence):
-            return claude_understanding(
-                pack, insights, opens, deferred, confidence,
-                project=proj, location=loc, model=model,
-            )
+            return claude_understanding(pack, insights, opens, deferred, confidence, project=proj, location=loc, model=model)
 
         return understander
     return heuristic_understanding
 
 
 def heuristic_understanding(
-    pack: Pack,
-    insights: list[Insight],
-    open_questions: list[Question],
-    deferred: list[Question],
-    confidence: str,
+    pack: Pack, insights: list[Insight], open_questions: list[Question], deferred: list[Question], confidence: str,
 ) -> str:
     who = pack.seed or pack.context_id
     primary = pack.grounded[0] if pack.grounded else None

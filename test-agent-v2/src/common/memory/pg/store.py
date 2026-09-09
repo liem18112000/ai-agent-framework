@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from common.memory.pg.schema import HNSW_INDEX_SQL, SCHEMA_SQL
 from common.monitoring import get_logger
 
@@ -28,24 +30,21 @@ class PgMemoryStore:
         self._ready = False
 
     async def _ensure(self) -> None:
-        """Apply the schema once per process (idempotent CREATE … IF NOT EXISTS). SCHEMA_SQL is"""
+        """Apply the schema once per process (idempotent CREATE … IF NOT EXISTS statements)."""
         if self._ready:
             return
         from sqlalchemy import text
         async with self._engine.begin() as conn:
-            for stmt in (s.strip() for s in SCHEMA_SQL.split(";")):
-                if stmt:
-                    await conn.execute(text(stmt))
+            for stmt in (s.strip() for s in SCHEMA_SQL.split(";") if s.strip()):
+                await conn.execute(text(stmt))
         self._ready = True
 
     async def upsert_node(self, node: dict) -> None:
         """INSERT … ON CONFLICT (id) DO UPDATE — a note/insight projection (no embedding here)."""
         from sqlalchemy import text
         await self._ensure()
-        cols = ("id", "type", "kind", "title", "synopsis", "source_url", "content_uri",
-                "run_id", "context_id", "scope", "status", "confidence", "meta")
-        params = {c: node.get(c) for c in cols}
-        params["meta"] = params["meta"] or {}
+        params = {c: node.get(c) for c in ("id", "type", "kind", "title", "synopsis", "source_url", "content_uri",
+                                            "run_id", "context_id", "scope", "status", "confidence", "meta")}
         sql = text(
             "INSERT INTO memory_node (id,type,kind,title,synopsis,source_url,content_uri,"
             "run_id,context_id,scope,status,confidence,meta) VALUES "
@@ -57,8 +56,7 @@ class PgMemoryStore:
             "context_id=EXCLUDED.context_id, scope=EXCLUDED.scope, status=EXCLUDED.status, "
             "confidence=EXCLUDED.confidence, meta=memory_node.meta || EXCLUDED.meta"
         )
-        import json
-        params["meta"] = json.dumps(params["meta"])
+        params["meta"] = json.dumps(params["meta"] or {})
         async with self._engine.begin() as conn:
             await conn.execute(sql, params)
 
@@ -88,7 +86,7 @@ class PgMemoryStore:
             await conn.execute(sql, {"emb": _vec_literal(vec), "h": emb_hash, "id": node_id})
 
     async def embedding_fresh(self, node_id: str, emb_hash: str) -> bool:
-        """True if the row already has an embedding computed from this exact text (content-hash"""
+        """True if the row already has an embedding computed from this exact text (content-hash match)."""
         from sqlalchemy import text
         await self._ensure()
         sql = text("SELECT (embedding IS NOT NULL AND meta->>'emb_hash' = :h) "
@@ -97,16 +95,14 @@ class PgMemoryStore:
             return bool((await conn.execute(sql, {"h": emb_hash, "id": node_id})).scalar())
 
     async def ensure_ann_index(self) -> None:
-        """Build the HNSW ANN index (idempotent). Kept out of the lazy `_ensure` DDL because its"""
+        """Build the HNSW ANN index (idempotent); kept out of the lazy `_ensure` DDL since it can be slow."""
         from sqlalchemy import text
         await self._ensure()
         async with self._engine.begin() as conn:
             await conn.execute(text(HNSW_INDEX_SQL))
 
-    async def search(self, *, q_text: str = "", q_embed: list[float] | None = None,
-                     types: list[str] | None = None, scopes: list[str] | None = None,
-                     k: int = 40) -> list[dict]:
-        """Hybrid recall (M4): vector-nearest `embedding <=> q` ∪ full-text `tsv @@ q`, RRF-fused,"""
+    async def search(self, *, q_text: str = "", q_embed: list[float] | None = None, types: list[str] | None = None, scopes: list[str] | None = None, k: int = 40) -> list[dict]:
+        """Hybrid recall (M4): vector-nearest `embedding <=> q` ∪ full-text `tsv @@ q`, RRF-fused."""
         await self._ensure()
         scopes = scopes or ["context", "shared"]
         vec_ids = await self._vector_ids(q_embed, types, scopes, k) if q_embed else []
@@ -169,8 +165,7 @@ class PgMemoryStore:
         async with self._engine.connect() as conn:
             return bool((await conn.execute(sql, {"c": candidate, "a": list(anchors)})).scalar())
 
-    async def recall(self, *, seed_refs: set[str], q_embed: list[float] | None = None,
-                     limit: int = 10) -> list[str]:
+    async def recall(self, *, seed_refs: set[str], q_embed: list[float] | None = None, limit: int = 10) -> list[str]:
         """Prior-lesson recall (M4b): structural ∪ semantic, deduped, structural-first."""
         from sqlalchemy import text
         await self._ensure()
@@ -186,8 +181,7 @@ class PgMemoryStore:
             async with self._engine.connect() as conn:
                 for rid, syn in (await conn.execute(sql, {"refs": list(seed_refs), "lim": limit})).all():
                     if syn and rid not in seen:
-                        seen.add(rid)
-                        out.append(syn)
+                        seen.add(rid); out.append(syn)
         if q_embed and len(out) < limit:
             sql = text(
                 "SELECT id, synopsis FROM memory_node "
@@ -197,6 +191,5 @@ class PgMemoryStore:
             async with self._engine.connect() as conn:
                 for rid, syn in (await conn.execute(sql, {"q": _vec_literal(q_embed), "lim": limit})).all():
                     if syn and rid not in seen:
-                        seen.add(rid)
-                        out.append(syn)
+                        seen.add(rid); out.append(syn)
         return out[:limit]

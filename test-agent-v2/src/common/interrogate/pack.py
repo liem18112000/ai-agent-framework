@@ -16,17 +16,11 @@ def load_pack(bank, context_id: str, *, seed: str = "", gaps: list[str] | None =
     """Read the pack for `context_id` — the nodes THIS context gathered, not the whole bank."""
     graph, _ = bank.load_index()
     notes = [
-        note
-        for node in graph.nodes.values()
-        if node.get("type") != INSIGHT
-        and (note := bank.read_note(node["id"], node["type"])) is not None
-        and note.run_id == context_id
+        note for node in graph.nodes.values() if node.get("type") != INSIGHT
+        and (note := bank.read_note(node["id"], node["type"])) is not None and note.run_id == context_id
     ]
     if not notes and graph.nodes:
-        log.warning(
-            "load_pack: %d global nodes but 0 own %s (run_id mismatch) — scoped pack is empty",
-            len(graph.nodes), context_id,
-        )
+        log.warning("load_pack: %d global nodes but 0 own %s (run_id mismatch) — scoped pack is empty", len(graph.nodes), context_id)
     scoped = _scoped_graph(graph, {n.id for n in notes})
     return Pack(context_id=context_id, notes=notes, graph=scoped, gaps=list(gaps or []), seed=seed)
 

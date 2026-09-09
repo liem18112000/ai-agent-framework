@@ -23,18 +23,16 @@ def _grounded(graph: Graph, refs: list[str]) -> bool:
 
 
 def _to_insight(sig: LessonSignal, *, context_id: str, run_id: str, step: str, now: str) -> Insight:
-    return Insight(
-        id=f"insight:{context_id}:{sig.kind}-{_key(sig.statement)}",
-        kind=sig.kind, context_id=context_id, question_id="",
-        statement=sig.statement.strip(), answered_by="agent-self", confidence=sig.confidence,
-        source_refs=list(sig.source_refs), created_at=now, run_id=run_id, rationale=sig.rationale,
-        origin_step=step, scope="context", status="active",
-    )
+    return Insight(id=f"insight:{context_id}:{sig.kind}-{_key(sig.statement)}", kind=sig.kind,
+                   context_id=context_id, question_id="", statement=sig.statement.strip(),
+                   answered_by="agent-self", confidence=sig.confidence, source_refs=list(sig.source_refs),
+                   created_at=now, run_id=run_id, rationale=sig.rationale, origin_step=step,
+                   scope="context", status="active")
 
 
 def capture_lessons(
-    bank, *, context_id: str, run_id: str = "", step: str = "",
-    signals: list[LessonSignal], distiller: Distiller | None = None, now: str = "",
+    bank, *, context_id: str, run_id: str = "", step: str = "", signals: list[LessonSignal],
+    distiller: Distiller | None = None, now: str = "",
 ) -> list[Insight]:
     """Distil `signals` → grounded, deduped Insight lessons; persist + index. Returns those written"""
     try:

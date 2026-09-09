@@ -92,30 +92,17 @@ class Graph:
     def add_note(self, note: Note) -> None:
         self.nodes[note.id] = {"id": note.id, "type": note.type, "title": note.title}
         for lr in note.links:
-            key = f"{lr.source_id}->{lr.canonical_url}"
-            self.edges[key] = {
-                "source_id": lr.source_id,
-                "target": lr.canonical_url,
-                "type": lr.type,
-                "origin": lr.origin,
-                "in_scope": lr.in_scope,
+            self.edges[f"{lr.source_id}->{lr.canonical_url}"] = {
+                "source_id": lr.source_id, "target": lr.canonical_url, "type": lr.type,
+                "origin": lr.origin, "in_scope": lr.in_scope,
             }
 
     def add_insight(self, insight: Insight) -> None:
         """Add an insight as a graph node, with an edge to each source it builds on."""
-        self.nodes[insight.id] = {
-            "id": insight.id,
-            "type": INSIGHT,
-            "title": insight.statement[:80],
-        }
+        self.nodes[insight.id] = {"id": insight.id, "type": INSIGHT, "title": insight.statement[:80]}
         for ref in insight.source_refs:
-            key = f"{insight.id}->{ref}"
-            self.edges[key] = {
-                "source_id": insight.id,
-                "target": ref,
-                "type": INSIGHT,
-                "origin": insight.kind,
-                "in_scope": True,
+            self.edges[f"{insight.id}->{ref}"] = {
+                "source_id": insight.id, "target": ref, "type": INSIGHT, "origin": insight.kind, "in_scope": True,
             }
 
     def to_json(self) -> dict:
@@ -124,8 +111,6 @@ class Graph:
     @classmethod
     def from_json(cls, data: dict) -> Graph:
         g = cls()
-        for n in data.get("nodes", []):
-            g.nodes[n["id"]] = n
-        for e in data.get("edges", []):
-            g.edges[f"{e['source_id']}->{e['target']}"] = e
+        g.nodes = {n["id"]: n for n in data.get("nodes", [])}
+        g.edges = {f"{e['source_id']}->{e['target']}": e for e in data.get("edges", [])}
         return g

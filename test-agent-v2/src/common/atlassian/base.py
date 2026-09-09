@@ -26,15 +26,9 @@ class BaseClient:
     """Config + retry core; service mixins add the endpoint methods."""
 
     def __init__(
-        self,
-        base_url: str,
-        email: str,
-        api_token: str,
-        *,
-        bitbucket_auth: tuple[str, str] | None = None,
-        bitbucket_base: str = BITBUCKET_API,
-        client: httpx.AsyncClient | None = None,
-        backoffs: tuple[float, ...] = RETRY_BACKOFFS,
+        self, base_url: str, email: str, api_token: str, *,
+        bitbucket_auth: tuple[str, str] | None = None, bitbucket_base: str = BITBUCKET_API,
+        client: httpx.AsyncClient | None = None, backoffs: tuple[float, ...] = RETRY_BACKOFFS,
         timeout: float = 30.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")
@@ -45,12 +39,8 @@ class BaseClient:
         self._client = client or httpx.AsyncClient(timeout=timeout)
 
     async def _request(
-        self,
-        url: str,
-        params: dict | None = None,
-        auth: tuple[str, str] | None = None,
-        *,
-        accept: str | None = "application/json",
+        self, url: str, params: dict | None = None, auth: tuple[str, str] | None = None,
+        *, accept: str | None = "application/json",
     ) -> httpx.Response:
         """GET `url` with bounded retry on transient failures."""
         headers = {"Accept": accept} if accept else {}
@@ -63,8 +53,7 @@ class BaseClient:
                 if not _retryable(exc) or attempt == len(self._backoffs):
                     raise
                 wait = self._backoffs[attempt]
-                log.warning("retry %d/%d in %.0fs: %s (%s)",
-                            attempt + 1, len(self._backoffs), wait, url, exc)
+                log.warning("retry %d/%d in %.0fs: %s (%s)", attempt + 1, len(self._backoffs), wait, url, exc)
                 await asyncio.sleep(wait)
         raise AssertionError("unreachable")
 

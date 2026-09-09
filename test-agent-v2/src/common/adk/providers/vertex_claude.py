@@ -23,23 +23,16 @@ class VertexClaudeProvider:
         project, location, model = cfg
         from google.adk.models.lite_llm import LiteLlm
 
-        return LiteLlm(
-            model=f"vertex_ai/{model}",
-            vertex_project=project,
-            vertex_location=location,
-            max_tokens=max_tokens or get_config().default_max_tokens,
-            thinking={"type": "disabled"},
-        )
+        return LiteLlm(model=f"vertex_ai/{model}", vertex_project=project, vertex_location=location,
+                       max_tokens=max_tokens or get_config().default_max_tokens, thinking={"type": "disabled"})
 
     def complete(self, prompt: str, *, max_tokens: int) -> str:
         project, location, model = self._require_config()
-        return _vertex_complete(prompt, project=project, location=location, model=model,
-                                max_tokens=max_tokens)
+        return _vertex_complete(prompt, project=project, location=location, model=model, max_tokens=max_tokens)
 
     async def agenerate(self, prompt: str, *, max_tokens: int) -> str:
         project, location, model = self._require_config()
-        return await _vertex_agenerate(prompt, project=project, location=location, model=model,
-                                       max_tokens=max_tokens)
+        return await _vertex_agenerate(prompt, project=project, location=location, model=model, max_tokens=max_tokens)
 
     @staticmethod
     def _require_config() -> tuple[str, str, str]:

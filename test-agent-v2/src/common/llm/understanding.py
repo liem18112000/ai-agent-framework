@@ -13,15 +13,8 @@ if TYPE_CHECKING:
 
 
 def claude_understanding(
-    pack: Pack,
-    insights: list[Insight],
-    open_questions: list[Question],
-    deferred: list[Question],
-    confidence: str,
-    *,
-    project: str,
-    location: str,
-    model: str,
+    pack: Pack, insights: list[Insight], open_questions: list[Question], deferred: list[Question],
+    confidence: str, *, project: str, location: str, model: str,
 ) -> str:
-    prompt = understanding_prompt(pack, insights, open_questions, confidence)
-    return complete(prompt, project=project, location=location, model=model, max_tokens=700).strip() + "\n"
+    return complete(understanding_prompt(pack, insights, open_questions, confidence),
+                    project=project, location=location, model=model, max_tokens=700).strip() + "\n"

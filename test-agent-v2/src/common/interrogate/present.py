@@ -24,13 +24,7 @@ def extract_ctx(text: str, prefixes: tuple[str, ...]) -> str | None:
 
 def render_questions(context_id: str, open_qs, *, header: str) -> str:
     """Format one open question round (id · round · options · recommendation) for the human."""
-    lines = [
-        (
-            f"{header} for context {context_id} "
-            f"({open_qs[0].round} round) — reply e.g. `{open_qs[0].id}: <your choice>`:"
-        ),
-        "",
-    ]
+    lines = [f"{header} for context {context_id} ({open_qs[0].round} round) — reply e.g. `{open_qs[0].id}: <your choice>`:", ""]
     for q in open_qs:
         lines.append(f"- {q.id} [{q.round}] {q.question}")
         for opt in q.options:

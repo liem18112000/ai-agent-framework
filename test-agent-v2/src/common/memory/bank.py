@@ -77,7 +77,6 @@ class MemoryBank:
         return self._read_json(path, default)
 
     def put_text(self, path: str, text: str) -> str:
-        """Write markdown/text, run through the redactor (like the rendered notes)."""
         self._put(path, self._redact(text), "text/markdown")
         return path
 
@@ -90,18 +89,13 @@ class MemoryBank:
         return note_from_dict(json.loads(blob.download_as_text())) if blob else None
 
     def read_note_md(self, note_id: str, note_type: str) -> str | None:
-        """The rendered markdown for a note (works for crawl notes and insights)."""
         blob = self._bucket.get_blob(self._note_md(note_type, note_id))
         return blob.download_as_text() if blob else None
 
     def upsert_note(self, note: Note) -> str:
         existing = self.read_note(note.id, note.type)
         merged = merge_notes(existing, note) if existing else note
-        self._put(
-            self._note_json(note.type, note.id),
-            json.dumps(asdict(merged), indent=1, ensure_ascii=False),
-            "application/json",
-        )
+        self._put(self._note_json(note.type, note.id), json.dumps(asdict(merged), indent=1, ensure_ascii=False), "application/json")
         path = self._note_md(note.type, note.id)
         self._put(path, self._redact(render_note_md(merged)), "text/markdown")
         self._fire_on_write(merged.id, merged.type, "")
@@ -109,38 +103,29 @@ class MemoryBank:
 
     def load_index(self) -> tuple[Graph, int]:
         blob = self._bucket.get_blob(INDEX_JSON)
-        if blob is None:
-            return Graph(), 0
-        return Graph.from_json(json.loads(blob.download_as_text())), blob.generation
+        return (Graph(), 0) if blob is None else (Graph.from_json(json.loads(blob.download_as_text())), blob.generation)
 
     def update_index(self, mutate: Callable[[Graph], None], *, max_retries: int = 5) -> Graph:
         for _ in range(max_retries):
             graph, generation = self.load_index()
             mutate(graph)
             try:
-                self._put(
-                    INDEX_JSON,
-                    json.dumps(graph.to_json(), indent=1, ensure_ascii=False),
-                    "application/json",
-                    if_generation_match=generation,
-                )
+                self._put(INDEX_JSON, json.dumps(graph.to_json(), indent=1, ensure_ascii=False), "application/json", if_generation_match=generation)
             except PreconditionFailed:
                 continue
             self._put(INDEX_MD, self._redact(render_index_md(graph)), "text/markdown")
             return graph
         raise RuntimeError("index CAS retries exhausted")
 
-    def mutate_json(self, path: str, mutate: Callable[[object], object], *,
-                    default, max_retries: int = 5):
-        """Compare-and-set a JSON blob at `path` (generalises `update_index`'s CAS loop for any"""
+    def mutate_json(self, path: str, mutate: Callable[[object], object], *, default, max_retries: int = 5):
+        """CAS a JSON blob at `path` (generalises `update_index`'s retry loop for any shape)."""
         for _ in range(max_retries):
             blob = self._bucket.get_blob(path)
             current = json.loads(blob.download_as_text()) if blob else default
             generation = blob.generation if blob else 0
             new = mutate(current)
             try:
-                self._put(path, json.dumps(new, indent=1, ensure_ascii=False),
-                          "application/json", if_generation_match=generation)
+                self._put(path, json.dumps(new, indent=1, ensure_ascii=False), "application/json", if_generation_match=generation)
             except PreconditionFailed:
                 continue
             return new
@@ -160,11 +145,7 @@ class MemoryBank:
 
     def upsert_insight(self, insight: Insight) -> str:
         """Write an insight note (json sidecar + rendered md). Index update is batched by the caller."""
-        self._put(
-            self._note_json(INSIGHT, insight.id),
-            json.dumps(asdict(insight), indent=1, ensure_ascii=False),
-            "application/json",
-        )
+        self._put(self._note_json(INSIGHT, insight.id), json.dumps(asdict(insight), indent=1, ensure_ascii=False), "application/json")
         path = self._note_md(INSIGHT, insight.id)
         self._put(path, self._redact(render_insight_md(insight)), "text/markdown")
         self._fire_on_write(insight.id, INSIGHT, insight.kind)
@@ -176,13 +157,11 @@ class MemoryBank:
 
     def write_questions(self, context_id: str, questions: list[Question]) -> str:
         path = f"{self._refine_dir(context_id)}/questions.json"
-        self._put(path, json.dumps([asdict(q) for q in questions], indent=1, ensure_ascii=False),
-                  "application/json")
+        self._put(path, json.dumps([asdict(q) for q in questions], indent=1, ensure_ascii=False), "application/json")
         return path
 
     def read_questions(self, context_id: str) -> list[Question]:
-        raw = self._read_json(f"{self._refine_dir(context_id)}/questions.json", [])
-        return [question_from_dict(d) for d in raw]
+        return [question_from_dict(d) for d in self._read_json(f"{self._refine_dir(context_id)}/questions.json", [])]
 
     def append_answers(self, context_id: str, answers: list[Answer]) -> str:
         path = f"{self._refine_dir(context_id)}/answers.json"
@@ -218,8 +197,7 @@ class MemoryBank:
 
     def link_session(self, a2a_context_id: str, pack_context_id: str) -> None:
         """Map an A2A conversation id → the pack context_id it is refining."""
-        path = f"{ROOT}/refine/_sessions/{_slug(a2a_context_id)}.json"
-        self._put(path, json.dumps({"pack_context_id": pack_context_id}), "application/json")
+        self._put(f"{ROOT}/refine/_sessions/{_slug(a2a_context_id)}.json", json.dumps({"pack_context_id": pack_context_id}), "application/json")
 
     def resolve_session(self, a2a_context_id: str) -> str | None:
         d = self._read_json(f"{ROOT}/refine/_sessions/{_slug(a2a_context_id)}.json", None)

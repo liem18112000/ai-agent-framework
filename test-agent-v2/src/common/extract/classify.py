@@ -22,20 +22,15 @@ def classify_url(url: str) -> tuple[str, str]:
     p = urlparse(url)
     host, path = p.netloc.lower(), p.path
     if "atlassian.net" in host and "/wiki/" in path:
-        m = re.search(r"/pages/(\d+)", path)
-        return CONFLUENCE_PAGE, (f"confluence:{m.group(1)}" if m else url)
+        return CONFLUENCE_PAGE, (f"confluence:{m.group(1)}" if (m := re.search(r"/pages/(\d+)", path)) else url)
     if "atlassian.net" in host and "/browse/" in path:
-        key = path.split("/browse/")[1].split("/")[0]
-        return JIRA_ISSUE, f"jira:{key}"
+        return JIRA_ISSUE, f"jira:{path.split('/browse/')[1].split('/')[0]}"
     if "/rest/api/3/attachment/" in path:
         return ATTACHMENT, url
     if "bitbucket.org" in host:
-        m = re.match(r"/([^/]+)/([^/]+)/src/([^/]+)/(.+)$", path)
-        if m:
-            ws, repo, ref, fp = m.groups()
-            return BITBUCKET, f"bitbucket:{ws}/{repo}/src/{ref}/{fp}"
-        r = re.fullmatch(r"/([^/]+)/([^/]+)/?", path)
-        if r:
+        if m := re.match(r"/([^/]+)/([^/]+)/src/([^/]+)/(.+)$", path):
+            return BITBUCKET, f"bitbucket:{m.group(1)}/{m.group(2)}/src/{m.group(3)}/{m.group(4)}"
+        if r := re.fullmatch(r"/([^/]+)/([^/]+)/?", path):
             return CODEGRAPH, f"codegraph:{r.group(1)}/{r.group(2)}"
         return BITBUCKET, url
     if "figma.com" in host:

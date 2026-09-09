@@ -37,12 +37,11 @@ def embed_texts(texts: list[str], *, task: str = TASK_DOCUMENT) -> list[list[flo
     """Embed a batch (blocking). Called only via `aembed_one` off the event loop."""
     from vertexai.language_models import TextEmbeddingInput
 
-    inputs = [TextEmbeddingInput(t, task) for t in texts]
-    return [e.values for e in _get_model().get_embeddings(inputs)]
+    return [e.values for e in _get_model().get_embeddings([TextEmbeddingInput(t, task) for t in texts])]
 
 
 async def aembed_one(text: str, *, task: str = TASK_DOCUMENT) -> list[float]:
-    """One embedding, thread-offloaded. Empty text → []. Best-effort — [] on failure so the"""
+    """One embedding, thread-offloaded; empty text or failure → []."""
     if not text:
         return []
     try:
@@ -54,7 +53,7 @@ async def aembed_one(text: str, *, task: str = TASK_DOCUMENT) -> list[float]:
 
 
 async def aembed_batch(texts: list[str], *, task: str = TASK_DOCUMENT) -> list[list[float]]:
-    """Embed a whole batch in ONE Vertex call, thread-offloaded. Whole-batch best-effort: any"""
+    """Embed a whole batch in ONE Vertex call, thread-offloaded; best-effort → [] on failure."""
     if not texts:
         return []
     try:
@@ -65,7 +64,7 @@ async def aembed_batch(texts: list[str], *, task: str = TASK_DOCUMENT) -> list[l
 
 
 def build_embedder():
-    """The DOCUMENT batch embedder for the projector drain, or None when Vertex isn't configured"""
+    """The DOCUMENT batch embedder for the projector drain, or None when Vertex isn't configured."""
     if not embed_configured():
         return None
 

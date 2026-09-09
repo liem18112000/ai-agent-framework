@@ -38,7 +38,6 @@ class LearnDrainPlugin(BasePlugin):
             await maybe_drain_index(bank)
         except Exception:
             log.debug("index drain skipped", exc_info=True)
-        return
 
 
 class LessonRecallPlugin(BasePlugin):
@@ -52,4 +51,3 @@ class LessonRecallPlugin(BasePlugin):
                 return
         except Exception:
             log.debug("lesson recall skipped", exc_info=True)
-        return

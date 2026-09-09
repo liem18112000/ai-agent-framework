@@ -16,19 +16,13 @@ log = get_logger("interrogate.questions")
 Generator = Callable[[Pack, str], list[Question]]
 
 
-def generate_round(
-    pack: Pack, round_name: str, *, max_questions: int = 7, generator: Generator | None = None
-) -> list[Question]:
+def generate_round(pack: Pack, round_name: str, *, max_questions: int = 7, generator: Generator | None = None) -> list[Question]:
     generator = generator or make_generator()
-    questions = [q for q in generator(pack, round_name) if q.round == round_name]
-    questions = _rank(questions)
+    questions = _rank([q for q in generator(pack, round_name) if q.round == round_name])
     _defer_excess_open(questions, max_questions)
     log.info(
-        "round %s: %d questions (%d open, %d self-answered)",
-        round_name,
-        len(questions),
-        sum(q.status == "open" for q in questions),
-        sum(q.status == "self-answered" for q in questions),
+        "round %s: %d questions (%d open, %d self-answered)", round_name, len(questions),
+        sum(q.status == "open" for q in questions), sum(q.status == "self-answered" for q in questions),
     )
     return questions
 

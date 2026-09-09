@@ -17,28 +17,19 @@ def vertex_config() -> tuple[str, str, str] | None:
 
 def first_text(msg: Any) -> str:
     """Return the first text block from an Anthropic message, skipping non-text blocks."""
-    for block in msg.content:
-        if getattr(block, "type", None) == "text":
-            return block.text
-    return ""
+    return next((b.text for b in msg.content if getattr(b, "type", None) == "text"), "")
 
 
 def complete(prompt: str, *, project: str, location: str, model: str, max_tokens: int) -> str:
     """Run one Claude-on-Vertex completion and return its first text block."""
     from anthropic import AnthropicVertex
 
-    client = AnthropicVertex(project_id=project, region=location)
-    msg = client.messages.create(
-        model=model,
-        max_tokens=max_tokens,
-        thinking={"type": "disabled"},
+    return first_text(AnthropicVertex(project_id=project, region=location).messages.create(
+        model=model, max_tokens=max_tokens, thinking={"type": "disabled"},
         messages=[{"role": "user", "content": prompt}],
-    )
-    return first_text(msg)
+    ))
 
 
 async def agenerate(prompt: str, *, project: str, location: str, model: str, max_tokens: int) -> str:
     """Non-blocking `complete()` — run the blocking Vertex call in a worker thread."""
-    return await asyncio.to_thread(
-        complete, prompt, project=project, location=location, model=model, max_tokens=max_tokens
-    )
+    return await asyncio.to_thread(complete, prompt, project=project, location=location, model=model, max_tokens=max_tokens)

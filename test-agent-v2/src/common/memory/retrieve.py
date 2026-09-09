@@ -20,7 +20,7 @@ def _graph_search(bank, query: str) -> list[dict]:
 
 
 async def search_nodes(bank, query: str, *, store=None) -> list[dict]:
-    """Index nodes matching `query`, as `{id,type,title}` dicts. Postgres (hybrid/postgres) when a"""
+    """Index nodes matching `query`, as `{id,type,title}` dicts; Postgres in hybrid/postgres mode."""
     if backend() in ("hybrid", "postgres"):
         store = store or _build_store()
         if store is not None:
@@ -34,7 +34,7 @@ async def search_nodes(bank, query: str, *, store=None) -> list[dict]:
 
 
 async def recall_lessons(bank, *, seed_refs: set[str], query_text: str = "", limit: int = 5) -> list[str]:
-    """Prior lessons for a run — structural (source_refs ∩ seed_refs) ∪ semantic (vector-nearest,"""
+    """Prior lessons for a run — structural (source_refs ∩ seed_refs) ∪ semantic (vector-nearest)."""
     if backend() in ("hybrid", "postgres"):
         store = _build_store()
         if store is not None:
@@ -58,11 +58,9 @@ def _build_store():
 
 
 async def _query_embedding(query: str):
-    """Embed the query (RETRIEVAL_QUERY) for the vector arm, or None when Vertex isn't configured"""
+    """Embed the query (RETRIEVAL_QUERY) for the vector arm, or None when Vertex isn't configured."""
     if not query:
         return None
     from common.memory.pg import embed
 
-    if not embed.embed_configured():
-        return None
-    return (await embed.aembed_query(query)) or None
+    return (await embed.aembed_query(query)) or None if embed.embed_configured() else None

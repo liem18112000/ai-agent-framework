@@ -10,10 +10,8 @@ from google.genai import types
 
 def incoming_text(ctx) -> str:
     """The current turn's user text. ADK hands it to us directly as the InvocationContext's"""
-    for part in getattr(getattr(ctx, "user_content", None), "parts", None) or []:
-        if getattr(part, "text", None):
-            return part.text
-    return ""
+    parts = getattr(getattr(ctx, "user_content", None), "parts", None) or []
+    return next((p.text for p in parts if getattr(p, "text", None)), "")
 
 
 def now() -> str:
@@ -24,6 +22,4 @@ def now() -> str:
 def text_event(author: str, text: str, *, state_delta: dict | None = None) -> Event:
     """A model-authored text Event, optionally carrying a session state_delta (the checkpoint)."""
     kwargs = {"author": author, "content": types.Content(role="model", parts=[types.Part(text=text)])}
-    if state_delta:
-        kwargs["actions"] = EventActions(state_delta=state_delta)
-    return Event(**kwargs)
+    return Event(**kwargs, actions=EventActions(state_delta=state_delta)) if state_delta else Event(**kwargs)
