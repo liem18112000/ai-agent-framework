@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from common.interrogate.pack import load_pack
-from test_plan_definition.models import PlanPack
+from common.testplan.models import PlanPack
 
 
 def load_plan_pack(bank, context_id: str, *, seed: str = "") -> PlanPack:

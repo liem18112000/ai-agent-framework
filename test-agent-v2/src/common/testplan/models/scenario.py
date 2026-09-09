@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from test_plan_definition.models.plan import TestPlan, TestPlanRun
+from common.testplan.models.plan import TestPlan, TestPlanRun
 
 TEST_SCENARIO = "test-scenario"
 

@@ -4,10 +4,10 @@ test-data. Each returns None (→ heuristic fallback) when unconfigured or the o
 from __future__ import annotations
 
 from common.adk import agent_model
-from test_plan_definition.llm.adk import build_generator_agent, run_json_agent
-from test_plan_definition.llm.prompts import scenarios_prompt, steps_prompt, testdata_prompt
-from test_plan_definition.llm.schemas import Scenarios, StepsList, TestDataList
-from test_plan_definition.models import TestData, TestPlan, TestScenario, TestStep
+from common.testplan.llm.adk import build_generator_agent, run_json_agent
+from common.testplan.llm.prompts import scenarios_prompt, steps_prompt, testdata_prompt
+from common.testplan.llm.schemas import Scenarios, StepsList, TestDataList
+from common.testplan.models import TestData, TestPlan, TestScenario, TestStep
 from test_plan_definition.monitoring import get_logger
 
 log = get_logger("llm.implement")

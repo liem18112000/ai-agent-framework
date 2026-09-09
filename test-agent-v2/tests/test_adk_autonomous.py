@@ -5,8 +5,8 @@ from __future__ import annotations
 from google.genai import types
 
 from common.memory import MemoryBank
-from test_plan_definition import memory as store
-from test_plan_definition.models import CONFIRMED
+from common.testplan import memory as store
+from common.testplan.models import CONFIRMED
 from tests.conftest import FakeBucket
 from tests.eval.harness import recorded_client
 

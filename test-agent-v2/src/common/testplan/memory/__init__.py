@@ -1,6 +1,6 @@
 """Test-Plan persistence — writers over the shared GCS memory bank (test-plan/ prefix)."""
 
-from test_plan_definition.memory.writers import (
+from common.testplan.memory.writers import (
     append_plan_run_log,
     link_session,
     read_answers,

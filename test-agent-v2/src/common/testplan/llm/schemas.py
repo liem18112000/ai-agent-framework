@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from test_plan_definition.models import HAPPY, TestData, TestPlan, TestScenario, TestStep
+from common.testplan.models import HAPPY, TestData, TestPlan, TestScenario, TestStep
 
 
 class ScenarioItem(BaseModel):

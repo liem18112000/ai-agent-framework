@@ -5,7 +5,7 @@ from __future__ import annotations
 from google.genai import types
 
 from common.memory import MemoryBank
-from test_plan_definition.models import CONFIRMED
+from common.testplan.models import CONFIRMED
 
 
 async def _tpd_runner(bank, ctx_id, monkeypatch):
@@ -54,7 +54,7 @@ async def test_define_approve_implement(monkeypatch, pack_bucket):
 
     approved = await turn(f"approve {ctx_id}")
     assert "APPROVED" in approved
-    from test_plan_definition import memory as store
+    from common.testplan import memory as store
     assert store.read_plan(bank, ctx_id).status == CONFIRMED
 
     impl = await turn(f"implement {ctx_id}")
@@ -85,5 +85,5 @@ async def test_implement_via_graph_drives_scenario_llm_agent(monkeypatch, pack_b
     impl = await turn(f"implement {ctx_id}")
     assert "Implement complete" in impl
     assert fake.calls == 1, f"scenario agent must fire exactly once via the graph, fired {fake.calls}"
-    from test_plan_definition import memory as store
+    from common.testplan import memory as store
     assert "A happy" in (store.read_scenarios_md(bank, ctx_id) or "")

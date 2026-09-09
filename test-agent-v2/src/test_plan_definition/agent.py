@@ -7,9 +7,9 @@ from google.adk.agents import BaseAgent
 from common.adk.events import incoming_text, text_event
 from common.interrogate import present
 from common.memory.factory import build_bank
-from test_plan_definition import memory as store
+from common.testplan import memory as store
+from common.testplan.models import CONFIRMED
 from test_plan_definition.define.agent import wants_define
-from test_plan_definition.models import CONFIRMED
 
 
 class TpdRouter(BaseAgent):

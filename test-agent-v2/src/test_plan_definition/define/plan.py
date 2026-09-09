@@ -6,8 +6,8 @@ from collections.abc import Callable
 
 from common.llm.vertex import vertex_config
 from common.models import Question
-from test_plan_definition.models import ASSUMPTION, DRAFT, PlanDecision, TestPlan
-from test_plan_definition.pack import PlanPack
+from common.testplan.models import ASSUMPTION, DRAFT, PlanDecision, TestPlan
+from common.testplan.pack import PlanPack
 
 _METHODOLOGIES = ("api", "e2e", "ui")
 

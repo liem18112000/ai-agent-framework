@@ -6,9 +6,9 @@ from __future__ import annotations
 import json
 
 from common.adk.interrogation import InterrogationAgent, SessionSpec, register_spec
-from test_plan_definition import memory as store
+from common.testplan import memory as store
+from common.testplan.models import ROUNDS
 from test_plan_definition.define.loop import PlanResult, PlanSession
-from test_plan_definition.models import ROUNDS
 
 
 def wants_define(text: str) -> bool:

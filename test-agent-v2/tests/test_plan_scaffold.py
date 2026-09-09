@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from test_plan_definition.models import ROUNDS, TestPlan, TestScenario
-from test_plan_definition.pack import PlanPack
+from common.testplan.models import ROUNDS, TestPlan, TestScenario
+from common.testplan.pack import PlanPack
 
 
 def test_rounds_are_the_define_triplet():

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-from test_plan_definition.models import BOUNDARY, ERROR, NEGATIVE, TestPlan, TestScenario, TestStep
+from common.testplan.models import BOUNDARY, ERROR, NEGATIVE, TestPlan, TestScenario, TestStep
 
 _STEP_BATCH = 8
 

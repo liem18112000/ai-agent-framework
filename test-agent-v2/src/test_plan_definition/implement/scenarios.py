@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from common.memory.bank import _slug
-from test_plan_definition.models import (
+from common.testplan.models import (
     BOUNDARY,
     ERROR,
     HAPPY,
@@ -12,7 +12,7 @@ from test_plan_definition.models import (
     TestPlan,
     TestScenario,
 )
-from test_plan_definition.pack import PlanPack
+from common.testplan.pack import PlanPack
 
 _MAX_NOTES = 8
 

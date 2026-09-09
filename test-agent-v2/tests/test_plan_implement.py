@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from common.memory import MemoryBank
-from test_plan_definition import memory as store
+from common.testplan import memory as store
+from common.testplan.models import BOUNDARY, CONFIRMED, ERROR, HAPPY, NEGATIVE, TEST_SCENARIO
 from test_plan_definition.define import define
 from test_plan_definition.implement import implement_plan
-from test_plan_definition.models import BOUNDARY, CONFIRMED, ERROR, HAPPY, NEGATIVE, TEST_SCENARIO
 from tests.tpd_fakes import full_fake_model
 
 

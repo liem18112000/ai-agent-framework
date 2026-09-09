@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from test_plan_definition import memory as store
-from test_plan_definition.models import TestScenario, TestStep
+from common.testplan import memory as store
+from common.testplan.models import TestScenario, TestStep
 
 
 def render_feature(subject: str, scenarios: list[TestScenario], steps: list[TestStep]) -> str:

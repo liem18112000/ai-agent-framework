@@ -3,8 +3,8 @@
 import os
 
 from common.memory.bank import _slug
-from test_plan_definition.models import FIXTURE, MOCK_DATA, TEST_ACCOUNT, TestData, TestPlan
-from test_plan_definition.pack import PlanPack
+from common.testplan.models import FIXTURE, MOCK_DATA, TEST_ACCOUNT, TestData, TestPlan
+from common.testplan.pack import PlanPack
 
 _MAX_MOCKS = 8
 

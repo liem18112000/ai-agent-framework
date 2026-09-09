@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from test_plan_definition.memory import template as tmpl
-from test_plan_definition.models import TestPlan, TestPlanRun, TestScenario, TestStep
+from common.testplan.memory import template as tmpl
+from common.testplan.models import TestPlan, TestPlanRun, TestScenario, TestStep
 
 
 def _bullets(items: list[str]) -> str:

@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from common.models import Answer, Question
-from test_plan_definition.models import ASSUMPTION, DECISION, PlanDecision
-from test_plan_definition.pack import PlanPack
+from common.testplan.models import ASSUMPTION, DECISION, PlanDecision
+from common.testplan.pack import PlanPack
 
 
 def _source_refs(question: Question, plan_pack: PlanPack) -> list[str]:

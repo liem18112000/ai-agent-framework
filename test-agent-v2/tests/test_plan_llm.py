@@ -8,12 +8,12 @@ import pytest
 
 from common.interrogate.pack import Pack
 from common.llm.parse import loads_array
+from common.testplan.models import TestData, TestPlan
+from common.testplan.pack import PlanPack
 from test_plan_definition.define.plan import make_restater
 from test_plan_definition.define.questions import heuristic_questions, make_generator
 from test_plan_definition.implement.scenarios import generate_scenarios, heuristic_scenarios
 from test_plan_definition.implement.steps import _pass_metric
-from test_plan_definition.models import TestData, TestPlan
-from test_plan_definition.pack import PlanPack
 
 
 @pytest.fixture

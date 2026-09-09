@@ -6,8 +6,8 @@ from google.adk.agents import BaseAgent
 
 from common.adk.events import text_event
 from common.memory.factory import build_bank
-from test_plan_definition import memory as store
-from test_plan_definition.models import CONFIRMED
+from common.testplan import memory as store
+from common.testplan.models import CONFIRMED
 
 
 class ApproveAgent(BaseAgent):

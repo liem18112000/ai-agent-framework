@@ -8,11 +8,8 @@ from common.interrogate.answers import ingest
 from common.interrogate.loop import accept_recommendation
 from common.interrogate.questions import generate_round
 from common.memory.serialize import question_from_dict
-from test_plan_definition import memory as store
-from test_plan_definition.define.decision import assumption_from_self_answer, decision_from_answer
-from test_plan_definition.define.plan import assemble_plan, confidence, restate
-from test_plan_definition.define.questions import make_generator
-from test_plan_definition.models import (
+from common.testplan import memory as store
+from common.testplan.models import (
     CONFIRMED,
     DRAFT,
     ROUNDS,
@@ -20,8 +17,11 @@ from test_plan_definition.models import (
     PlanResult,
     TestPlanRun,
 )
+from common.testplan.pack import PlanPack, load_plan_pack
+from test_plan_definition.define.decision import assumption_from_self_answer, decision_from_answer
+from test_plan_definition.define.plan import assemble_plan, confidence, restate
+from test_plan_definition.define.questions import make_generator
 from test_plan_definition.monitoring import get_logger
-from test_plan_definition.pack import PlanPack, load_plan_pack
 
 log = get_logger("define.loop")
 

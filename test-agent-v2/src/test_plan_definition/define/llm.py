@@ -5,8 +5,8 @@ from __future__ import annotations
 from common.llm.parse import coerce_str, loads_array
 from common.llm.vertex import complete
 from common.models import Question
-from test_plan_definition.llm.prompts import brief_prompt, question_prompt
-from test_plan_definition.models import TestPlan
+from common.testplan.llm.prompts import brief_prompt, question_prompt
+from common.testplan.models import TestPlan
 from test_plan_definition.monitoring import get_logger
 
 log = get_logger("llm.define")

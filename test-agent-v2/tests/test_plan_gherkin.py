@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from common.memory import MemoryBank
-from test_plan_definition import memory as store
+from common.testplan import memory as store
 from test_plan_definition.define import define
 from test_plan_definition.implement import implement_plan
-from test_plan_definition.render import export_features, render_feature
+from test_plan_definition.implement.gherkin import export_features, render_feature
 
 
 async def _implemented(bank):
@@ -32,7 +32,7 @@ async def test_feature_has_tagged_scenarios_and_when_then(pack_bucket):
 
 
 def test_render_feature_groups_steps_under_their_scenario():
-    from test_plan_definition.models import HAPPY, TestScenario, TestStep
+    from common.testplan.models import HAPPY, TestScenario, TestStep
 
     scenarios = [TestScenario(id="s1", plan_id="p", title="Do X — happy path", kind=HAPPY,
                               data_refs=["td1"], source_refs=["n1"])]

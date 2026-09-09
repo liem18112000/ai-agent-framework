@@ -11,8 +11,8 @@ from google.adk.agents import BaseAgent
 from common import learn
 from common.adk.events import incoming_text, text_event
 from common.memory.factory import build_bank
+from common.testplan.models import HAPPY, NEGATIVE
 from test_plan_definition.implement.generate import ImplementResult, implement_plan
-from test_plan_definition.models import HAPPY, NEGATIVE
 from test_plan_definition.monitoring import get_logger
 
 log = get_logger("tpd.implement")

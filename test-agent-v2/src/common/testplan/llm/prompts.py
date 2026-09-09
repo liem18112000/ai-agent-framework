@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from test_plan_definition.models import ROUND_PREFIX, TestData, TestPlan, TestScenario
+from common.testplan.models import ROUND_PREFIX, TestData, TestPlan, TestScenario
 
 ROUND_FOCUS = {
     "methodology": (

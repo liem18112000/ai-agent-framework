@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from common.memory import MemoryBank
-from test_plan_definition import memory as store
+from common.testplan import memory as store
+from common.testplan.models import ASSUMPTION, CONFIRMED, DRAFT
 from test_plan_definition.define import PlanSession, define
-from test_plan_definition.models import ASSUMPTION, CONFIRMED, DRAFT
 
 
 async def test_full_pass_confirms_a_plan(pack_bucket):

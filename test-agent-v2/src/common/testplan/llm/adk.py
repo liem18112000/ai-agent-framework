@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from google.adk.agents import LlmAgent
 
-from test_plan_definition.monitoring import get_logger
+from common.monitoring import get_logger
 
 log = get_logger("llm.adk")
 

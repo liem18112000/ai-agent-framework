@@ -1,7 +1,7 @@
 """Data contracts for the Test-Plan Definition agent (stdlib dataclasses)."""
 
-from test_plan_definition.models.pack import PlanPack
-from test_plan_definition.models.plan import (
+from common.testplan.models.pack import PlanPack
+from common.testplan.models.plan import (
     ASSUMPTION,
     CONFIRMED,
     DECISION,
@@ -14,7 +14,7 @@ from test_plan_definition.models.plan import (
     TestPlan,
     TestPlanRun,
 )
-from test_plan_definition.models.scenario import (
+from common.testplan.models.scenario import (
     BOUNDARY,
     ERROR,
     FIXTURE,

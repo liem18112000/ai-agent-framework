@@ -7,12 +7,12 @@ from dataclasses import asdict
 from common.memory.bank import ROOT, _slug
 from common.memory.serialize import _from
 from common.models import Answer, Question
-from test_plan_definition.memory.render import (
+from common.testplan.memory.render import (
     render_plan_md,
     render_run_log_md,
     render_scenarios_md,
 )
-from test_plan_definition.models import (
+from common.testplan.models import (
     PlanDecision,
     TestData,
     TestPlan,

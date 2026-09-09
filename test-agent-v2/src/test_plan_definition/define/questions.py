@@ -8,7 +8,7 @@ from common.interrogate.pack import Pack
 from common.interrogate.questions import build_round_questions
 from common.llm.vertex import vertex_config
 from common.models import Question
-from test_plan_definition.models import ROUND_PREFIX as _PREFIX
+from common.testplan.models import ROUND_PREFIX as _PREFIX
 from test_plan_definition.monitoring import get_logger
 
 log = get_logger("define.questions")
