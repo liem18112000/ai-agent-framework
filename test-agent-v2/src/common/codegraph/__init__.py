@@ -10,15 +10,13 @@ from pathlib import Path
 from common.codegraph.acquire import acquire_repo
 from common.codegraph.distill import distill_code_note
 from common.codegraph.runner import CodeGraphResult, build_code_graph
-from common.codegraph.store import read_code_meta, read_index, store_code_graph
+from common.codegraph.store import store_code_graph
 
 __all__ = [
     "CodeGraphResult",
     "build_and_store",
     "build_code_graph",
     "distill_code_note",
-    "read_code_meta",
-    "read_index",
     "store_code_graph",
 ]
 

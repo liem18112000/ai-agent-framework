@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from common.codegraph.distill import distill_code_note
 from common.codegraph.runner import CodeGraphResult, parse_report, scan_api_surface
-from common.codegraph.store import read_code_meta, read_index, store_code_graph
+from common.codegraph.store import store_code_graph
 from common.extract import classify_url
 from common.memory.bank import MemoryBank
 from common.models import CODEGRAPH
@@ -95,11 +95,6 @@ def test_store_and_read_versioned(fake_bucket):
     assert "graph_json" not in meta and "report_md" not in meta
     assert "memory/graphify/luz_docs_import/bf0d26f/graph.json" in fake_bucket.store
     assert "memory/graphify/luz_docs_import/latest/GRAPH_REPORT.md" in fake_bucket.store
-    idx = read_index(bank)
-    assert [r["repo"] for r in idx] == ["luz_docs_import"]
-    store_code_graph(bank, _sample_result())
-    assert len(read_index(bank)) == 1
-    assert read_code_meta(bank, "luz_docs_import")["nodes"] == 470
 
 
 def test_distill_note_front_loads_api():

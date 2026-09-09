@@ -5,18 +5,7 @@ from __future__ import annotations
 from collections import Counter
 
 from common.learn.model import LessonSignal
-from common.models import CORRECTION, LESSON
-
-
-def from_decisions(decisions) -> list[LessonSignal]:
-    """Human-confirmed decisions (refine or define) → cited lesson signals; a choice that rejected"""
-    return [
-        LessonSignal(statement=stmt, kind=CORRECTION if getattr(d, "rejected", None) else LESSON,
-                     source_refs=list(getattr(d, "source_refs", []) or []),
-                     confidence=getattr(d, "confidence", "low"), rationale=getattr(d, "rationale", ""))
-        for d in decisions
-        if (stmt := getattr(d, "statement", "").strip()) and getattr(d, "answered_by", "") == "human"
-    ]
+from common.models import LESSON
 
 
 def from_gather(repos: list[str], *, seed_ref: str) -> list[LessonSignal]:

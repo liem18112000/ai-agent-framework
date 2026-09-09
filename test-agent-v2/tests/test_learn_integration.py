@@ -6,15 +6,15 @@ from dataclasses import asdict
 
 from common.learn import (
     CaptureJob,
+    LessonSignal,
     drain,
     enqueue,
-    from_decisions,
     recall_lessons,
     search_lessons,
     veto_lesson,
 )
 from common.memory import MemoryBank
-from common.models import Insight, Pack
+from common.models import CORRECTION, Pack
 from tests.conftest import FakeBucket
 
 
@@ -27,20 +27,16 @@ def _seed_bank() -> MemoryBank:
     return bank
 
 
+def _lesson() -> LessonSignal:
+    return LessonSignal(statement="Performance targets the credit-only operation, not file import",
+                        kind=CORRECTION, source_refs=["jira:LUZ-159312"], confidence="high")
+
+
 def test_self_learning_end_to_end():
     bank = _seed_bank()
 
-    decisions = [
-        Insight(id="insight:run-A:Q1", kind="decision", context_id="run-A", question_id="Q1",
-                statement="Performance targets the credit-only operation, not file import",
-                answered_by="human", source_refs=["jira:LUZ-159312"], rejected=["file import"],
-                confidence="high"),
-        Insight(id="insight:run-A:Q2", kind="assumption", context_id="run-A", question_id="Q2",
-                statement="an agent-self guess", answered_by="agent-self",
-                source_refs=["jira:LUZ-159312"]),
-    ]
     enqueue(bank, CaptureJob(id="cap-run-A", context_id="run-A", run_id="run-A", step="refine",
-                             signals=[asdict(s) for s in from_decisions(decisions)]))
+                             signals=[asdict(_lesson())]))
     assert search_lessons(bank) == []
 
     assert drain(bank) == 1
@@ -61,6 +57,6 @@ def test_self_learning_end_to_end():
     assert search_lessons(bank) == []
 
     enqueue(bank, CaptureJob(id="cap-run-A2", context_id="run-A", step="refine",
-                             signals=[asdict(s) for s in from_decisions(decisions)]))
+                             signals=[asdict(_lesson())]))
     drain(bank)
     assert search_lessons(bank) == []

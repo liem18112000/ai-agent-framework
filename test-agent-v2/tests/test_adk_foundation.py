@@ -9,23 +9,8 @@ from common.adk import (
     LearnDrainPlugin,
     LessonRecallPlugin,
     build_session_service,
-    claude_llm,
 )
 from common.memory import MemoryBank
-
-_VC = "common.adk.providers.vertex_claude.vertex_config"
-
-
-def test_claude_llm_none_without_vertex(monkeypatch):
-    monkeypatch.setattr(_VC, lambda: None)
-    assert claude_llm() is None
-
-
-def test_claude_llm_builds_litellm_when_configured(monkeypatch):
-    monkeypatch.setattr(_VC, lambda: ("proj", "europe-west6", "claude-sonnet-5"))
-    llm = claude_llm(max_tokens=6000)
-    assert llm is not None
-    assert "claude-sonnet-5" in str(getattr(llm, "model", ""))
 
 
 def test_session_service_in_memory_without_db(monkeypatch):

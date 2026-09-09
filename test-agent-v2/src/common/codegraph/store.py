@@ -30,11 +30,3 @@ def _upsert_index(bank, meta: dict) -> None:
     rows.append(meta)
     rows.sort(key=lambda r: r.get("repo", ""))
     bank.put_json(INDEX, rows)
-
-
-def read_index(bank) -> list[dict]:
-    return bank.get_json(INDEX, []) or []
-
-
-def read_code_meta(bank, repo: str, slot: str = "latest") -> dict | None:
-    return bank.get_json(_slot_paths(repo, slot)["meta"], None)

@@ -6,10 +6,10 @@ from common.learn.govern import search_lessons, veto_lesson
 from common.learn.model import LessonSignal
 from common.learn.queue import QUEUE_PATH, CaptureJob, drain, enqueue
 from common.learn.recall import recall_lessons
-from common.learn.signals import from_decisions, from_gather, from_implement
+from common.learn.signals import from_gather, from_implement
 
 __all__ = [
     "QUEUE_PATH", "CaptureJob", "LessonSignal", "capture_enabled", "capture_lessons", "drain",
-    "enqueue", "from_decisions", "from_gather", "from_implement", "recall_enabled", "recall_lessons",
+    "enqueue", "from_gather", "from_implement", "recall_enabled", "recall_lessons",
     "search_lessons", "veto_lesson",
 ]

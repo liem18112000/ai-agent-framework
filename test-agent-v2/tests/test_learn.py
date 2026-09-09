@@ -11,7 +11,6 @@ from common.learn import (
     capture_lessons,
     drain,
     enqueue,
-    from_decisions,
     from_gather,
     from_implement,
     recall_lessons,
@@ -19,7 +18,7 @@ from common.learn import (
     veto_lesson,
 )
 from common.memory import MemoryBank
-from common.models import CORRECTION, Insight
+from common.models import CORRECTION
 from tests.conftest import FakeBucket
 
 
@@ -105,19 +104,6 @@ def test_queue_drain_is_idempotent_and_accumulates():
     assert drain(bank) == 3
     assert drain(bank) == 0
     assert len(_insight_ids(bank)) == 3
-
-
-def test_from_decisions_captures_human_choices_only():
-    human = Insight(id="i1", kind="decision", context_id="c", question_id="q1",
-                    statement="Test end-to-end through real controller chains", answered_by="human",
-                    source_refs=["jira:LUZ-1"], rejected=["Unit only"], confidence="high")
-    assumption = Insight(id="i2", kind="assumption", context_id="c", question_id="q2",
-                         statement="Assume sandbox exists", answered_by="agent-self",
-                         source_refs=["jira:LUZ-1"])
-    sigs = from_decisions([human, assumption])
-    assert len(sigs) == 1
-    assert sigs[0].kind == CORRECTION
-    assert sigs[0].source_refs == ["jira:LUZ-1"] and sigs[0].confidence == "high"
 
 
 def test_recall_lessons_grounded_to_seed():
