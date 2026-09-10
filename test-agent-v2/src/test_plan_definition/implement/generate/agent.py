@@ -54,7 +54,7 @@ class ImplementAgent(BaseAgent):
         words = incoming_text(ctx).lower().split()
         bank = build_bank()
         result = await implement_plan(bank, ctx_id, run_id=f"impl-{ctx_id[:8]}", now=now(),
-                                      detail="detail" in words, assured="assured" in words)
+                                      detail="detail" in words)
         _capture_implement(bank, ctx_id, result)
         if not result.scenarios:
             yield text_event(self.name, result.message or f"Nothing generated for {ctx_id}.")

@@ -14,8 +14,7 @@ from common.testplan.models import (
     TestStep,
 )
 from common.testplan.pack import load_plan_pack
-from test_plan_definition.implement.generate.assured import assured_enabled, run_assured_scenarios
-from test_plan_definition.implement.generate.scenarios import generate_scenarios
+from test_plan_definition.implement.assured import run_assured_scenarios
 from test_plan_definition.implement.generate.steps import generate_all_steps
 from test_plan_definition.implement.generate.testdata import generate_test_data
 from test_plan_definition.monitoring import get_logger
@@ -24,8 +23,7 @@ log = get_logger("implement.generate")
 
 
 async def implement_plan(bank, context_id: str, *, run_id: str = "implement", now: str = "",
-                         detail: bool = False, assured: bool = False,
-                         model=None) -> ImplementResult:
+                         detail: bool = False, model=None) -> ImplementResult:
     plan = store.read_plan(bank, context_id)
     if plan is None:
         return ImplementResult(message=f"No test plan for {context_id}; run define first.")
@@ -34,16 +32,12 @@ async def implement_plan(bank, context_id: str, *, run_id: str = "implement", no
                               "approve it (resolve open gaps) before implementing.")
 
     plan_pack = load_plan_pack(bank, context_id)
-    # I3: only `scenarios` runs an LLM on the default path; test-data/steps stay behind `detail`.
+    # test-data/steps stay behind `detail` (heuristic by default — one LLM path unless opted in).
     test_data = await generate_test_data(plan, plan_pack, now=now, detail=detail, model=model)
-    # P4 (§3.4): the opt-in assured loop replaces the single blind scenario call with a bounded
-    # generate→judge→gate→reflect→regenerate loop. Default OFF keeps the I3 single-call path.
-    quality = None
-    if assured_enabled(assured):
-        scenarios, quality = await run_assured_scenarios(bank, context_id, plan, plan_pack,
-                                                         test_data, now=now, model=model)
-    else:
-        scenarios = await generate_scenarios(plan, plan_pack, test_data, now=now, model=model)
+    # P4 (§3.4): the assured loop (generate→judge→gate→reflect→regenerate) is ALWAYS the scenario path
+    # now — no opt-in. It trades away I3 (adds the judge call per round); TPD_ASSURED_MAX_ITERS bounds it.
+    scenarios, quality = await run_assured_scenarios(bank, context_id, plan, plan_pack,
+                                                     test_data, now=now, model=model)
     steps = await generate_all_steps(scenarios, plan, plan_pack, test_data,
                                      detail=detail, model=model)
 

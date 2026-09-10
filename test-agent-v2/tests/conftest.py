@@ -91,6 +91,7 @@ _KGA_BANK_TARGETS = ["knowledge_gathering.agent", "knowledge_gathering.gather.ag
                      "common.adk.interrogation", "common.adk.tools"]
 _TPD_BANK_TARGETS = ["test_plan_definition.agent", "test_plan_definition.implement.agent",
                      "test_plan_definition.implement.generate.agent",
+                     "test_plan_definition.implement.assured.agent",
                      "common.adk.interrogation", "common.adk.tools"]
 _TEV_BANK_TARGETS = ["test_evaluation.agent"]
 

@@ -1,24 +1,30 @@
 """P4 — the Assured Generation Loop (§3.1 / §3.4): generate → judge → gate → reflect → regenerate.
 
-Opt-in behind ``TPD_ASSURED`` (default OFF → ``implement_plan`` stays the I3 single-call path).
-Bounded by ``TPD_ASSURED_MAX_ITERS`` (default 2 — keeps the worst-case sequential Vertex calls at
-2·iters ≈ the already-accepted ``detail``=3 order, and off the Cloud-Run liveness/request timeout the
-three-serial-call bug once hit). State is persisted per ``context_id`` so a handler killed mid-loop
-RESUMES with its accumulated reflections + remaining budget rather than restarting from scratch.
+ALWAYS on — this is the implement scenario-generation path (``implement_plan`` calls it unconditionally;
+the old ``TPD_ASSURED`` opt-in gate is gone). Bounded by ``TPD_ASSURED_MAX_ITERS`` (default 2). NOTE:
+this trades away I3 (the 1-LLM-call default) — each round is generate + judge, so the worst case is
+2·iters serial Vertex calls; keep ``TPD_ASSURED_MAX_ITERS=1`` in a latency-sensitive deployment to stay
+clear of the Cloud-Run liveness/request timeout the three-serial-call bug once hit. State is persisted
+per ``context_id`` so a handler killed mid-loop RESUMES with its accumulated reflections + remaining
+budget rather than restarting from scratch.
 
 We do NOT have real execution yet (P1–P3), so 'measure' here is the LLM-as-judge rubric score, not
 coverage/flakiness/mutation — the gate is honest about that. The human Yes/No gate is unchanged; this
 loop only attaches a quality signal and self-repairs before it.
+
+This is the ENGINE; ``AssuredScenarioAgent`` (agent.py) is the ADK ``BaseAgent`` face onto it.
+``implement_plan`` calls ``run_assured_scenarios`` inline (it needs the scenarios back mid-pipeline);
+the agent reconstructs its inputs from the bank and reports the same loop as an observable event.
 """
 
 from __future__ import annotations
 
 import contextlib
 import os
+from dataclasses import asdict
 
 from common.testplan import memory as store
 from common.testplan.models import AssuredReport, PlanPack, TestData, TestPlan, TestScenario
-from test_plan_definition.implement.generate.scenarios import heuristic_scenarios
 from test_plan_definition.monitoring import get_logger
 
 log = get_logger("implement.assured")
@@ -26,11 +32,6 @@ log = get_logger("implement.assured")
 _DEFAULT_MAX_ITERS = 2
 _DEFAULT_THRESHOLD = 0.7
 _MAX_ISSUES = 5
-
-
-def assured_enabled(assured: bool = False) -> bool:
-    """The opt-in gate: an explicit ``assured=True`` (tests) or ``TPD_ASSURED`` in the environment."""
-    return assured or bool(os.environ.get("TPD_ASSURED"))
 
 
 async def run_assured_scenarios(
@@ -43,6 +44,7 @@ async def run_assured_scenarios(
     from common.testplan.llm.prompts import judge_scenarios_prompt, pack_block
     from common.testplan.llm.schemas import JudgeVerdict
     from test_plan_definition.implement.generate.llm import claude_scenarios
+    from test_plan_definition.implement.generate.scenarios import heuristic_scenarios
 
     # env-configured bounds (fall back to the defaults on a malformed value)
     max_iters, threshold = _DEFAULT_MAX_ITERS, _DEFAULT_THRESHOLD
@@ -132,8 +134,6 @@ async def run_assured_scenarios(
 
 def _persist(bank, context_id: str, report: AssuredReport) -> None:
     """Best-effort GCS checkpoint of the loop state (the resume source). Never breaks the loop."""
-    from dataclasses import asdict
-
     try:
         store.write_assured_state(bank, context_id, asdict(report))
     except Exception as exc:  # noqa: BLE001 — persistence is best-effort

@@ -67,32 +67,33 @@ async def test_api_steps_are_request_then_assert(pack_bucket):
     assert "request" in " ".join(s.action.lower() for s in steps) and steps[-1].expected
 
 
-# --- I3: the load-bearing call-count gate (default = 1 LLM call; detail = 3) --------------------
+# --- call-count gate (assured always-on: default = 2 = generate + judge; detail = 4) ------------
 
-async def test_implement_default_makes_exactly_one_llm_call(pack_bucket, monkeypatch):
-    """I3: a default implement (no detail, no TPD_LLM_DETAIL) makes exactly ONE LLM call — the
-    scenario agent. test-data + steps use the heuristic. This is the 'serial Vertex calls ->
-    Cloud Run timeout' guard; do not relax it."""
+async def test_implement_default_makes_two_llm_calls_generate_plus_judge(pack_bucket, monkeypatch):
+    """The always-on assured loop is the scenario path: a default implement makes TWO LLM calls —
+    scenario-generate + judge (test-data + steps stay heuristic). This replaced the old I3 single-call
+    default; the loop's serial-Vertex cost is bounded by TPD_ASSURED_MAX_ITERS (keep =1 in a
+    latency-sensitive deploy to stay clear of the Cloud-Run request timeout)."""
     monkeypatch.delenv("TPD_LLM_DETAIL", raising=False)
     bank = MemoryBank(pack_bucket)
     await _confirmed(bank)
     fake = full_fake_model()
 
     res = await implement_plan(bank, "run-6f2a", model=fake)
-    assert fake.calls == 1, f"default implement must make 1 LLM call, made {fake.calls}"
-    # the one call is the scenario agent → its canned scenarios reached the result
+    assert fake.calls == 2 and fake.judge_calls == 1  # 1 generate + 1 judge; test-data/steps heuristic
     assert {s.id for s in res.scenarios} == {"scenario:run-6f2a:a", "scenario:run-6f2a:b"}
+    assert res.quality is not None and res.quality.accepted  # judge 0.9 ≥ 0.7 → accepts round 1
 
 
-async def test_implement_detail_makes_three_llm_calls(pack_bucket, monkeypatch):
-    """detail on → test-data + scenarios + one steps-batch = 3 LLM calls."""
+async def test_implement_detail_makes_four_llm_calls(pack_bucket, monkeypatch):
+    """detail on → test-data + (scenario-generate + judge) + one steps-batch = 4 LLM calls."""
     monkeypatch.delenv("TPD_LLM_DETAIL", raising=False)
     bank = MemoryBank(pack_bucket)
     await _confirmed(bank)
     fake = full_fake_model()
 
     await implement_plan(bank, "run-6f2a", detail=True, model=fake)
-    assert fake.calls == 3, f"detail implement must make 3 LLM calls, made {fake.calls}"
+    assert fake.calls == 4, f"detail implement must make 4 LLM calls, made {fake.calls}"
 
 
 async def test_implement_falls_back_to_heuristic_on_invalid_llm_output(pack_bucket, monkeypatch):
@@ -104,7 +105,7 @@ async def test_implement_falls_back_to_heuristic_on_invalid_llm_output(pack_buck
     fake.scenarios_json = "not valid json at all"
 
     res = await implement_plan(bank, "run-6f2a", model=fake)
-    assert fake.calls == 1  # the scenario agent still fired once before validation failed
+    assert fake.calls == 2  # generate (invalid → heuristic fallback) + judge on the heuristic scenarios
     # heuristic scenarios carry the '— happy path' style titles and the full kind matrix
     kinds = {s.kind for s in res.scenarios}
     assert {HAPPY, NEGATIVE, BOUNDARY, ERROR} <= kinds

@@ -1,9 +1,10 @@
 """Offline fakes for the TPD implement ``LlmAgent``s.
 
 A ``BaseLlm`` test double that returns canned structured JSON (matched to each generator by a
-substring of its prompt) and counts every model turn — this call counter is what the I3 gate
-asserts (default implement = 1 call; ``detail`` = 3). Inject it via ``implement_plan(..., model=…)``
-or ``generate_scenarios(..., model=…)`` so the generators never touch the real Vertex network.
+substring of its prompt) and counts every model turn — this call counter is what the call-count
+tests assert (assured always-on: default implement = 2 calls = generate + judge; ``detail`` = 4).
+Inject it via ``implement_plan(..., model=…)`` or ``generate_scenarios(..., model=…)`` so the
+generators never touch the real Vertex network.
 """
 
 from __future__ import annotations
@@ -122,7 +123,7 @@ _DEFAULT_STEPS = [
 
 def full_fake_model() -> FakeGeneratorModel:
     """A fake configured with valid canned output for all three generators + an accepting judge
-    (so an ``assured=True`` run with this fake passes on round 1)."""
+    (so the always-on assured loop passes on round 1 with this fake)."""
     return FakeGeneratorModel(
         model="fake",
         scenarios_json=scenarios_json(_DEFAULT_SCENARIOS),
