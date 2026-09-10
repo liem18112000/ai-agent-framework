@@ -6,8 +6,6 @@ from common.memory.bank import _slug
 from common.testplan.models import FIXTURE, MOCK_DATA, TEST_ACCOUNT, TestData, TestPlan
 from common.testplan.pack import PlanPack
 
-_MAX_MOCKS = 8
-
 
 async def generate_test_data(plan: TestPlan, plan_pack: PlanPack, *, now: str = "",
                              detail: bool = False, model=None) -> list[TestData]:
@@ -45,7 +43,7 @@ def heuristic_test_data(plan: TestPlan, plan_pack: PlanPack, *, now: str = "") -
             "notes": "representative valid record; mutate fields for the negative/boundary cases",
         },
         source_refs=[n.id], created_at=now,
-    ) for n in plan_pack.pack.grounded[:_MAX_MOCKS]]
+    ) for n in plan_pack.pack.grounded]  # Q2: one mock per grounded note — no cap
     if method == "api":
         out.append(TestData(
             id=f"test-data:{ctx}:fixture", kind=FIXTURE, plan_id=plan.id,

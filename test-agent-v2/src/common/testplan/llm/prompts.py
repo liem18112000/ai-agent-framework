@@ -30,6 +30,17 @@ ROUND_FOCUS = {
         "Surface the genuine bar/where-to-go-deeper calls; self-answer the settled ones. Quality "
         "over scenario count."
     ),
+    "test-design": (
+        "the test-design METHOD(s) that will enumerate the cases toward 100% coverage. RECOMMEND from "
+        "the feature's shape in the pack + the earlier methodology/scope/metrics decisions: input "
+        "domains with ranges/formats → Equivalence Partitioning + Boundary Value Analysis; "
+        "combinational rules (eligibility/pricing/auth matrix) → decision table; a lifecycle/status "
+        "machine → state-transition; many independent parameters/flags → pairwise (t-way); several "
+        "dependencies → error-path/fault-injection; money/auth/compliance risk → risk-based depth. "
+        "ALSO ask the user to ADD any test kinds the pack can't infer (security, performance, "
+        "concurrency, accessibility, i18n, migration…). Pre-fill your recommendation as the answer; "
+        "surface it as one open judgement call, not busywork."
+    ),
 }
 
 
@@ -91,8 +102,9 @@ def brief_prompt(plan: TestPlan, summary: str, open_questions: list[str]) -> str
     return (
         "Restate, in plain language for a human to confirm, the Test Plan the QA Testing Agent now "
         f"proposes. Overall confidence is '{plan.confidence}'. Use these headings: Methodology, "
-        "In scope, Out of scope, Passed means, Open questions.\n\n"
+        "Test-design method, In scope, Out of scope, Passed means, Open questions.\n\n"
         f"Methodology: {', '.join(plan.methodology)}\n"
+        f"Test-design method: {', '.join(plan.test_design) or '(default per behaviour)'}\n"
         f"In scope: {', '.join(plan.scope) or '(none)'}\n"
         f"Out of scope: {', '.join(plan.out_of_scope) or '(none)'}\n"
         f"Passed means: {', '.join(plan.metrics) or '(none)'}\n"
@@ -105,20 +117,23 @@ def scenarios_prompt(plan: TestPlan, summary: str, test_data: list[TestData],
                      reflections: list[str] | None = None) -> str:
     metrics = " ".join(plan.metrics).lower()
     happy_only = "happy only" in metrics or "happy-only" in metrics
+    # Q2: the kinds come from the plan's elicited, OPEN taxonomy (test_kinds) when set — never a fixed 4.
+    kinds = plan.test_kinds or (["happy"] if happy_only else ["happy", "negative", "boundary", "error"])
     data_ids = ", ".join(d.id for d in test_data) or "(none)"
+    methods = ", ".join(plan.test_design) or "standard technique per behaviour"
     return (
         "You are the QA Testing Agent generating TEST SCENARIOS from a confirmed plan.\n"
         f"Methodology: {', '.join(plan.methodology)}. Pass metric(s): {', '.join(plan.metrics)}.\n"
-        f"Coverage: {'happy path only' if happy_only else 'happy + negative + boundary + error, per behaviour'}.\n"
+        f"Test-design method(s) to apply: {methods}.\n"
+        f"Kinds to cover (open set — cover every one that applies): {', '.join(kinds)}.\n"
         f"Available test-data ids (use in data_refs): {data_ids}.\n\n"
         + GHERKIN_GUIDELINES + PACK_GROUNDING + "\n"
         "Rules:\n"
-        "- For EACH acceptance criterion / behaviour in the pack, generate a happy-path scenario"
-        + ("" if happy_only else " AND a negative, a boundary, and an error scenario (4 kinds per "
-           "behaviour); skip a kind only when it is genuinely inapplicable to that behaviour")
-        + ".\n"
+        "- For EACH acceptance criterion / behaviour in the pack, generate a scenario for EACH listed "
+        "kind that applies (skip a kind only when genuinely inapplicable to that behaviour). Emit as "
+        "MANY cases per kind as the test-design method yields — there is NO cap; aim to cover 100%.\n"
         "- Each scenario MUST cite the note/insight id it covers in source_refs.\n\n"
-        "Return ONLY a JSON array; each item: {id, title, kind (happy|negative|boundary|error), "
+        "Return ONLY a JSON array; each item: {id, title, kind, "
         "methodology, description (one sentence: what it verifies), rationale (why it matters), "
         "preconditions:[], data_refs:[], source_refs:[]}. "
         f"Use id prefix 'scenario:{plan.context_id}:'.\n"

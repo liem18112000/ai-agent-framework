@@ -57,7 +57,13 @@ async def test_define_approve_implement(monkeypatch, pack_bucket):
     from common.testplan import memory as store
     assert store.read_plan(bank, ctx_id).status == CONFIRMED
 
+    # interactive implement now INTERROGATES (case-design → data-design → step-oracle) then generates
     impl = await turn(f"implement {ctx_id}")
+    assert "Implement design" in impl and "case-design" in impl
+    for _ in range(6):
+        if "Implement complete" in impl:
+            break
+        impl = await turn("A")
     assert "Implement complete" in impl
     assert "scenarios" in impl
     assert store.read_scenarios_md(bank, ctx_id)
@@ -82,8 +88,13 @@ async def test_implement_via_graph_drives_scenario_llm_agent(monkeypatch, pack_b
         replies.append(await turn("A"))
     await turn(f"approve {ctx_id}")
 
-    impl = await turn(f"implement {ctx_id}")
+    impl = await turn(f"implement {ctx_id}")  # opens the case-design interrogation
+    for _ in range(6):
+        if "Implement complete" in impl:
+            break
+        impl = await turn("A")
     assert "Implement complete" in impl
+    # interrogation is heuristic (no model); only the ScenarioGen call hits the fake — still exactly 1
     assert fake.calls == 1, f"scenario agent must fire exactly once via the graph, fired {fake.calls}"
     from common.testplan import memory as store
     assert "A happy" in (store.read_scenarios_md(bank, ctx_id) or "")

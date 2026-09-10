@@ -25,8 +25,14 @@ class TpdRouter(BaseAgent):
         if low.startswith("approve"):
             yield text_event(self.name, self._approve(ctx, text))
             return
-        st = store.read_plan_state(build_bank(), ctx.session.id) or {}
-        if (st and not st.get("done")) or wants_define(text):
+        bank = build_bank()
+        ctx_id = ctx.session.id
+        impl_st = store.read_implement_state(bank, ctx_id) or {}
+        plan_st = store.read_plan_state(bank, ctx_id) or {}
+        if impl_st and not impl_st.get("done"):  # interactive implement interrogation is live
+            async for ev in self.implement.run_async(ctx):
+                yield ev
+        elif (plan_st and not plan_st.get("done")) or wants_define(text):
             async for ev in self.define.run_async(ctx):
                 yield ev
         elif low.startswith("implement"):
@@ -61,8 +67,8 @@ class TpdRouter(BaseAgent):
 
 def build_root_agent() -> TpdRouter:
     from test_plan_definition.define.agent import build_define_agent
-    from test_plan_definition.implement.agent import ImplementAgent
-    define, implement = build_define_agent(), ImplementAgent(name="implement")
+    from test_plan_definition.implement.agent import build_implement_agent
+    define, implement = build_define_agent(), build_implement_agent(name="implement")
     return TpdRouter(name="test_plan_definition", define=define, implement=implement,
                      sub_agents=[define, implement])
 

@@ -14,9 +14,10 @@ from common.testplan.models import (
 )
 from common.testplan.pack import PlanPack
 
-_MAX_NOTES = 8
-
-_FULL_COVERAGE = (HAPPY, NEGATIVE, BOUNDARY, ERROR)
+# Q2: the four defaults are only a SEED — the kind taxonomy is open. `plan.test_kinds` (elicited in the
+# implement `case-design` round) overrides it, so user-added kinds (security, performance, concurrency, …)
+# flow straight through. There is NO cap on kinds, and NO cap on notes/cases (§ report Q2).
+_DEFAULT_KINDS = (HAPPY, NEGATIVE, BOUNDARY, ERROR)
 _KIND_SUFFIX = {
     HAPPY: "happy path",
     NEGATIVE: "negative — invalid/unauthorized input is rejected",
@@ -32,9 +33,12 @@ _KIND_RATIONALE = {
 
 
 def _coverage_kinds(plan: TestPlan) -> tuple[str, ...]:
-    """Full matrix unless the plan's metrics call for happy-only coverage."""
+    """The kinds to cover: the plan's elicited `test_kinds` if any (open taxonomy), else the four
+    defaults — or just happy when the metrics call for happy-only. Never a closed set."""
+    if plan.test_kinds:
+        return tuple(plan.test_kinds)
     metrics = " ".join(plan.metrics).lower()
-    return (HAPPY,) if "happy only" in metrics or "happy-only" in metrics else _FULL_COVERAGE
+    return (HAPPY,) if "happy only" in metrics or "happy-only" in metrics else _DEFAULT_KINDS
 
 
 async def generate_scenarios(
@@ -56,14 +60,16 @@ def heuristic_scenarios(
     data_refs = [d.id for d in test_data]
     kinds = _coverage_kinds(plan)
 
-    targets = ([(n.id, n.title) for n in plan_pack.pack.grounded[:_MAX_NOTES]]
-              or [(s, s) for s in plan.scope[:_MAX_NOTES]])
+    # Q2: no cap — enumerate EVERY grounded note (fall back to scope only when the pack is empty).
+    targets = ([(n.id, n.title) for n in plan_pack.pack.grounded]
+              or [(s, s) for s in plan.scope])
 
     return [
         TestScenario(
-            id=f"scenario:{ctx}:{_slug(ref)}:{kind}", plan_id=plan.id,
-            title=f"{title} — {_KIND_SUFFIX[kind]}", kind=kind, methodology=method,
+            id=f"scenario:{ctx}:{_slug(ref)}:{_slug(kind)}", plan_id=plan.id,
+            title=f"{title} — {_KIND_SUFFIX.get(kind, kind + ' case')}", kind=kind, methodology=method,
             description=f"Exercise the {kind} case for '{title}' via {method}.",
-            rationale=_KIND_RATIONALE[kind], data_refs=data_refs, source_refs=[ref], created_at=now)
+            rationale=_KIND_RATIONALE.get(kind, f"exercises the {kind} aspect of '{title}'"),
+            data_refs=data_refs, source_refs=[ref], created_at=now)
         for ref, title in targets for kind in kinds
     ]

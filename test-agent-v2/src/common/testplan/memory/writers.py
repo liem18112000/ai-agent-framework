@@ -126,6 +126,36 @@ def read_assured_state(bank, context_id: str) -> dict:
     return bank.get_json(f"{_dir(context_id)}/assured.json", {})
 
 
+def write_implement_state(bank, context_id: str, state: dict) -> str:
+    """The interrogative-implement round state (case-design/data-design/step-oracle) — resumable."""
+    return bank.put_json(f"{_dir(context_id)}/implement-state.json", state)
+
+
+def read_implement_state(bank, context_id: str) -> dict:
+    return bank.get_json(f"{_dir(context_id)}/implement-state.json", {})
+
+
+def write_implement_decisions(bank, context_id: str, decisions) -> str:
+    from dataclasses import asdict
+    return bank.put_json(f"{_dir(context_id)}/implement-decisions.json",
+                         [asdict(d) for d in decisions])
+
+
+def read_implement_decisions(bank, context_id: str):
+    from common.memory.serialize import _from
+    from common.testplan.models import PlanDecision
+    return [_from(PlanDecision, d)
+            for d in bank.get_json(f"{_dir(context_id)}/implement-decisions.json", [])]
+
+
+def write_implement_brief(bank, context_id: str, md: str) -> str:
+    return bank.put_text(f"{_dir(context_id)}/implement-brief.md", md)
+
+
+def read_implement_brief(bank, context_id: str) -> str | None:
+    return bank.get_text(f"{_dir(context_id)}/implement-brief.md")
+
+
 def link_session(bank, a2a_context_id: str, pack_context_id: str) -> str:
     return bank.put_json(f"{ROOT}/test-plan/_sessions/{_slug(a2a_context_id)}.json",
                          {"pack_context_id": pack_context_id})

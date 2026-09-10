@@ -28,6 +28,7 @@ def assemble_plan(
     scope: list[str] = []
     out_of_scope: list[str] = []
     metrics: list[str] = []
+    test_design: list[str] = []
     for d in decisions:
         ref = d.source_refs[0] if d.source_refs else ""
         if d.round == "methodology":
@@ -36,6 +37,8 @@ def assemble_plan(
             (out_of_scope if d.chosen.lower().startswith("out") else scope).append(ref or d.chosen)
         elif d.round == "metrics":
             metrics.append(d.chosen)
+        elif d.round == "test-design":
+            test_design.append(d.chosen)
 
     grounded = plan_pack.pack.grounded
     if not scope and grounded:
@@ -45,8 +48,8 @@ def assemble_plan(
     ctx = plan_pack.context_id
     return TestPlan(
         id=f"plan:{ctx}", context_id=ctx, methodology=methodology or ["api"], scope=scope,
-        out_of_scope=out_of_scope, metrics=metrics, confidence=conf, source_refs=source_refs,
-        status=status, created_at=now, run_id=run_id,
+        out_of_scope=out_of_scope, metrics=metrics, test_design=test_design, confidence=conf,
+        source_refs=source_refs, status=status, created_at=now, run_id=run_id,
     )
 
 
@@ -80,6 +83,8 @@ def heuristic_brief(plan: TestPlan, plan_pack: PlanPack, open_questions: list[Qu
         f"## Test Plan brief — {subject} (confidence: {plan.confidence})",
         "",
         f"**Methodology:** {', '.join(plan.methodology)}",
+        "",
+        f"**Test-design method(s):** {', '.join(plan.test_design) or '(default per behaviour)'}",
         "",
         "**In scope:**",
         bullets(plan.scope),

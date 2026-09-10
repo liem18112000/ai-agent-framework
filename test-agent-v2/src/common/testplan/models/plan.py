@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-ROUNDS = ("methodology", "scope", "metrics")
+ROUNDS = ("methodology", "scope", "metrics", "test-design")
 
-ROUND_PREFIX = {"methodology": "mth", "scope": "sco", "metrics": "mtr"}
+ROUND_PREFIX = {"methodology": "mth", "scope": "sco", "metrics": "mtr", "test-design": "tds"}
 
 DRAFT = "draft"
 CONFIRMED = "confirmed"
@@ -27,6 +27,8 @@ class TestPlan:
     scope: list[str] = field(default_factory=list)
     out_of_scope: list[str] = field(default_factory=list)
     metrics: list[str] = field(default_factory=list)
+    test_design: list[str] = field(default_factory=list)  # chosen test-design method(s), 4th round
+    test_kinds: list[str] = field(default_factory=list)  # open, elicited kind taxonomy (empty = defaults)
     confidence: str = "low"
     source_refs: list[str] = field(default_factory=list)
     status: str = DRAFT

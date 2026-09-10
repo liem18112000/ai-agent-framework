@@ -8,8 +8,8 @@ from common.testplan.models import ROUNDS, TestPlan, TestScenario
 from common.testplan.pack import PlanPack
 
 
-def test_rounds_are_the_define_triplet():
-    assert ROUNDS == ("methodology", "scope", "metrics")
+def test_rounds_are_the_define_set():
+    assert ROUNDS == ("methodology", "scope", "metrics", "test-design")
 
 
 def test_models_roundtrip():
