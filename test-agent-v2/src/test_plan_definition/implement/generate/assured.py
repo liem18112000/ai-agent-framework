@@ -17,7 +17,7 @@ import os
 
 from common.testplan import memory as store
 from common.testplan.models import AssuredReport, PlanPack, TestData, TestPlan, TestScenario
-from test_plan_definition.implement.scenarios import heuristic_scenarios
+from test_plan_definition.implement.generate.scenarios import heuristic_scenarios
 from test_plan_definition.monitoring import get_logger
 
 log = get_logger("implement.assured")
@@ -58,7 +58,7 @@ async def run_assured_scenarios(
     now: str = "", model=None,
 ) -> tuple[list[TestScenario], AssuredReport]:
     """Run the bounded assured loop and return the best scenario set + its quality report."""
-    from test_plan_definition.implement.llm import claude_judge_scenarios, claude_scenarios
+    from test_plan_definition.implement.generate.llm import claude_judge_scenarios, claude_scenarios
 
     max_iters, threshold = _env_int("TPD_ASSURED_MAX_ITERS", _DEFAULT_MAX_ITERS), _env_float(
         "TPD_ASSURED_THRESHOLD", _DEFAULT_THRESHOLD)

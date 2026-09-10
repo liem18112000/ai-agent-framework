@@ -15,7 +15,8 @@ async def _tpd_runner(bank, ctx_id, monkeypatch):
     from test_plan_definition.agent import build_root_agent
 
     for target in ("common.adk.interrogation.build_bank", "test_plan_definition.agent.build_bank",
-                   "test_plan_definition.implement.agent.build_bank"):
+                   "test_plan_definition.implement.agent.build_bank",
+                   "test_plan_definition.implement.generate.agent.build_bank"):
         monkeypatch.setattr(target, lambda: bank)
 
     svc = InMemorySessionService()
@@ -78,7 +79,7 @@ async def test_implement_via_graph_drives_scenario_llm_agent(monkeypatch, pack_b
     ctx_id = "run-6f2a"
     bank = MemoryBank(pack_bucket)
     fake = full_fake_model()
-    monkeypatch.setattr("test_plan_definition.implement.llm.agent_model", lambda **k: fake)
+    monkeypatch.setattr("test_plan_definition.implement.generate.llm.agent_model", lambda **k: fake)
     turn = await _tpd_runner(bank, ctx_id, monkeypatch)
 
     replies = [await turn(f"define {ctx_id}")]

@@ -12,7 +12,7 @@ async def generate_test_data(plan: TestPlan, plan_pack: PlanPack, *, now: str = 
     """Detailed heuristic by default; opt into the TestDataGen ``LlmAgent`` per-call with
     ``detail``/``TPD_LLM_DETAIL`` (kept off the I3 default path)."""
     if detail or os.environ.get("TPD_LLM_DETAIL"):
-        from test_plan_definition.implement.llm import claude_test_data
+        from test_plan_definition.implement.generate.llm import claude_test_data
 
         td = await claude_test_data(plan, plan_pack, now=now, model=model)
         if td:

@@ -5,7 +5,11 @@ from __future__ import annotations
 
 from common.adk.interrogation import InterrogationAgent, SessionSpec, register_spec
 from common.testplan import memory as store
-from test_plan_definition.implement.loop import IMPLEMENT_ROUNDS, ImplementBrief, ImplementSession
+from test_plan_definition.implement.interrogate.loop import (
+    IMPLEMENT_ROUNDS,
+    ImplementBrief,
+    ImplementSession,
+)
 
 
 def summarize_implement_interrogation(result: ImplementBrief) -> str:

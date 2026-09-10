@@ -5,7 +5,7 @@ from __future__ import annotations
 from google.adk.agents import SequentialAgent
 
 from knowledge_gathering.gather.agent import GatherAgent
-from test_plan_definition.implement.agent import ImplementAgent
+from test_plan_definition.implement.generate.agent import ImplementAgent
 from testing_agent.subagents import ApproveAgent, DefineAgent, RefineAgent
 
 

@@ -17,7 +17,7 @@ from common.testplan.models import CONFIRMED, TestPlan, TestScenario
 from common.testplan.pack import PlanPack
 from test_plan_definition.define import define
 from test_plan_definition.implement import implement_plan
-from test_plan_definition.implement.llm import claude_judge_scenarios
+from test_plan_definition.implement.generate.llm import claude_judge_scenarios
 from tests.tpd_fakes import FakeGeneratorModel, full_fake_model, judge_verdict
 
 

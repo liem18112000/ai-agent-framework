@@ -13,8 +13,8 @@ from common.testplan import memory as store
 from common.testplan.models import CONFIRMED, ROUNDS, TestData, TestPlan
 from common.testplan.pack import PlanPack
 from test_plan_definition.define import define
-from test_plan_definition.implement.loop import ImplementSession
-from test_plan_definition.implement.scenarios import heuristic_scenarios
+from test_plan_definition.implement.generate.scenarios import heuristic_scenarios
+from test_plan_definition.implement.interrogate.loop import ImplementSession
 
 
 def _plan(**kw) -> TestPlan:
