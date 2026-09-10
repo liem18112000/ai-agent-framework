@@ -193,3 +193,9 @@ class PgMemoryStore:
                     if syn and rid not in seen:
                         seen.add(rid); out.append(syn)
         return out[:limit]
+
+
+# The pgvector ADAPTER behind the `common.memory.vector_store.VectorStore` port. `PgMemoryStore`
+# already conforms structurally (Protocol = duck-typed); this alias names it as such for call sites
+# that read against the port. The historical `PgMemoryStore` name stays the canonical export.
+PgVectorStore = PgMemoryStore

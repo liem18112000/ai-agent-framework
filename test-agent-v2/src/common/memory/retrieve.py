@@ -5,9 +5,14 @@ from __future__ import annotations
 import os
 
 from common.memory.graph_index import match_index_nodes
+from common.memory.vector_store import VectorStore
 from common.monitoring import get_logger
 
 log = get_logger("memory.retrieve")
+
+# MEMORY_BACKEND values that consult the VectorStore before the GCS graph index. `gcs` (the default)
+# stays graph-only; a None store still falls back to the graph for any of these.
+_STORE_BACKENDS = ("hybrid", "postgres", "memory")
 
 
 def backend() -> str:
@@ -19,9 +24,9 @@ def _graph_search(bank, query: str) -> list[dict]:
     return match_index_nodes(graph, query)
 
 
-async def search_nodes(bank, query: str, *, store=None) -> list[dict]:
-    """Index nodes matching `query`, as `{id,type,title}` dicts; Postgres in hybrid/postgres mode."""
-    if backend() in ("hybrid", "postgres"):
+async def search_nodes(bank, query: str, *, store: VectorStore | None = None) -> list[dict]:
+    """Index nodes matching `query`, as `{id,type,title}` dicts; the VectorStore in hybrid/postgres mode."""
+    if backend() in _STORE_BACKENDS:
         store = store or _build_store()
         if store is not None:
             try:
@@ -35,7 +40,7 @@ async def search_nodes(bank, query: str, *, store=None) -> list[dict]:
 
 async def recall_lessons(bank, *, seed_refs: set[str], query_text: str = "", limit: int = 5) -> list[str]:
     """Prior lessons for a run — structural (source_refs ∩ seed_refs) ∪ semantic (vector-nearest)."""
-    if backend() in ("hybrid", "postgres"):
+    if backend() in _STORE_BACKENDS:
         store = _build_store()
         if store is not None:
             try:
@@ -50,11 +55,12 @@ async def recall_lessons(bank, *, seed_refs: set[str], query_text: str = "", lim
     return _graph_recall(bank, seed_refs=seed_refs, limit=limit)
 
 
-def _build_store():
-    """Lazily build the pg store (None if no DB). Lazy import keeps the gcs path pg-free."""
-    from common.memory.pg import build_store
+def _build_store() -> VectorStore | None:
+    """Lazily build the selected VectorStore (VECTOR_BACKEND; pgvector default → None when no DB).
+    Lazy import keeps the gcs path free of the pg/vector adapters."""
+    from common.memory.vector_factory import build_vector_store
 
-    return build_store()
+    return build_vector_store()
 
 
 async def _query_embedding(query: str):

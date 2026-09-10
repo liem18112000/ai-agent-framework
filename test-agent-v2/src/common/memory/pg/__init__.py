@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from common.memory.pg.store import PgMemoryStore
+from common.memory.pg.store import PgMemoryStore, PgVectorStore
 
-__all__ = ["PgMemoryStore", "build_store"]
+__all__ = ["PgMemoryStore", "PgVectorStore", "build_store"]
 
 
 def build_store():
