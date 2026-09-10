@@ -117,6 +117,15 @@ def read_plan_state(bank, context_id: str) -> dict:
     return bank.get_json(f"{_dir(context_id)}/state.json", {})
 
 
+def write_assured_state(bank, context_id: str, state: dict) -> str:
+    """Persist the P4 assured-loop state so it RESUMES (not restarts) across a Cloud Run kill."""
+    return bank.put_json(f"{_dir(context_id)}/assured.json", state)
+
+
+def read_assured_state(bank, context_id: str) -> dict:
+    return bank.get_json(f"{_dir(context_id)}/assured.json", {})
+
+
 def link_session(bank, a2a_context_id: str, pack_context_id: str) -> str:
     return bank.put_json(f"{ROOT}/test-plan/_sessions/{_slug(a2a_context_id)}.json",
                          {"pack_context_id": pack_context_id})

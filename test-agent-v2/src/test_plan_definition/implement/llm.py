@@ -5,8 +5,13 @@ from __future__ import annotations
 
 from common.adk import agent_model
 from common.testplan.llm.adk import build_generator_agent, run_json_agent
-from common.testplan.llm.prompts import scenarios_prompt, steps_prompt, testdata_prompt
-from common.testplan.llm.schemas import Scenarios, StepsList, TestDataList
+from common.testplan.llm.prompts import (
+    judge_scenarios_prompt,
+    scenarios_prompt,
+    steps_prompt,
+    testdata_prompt,
+)
+from common.testplan.llm.schemas import JudgeVerdict, Scenarios, StepsList, TestDataList
 from common.testplan.models import TestData, TestPlan, TestScenario, TestStep
 from test_plan_definition.monitoring import get_logger
 
@@ -14,18 +19,39 @@ log = get_logger("llm.implement")
 
 
 async def claude_scenarios(plan: TestPlan, plan_pack, test_data: list[TestData], *,
-                           now: str = "", model=None) -> list[TestScenario] | None:
+                           now: str = "", model=None,
+                           reflections: list[str] | None = None) -> list[TestScenario] | None:
     model = model or agent_model(max_tokens=6000)
     if model is None:
         return None
-    agent = build_generator_agent(name="tpd_scenario_gen",
-                                  prompt=scenarios_prompt(plan, plan_pack.summary_text(), test_data),
-                                  output_schema=Scenarios, output_key="tpd_scenarios", model=model)
+    agent = build_generator_agent(
+        name="tpd_scenario_gen",
+        prompt=scenarios_prompt(plan, plan_pack.summary_text(), test_data, reflections),
+        output_schema=Scenarios, output_key="tpd_scenarios", model=model)
     data = await run_json_agent(agent, output_key="tpd_scenarios")
     if not data:
         log.warning("no scenarios from generator; falling back to heuristic")
         return None
     return Scenarios(**data).to_scenarios(plan, now) or None
+
+
+async def claude_judge_scenarios(plan: TestPlan, plan_pack, scenarios: list[TestScenario], *,
+                                 model=None) -> JudgeVerdict | None:
+    """The P4 LLM-as-judge (§3.4). Returns a validated ``JudgeVerdict`` or ``None`` when unconfigured
+    / the output fails schema — the caller treats ``None`` as 'unscored, keep as-is' (never raises).
+    Small ``max_tokens``: the verdict is short, keeping the per-iteration judge call cheap."""
+    model = model or agent_model(max_tokens=1500)
+    if model is None:
+        return None
+    agent = build_generator_agent(
+        name="tpd_scenario_judge",
+        prompt=judge_scenarios_prompt(plan, plan_pack.summary_text(), scenarios),
+        output_schema=JudgeVerdict, output_key="tpd_verdict", model=model)
+    data = await run_json_agent(agent, output_key="tpd_verdict")
+    if not data:
+        log.warning("no verdict from judge; scenarios kept unscored")
+        return None
+    return JudgeVerdict(**data)
 
 
 async def claude_steps(scenarios: list[TestScenario], plan: TestPlan, plan_pack, test_data, *,

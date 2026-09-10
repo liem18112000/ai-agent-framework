@@ -13,6 +13,7 @@ from common.testplan.models import (
     TestScenario,
 )
 from common.testplan.pack import load_plan_pack
+from test_plan_definition.implement.assured import assured_enabled, run_assured_scenarios
 from test_plan_definition.implement.gherkin import export_features
 from test_plan_definition.implement.scenarios import generate_scenarios
 from test_plan_definition.implement.steps import generate_all_steps
@@ -23,7 +24,8 @@ log = get_logger("implement.generate")
 
 
 async def implement_plan(bank, context_id: str, *, run_id: str = "implement", now: str = "",
-                         detail: bool = False, model=None) -> ImplementResult:
+                         detail: bool = False, assured: bool = False,
+                         model=None) -> ImplementResult:
     plan = store.read_plan(bank, context_id)
     if plan is None:
         return ImplementResult(message=f"No test plan for {context_id}; run define first.")
@@ -34,7 +36,14 @@ async def implement_plan(bank, context_id: str, *, run_id: str = "implement", no
     plan_pack = load_plan_pack(bank, context_id)
     # I3: only `scenarios` runs an LLM on the default path; test-data/steps stay behind `detail`.
     test_data = await generate_test_data(plan, plan_pack, now=now, detail=detail, model=model)
-    scenarios = await generate_scenarios(plan, plan_pack, test_data, now=now, model=model)
+    # P4 (§3.4): the opt-in assured loop replaces the single blind scenario call with a bounded
+    # generate→judge→gate→reflect→regenerate loop. Default OFF keeps the I3 single-call path.
+    quality = None
+    if assured_enabled(assured):
+        scenarios, quality = await run_assured_scenarios(bank, context_id, plan, plan_pack,
+                                                         test_data, now=now, model=model)
+    else:
+        scenarios = await generate_scenarios(plan, plan_pack, test_data, now=now, model=model)
     steps = await generate_all_steps(scenarios, plan, plan_pack, test_data, now=now,
                                      detail=detail, model=model)
 
@@ -51,9 +60,10 @@ async def implement_plan(bank, context_id: str, *, run_id: str = "implement", no
         testdata_written=len(test_data), confidence=plan.confidence, started=now, ended=now,
     )
     store.append_plan_run_log(bank, run)
-    log.info("implement done: %d scenarios, %d steps, %d test-data, feature=%s",
-             len(scenarios), len(steps), len(test_data), bool(feature))
-    return ImplementResult(plan, test_data, scenarios, steps, feature, run)
+    log.info("implement done: %d scenarios, %d steps, %d test-data, feature=%s, quality=%s",
+             len(scenarios), len(steps), len(test_data), bool(feature),
+             quality.final_score if quality else "n/a")
+    return ImplementResult(plan, test_data, scenarios, steps, feature, run, quality=quality)
 
 
 def _project_nodes(bank, plan: TestPlan, scenarios: list[TestScenario]) -> None:

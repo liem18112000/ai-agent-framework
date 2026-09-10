@@ -61,6 +61,25 @@ class TestStep:
 
 
 @dataclass
+class AssuredReport:
+    """The P4 assured-loop verdict (§3.4): the quality signal attached to an implement pass. One
+    ``iterations`` entry per generate→judge round; ``accepted`` once ``final_score >= threshold``.
+    Persisted under the context so the loop resumes rather than restarts across a Cloud Run kill."""
+
+    iterations: list[dict] = field(default_factory=list)  # {iter, score, accepted, issues}
+    final_score: float = 0.0
+    threshold: float = 0.0
+    accepted: bool = False
+    issues: list[str] = field(default_factory=list)
+    reflections: list[str] = field(default_factory=list)
+    note: str = ""
+
+    @property
+    def rounds(self) -> int:
+        return len(self.iterations)
+
+
+@dataclass
 class ImplementResult:
     """The final result of an implement pass — plan, generated artifacts, and the Gherkin export."""
 
@@ -71,3 +90,4 @@ class ImplementResult:
     feature: str = ""
     run: TestPlanRun | None = None
     message: str = ""
+    quality: AssuredReport | None = None

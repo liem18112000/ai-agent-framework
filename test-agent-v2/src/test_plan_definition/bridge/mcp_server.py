@@ -29,10 +29,13 @@ def register_tools(mcp: MCPServer, session: BridgeSession) -> dict:
         return res.text
 
     @mcp.tool()
-    async def implement_plan(context_id: str, detail: bool = False) -> str:
-        """Generate the test data / scenarios (happy + negative) / steps from the confirmed plan."""
-        return (await session.ask(f"implement {context_id}" + (" detail" if detail else ""),
-                                  context_id=context_id)).text
+    async def implement_plan(context_id: str, detail: bool = False, assured: bool = False) -> str:
+        """Generate the test data / scenarios (happy + negative) / steps from the confirmed plan.
+
+        `assured=True` runs the P4 assured loop (generate→judge→gate→reflect→regenerate, opt-in) and
+        attaches a quality score to the reply; default is the single-call path."""
+        msg = f"implement {context_id}" + (" detail" if detail else "") + (" assured" if assured else "")
+        return (await session.ask(msg, context_id=context_id)).text
 
     @mcp.tool()
     async def get_scenarios(context_id: str) -> str:

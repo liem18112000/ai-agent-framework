@@ -35,23 +35,33 @@ def _capture_implement(bank, context_id: str, result: ImplementResult) -> None:
         log.warning("implement: lesson capture skipped (%s)", exc)
 
 
+def _quality_line(result: ImplementResult) -> str:
+    """One-line P4 assured-loop verdict for the human, when the loop ran (§3.4)."""
+    q = result.quality
+    if q is None:
+        return ""
+    verdict = "PASS" if q.accepted else "BELOW BAR"
+    return (f"  Quality (assured loop, {q.rounds} round(s)): {verdict} — score "
+            f"{q.final_score:.2f} vs threshold {q.threshold:.2f}. {q.note}\n")
+
+
 def summarize_implement(result: ImplementResult) -> str:
     happy = sum(s.kind == HAPPY for s in result.scenarios)
     negative = sum(s.kind == NEGATIVE for s in result.scenarios)
     titles = "\n".join(f"- [{s.kind}] {s.title}" for s in result.scenarios)
     feature = "  Exported a BDD .feature.\n" if result.feature else ""
     return (f"Implement complete: {len(result.test_data)} test-data, {len(result.scenarios)} "
-            f"scenarios ({happy} happy / {negative} negative), {len(result.steps)} steps.\n{feature}\n"
-            f"{titles}")
+            f"scenarios ({happy} happy / {negative} negative), {len(result.steps)} steps.\n"
+            f"{feature}{_quality_line(result)}\n{titles}")
 
 
 class ImplementAgent(BaseAgent):
     async def _run_async_impl(self, ctx):
         ctx_id = ctx.session.id
-        detail = "detail" in incoming_text(ctx).lower().split()
+        words = incoming_text(ctx).lower().split()
         bank = build_bank()
         result = await implement_plan(bank, ctx_id, run_id=f"impl-{ctx_id[:8]}", now=_now(),
-                                      detail=detail)
+                                      detail="detail" in words, assured="assured" in words)
         _capture_implement(bank, ctx_id, result)
         if not result.scenarios:
             yield text_event(self.name, result.message or f"Nothing generated for {ctx_id}.")

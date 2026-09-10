@@ -77,6 +77,35 @@ class TestDataList(BaseModel):
         ]
 
 
+class JudgeVerdict(BaseModel):
+    """LLM-as-judge output for the P4 assured loop (§3.4). Each dimension is 0.0–1.0; ``reflections``
+    are imperative fixes fed back into the next generation (reflexion). ``accept`` is advisory — the
+    loop gates on ``overall`` vs its threshold, not on the model's own accept flag."""
+
+    overall: float = 0.0
+    ac_coverage: float = 0.0
+    atomicity: float = 0.0
+    testability: float = 0.0
+    traceability: float = 0.0
+    faithfulness: float = 0.0
+    negative_edge_coverage: float = 0.0
+    non_duplication: float = 0.0
+    accept: bool = False
+    issues: list[str] = Field(default_factory=list)
+    reflections: list[str] = Field(default_factory=list)
+
+    _DIMS = ("ac_coverage", "atomicity", "testability", "traceability", "faithfulness",
+             "negative_edge_coverage", "non_duplication")
+
+    def score(self) -> float:
+        """The overall 0–1 quality score: the model's ``overall`` when it gave one, else the mean of
+        the seven rubric dimensions (so a judge that scored dimensions but forgot the summary still
+        yields a usable number). Clamped to [0, 1]."""
+        raw = self.overall if self.overall > 0 else (
+            sum(getattr(self, d) for d in self._DIMS) / len(self._DIMS))
+        return max(0.0, min(1.0, raw))
+
+
 class StepItem(BaseModel):
     scenario_id: str = ""
     steps: list[dict] = Field(default_factory=list)  # {order, keyword, action, expected}
