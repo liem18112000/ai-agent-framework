@@ -78,8 +78,16 @@ def revision_feedback(reflections: list[str] | None) -> str:
             f"EACH of these before returning, without dropping coverage you already had:\n{items}\n")
 
 
-def question_prompt(summary: str, understanding: str, round_name: str) -> str:
-    return (
+def pack_block(summary: str) -> str:
+    """The context-pack block appended to the plan prompts. When `include_context=False` the caller
+    passes THIS string as `complete(cache_prefix=…)` instead — identical across the define rounds +
+    brief for one context, so Anthropic prompt-caches it (a hit after round 1)."""
+    return f"Context pack:\n{summary}"
+
+
+def question_prompt(summary: str, understanding: str, round_name: str, *,
+                    include_context: bool = True) -> str:
+    body = (
         f"You are the QA Testing Agent DEFINING A TEST PLAN, running the '{round_name}' round.\n"
         f"Focus: {ROUND_FOCUS.get(round_name, round_name)}\n\n"
         "Rules:\n"
@@ -92,14 +100,15 @@ def question_prompt(summary: str, understanding: str, round_name: str) -> str:
         "Return ONLY a JSON array; each item: {id, round, question, why, options:[{label,"
         "implication}], recommendation, depends_on:[], applies_to, status, confidence}. "
         f"Use id prefix 'Q-{ROUND_PREFIX[round_name]}-'.\n\n"
-        f"Confirmed understanding:\n{understanding or '(none)'}\n\n"
-        f"Context pack:\n{summary}"
+        f"Confirmed understanding:\n{understanding or '(none)'}"
     )
+    return f"{body}\n\n{pack_block(summary)}" if include_context else body
 
 
-def brief_prompt(plan: TestPlan, summary: str, open_questions: list[str]) -> str:
+def brief_prompt(plan: TestPlan, summary: str, open_questions: list[str], *,
+                 include_context: bool = True) -> str:
     opens = "\n".join(f"- {q}" for q in open_questions) or "(none)"
-    return (
+    body = (
         "Restate, in plain language for a human to confirm, the Test Plan the QA Testing Agent now "
         f"proposes. Overall confidence is '{plan.confidence}'. Use these headings: Methodology, "
         "Test-design method, In scope, Out of scope, Passed means, Open questions.\n\n"
@@ -108,9 +117,9 @@ def brief_prompt(plan: TestPlan, summary: str, open_questions: list[str]) -> str
         f"In scope: {', '.join(plan.scope) or '(none)'}\n"
         f"Out of scope: {', '.join(plan.out_of_scope) or '(none)'}\n"
         f"Passed means: {', '.join(plan.metrics) or '(none)'}\n"
-        f"Open questions:\n{opens}\n\n"
-        f"Context pack:\n{summary}"
+        f"Open questions:\n{opens}"
     )
+    return f"{body}\n\n{pack_block(summary)}" if include_context else body
 
 
 def scenarios_prompt(plan: TestPlan, summary: str, test_data: list[TestData],

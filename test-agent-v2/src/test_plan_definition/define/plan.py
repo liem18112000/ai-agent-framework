@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 from common.llm.vertex import complete, vertex_config
 from common.models import Question
-from common.testplan.llm.prompts import brief_prompt
+from common.testplan.llm.prompts import brief_prompt, pack_block
 from common.testplan.models import ASSUMPTION, DRAFT, PlanDecision, TestPlan
 from common.testplan.pack import PlanPack
 
@@ -62,9 +62,10 @@ def make_restater() -> Restater:
     proj, loc, model = cfg
 
     def restater(plan: TestPlan, plan_pack: PlanPack, opens: list[Question]) -> str:
-        prompt = brief_prompt(plan, plan_pack.summary_text(), [q.question for q in opens])
-        return complete(prompt, project=proj, location=loc, model=model,
-                        max_tokens=700).strip() + "\n"
+        summary = plan_pack.summary_text()
+        prompt = brief_prompt(plan, summary, [q.question for q in opens], include_context=False)
+        return complete(prompt, project=proj, location=loc, model=model, max_tokens=700,
+                        cache_prefix=pack_block(summary)).strip() + "\n"
 
     return restater
 

@@ -20,16 +20,40 @@ def first_text(msg: Any) -> str:
     return next((b.text for b in msg.content if getattr(b, "type", None) == "text"), "")
 
 
-def complete(prompt: str, *, project: str, location: str, model: str, max_tokens: int) -> str:
-    """Run one Claude-on-Vertex completion and return its first text block."""
+def _user_content(prompt: str, cache_prefix: str | None):
+    """The `messages` content: a plain string, or a [cached-prefix, prompt] block list when a
+    stable `cache_prefix` is given (Anthropic prompt caching — cache_control: ephemeral)."""
+    if not cache_prefix:
+        return prompt
+    return [
+        {"type": "text", "text": cache_prefix, "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": prompt},
+    ]
+
+
+def complete(prompt: str, *, project: str, location: str, model: str, max_tokens: int,
+             cache_prefix: str | None = None, stream: bool = True) -> str:
+    """Run one Claude-on-Vertex completion and return its first text block.
+
+    Streams by default (`messages.stream`) — same result, but robust on long generations (keeps the
+    connection alive past read timeouts). When `cache_prefix` is given, that stable block is
+    **prompt-cached**, so repeated calls sharing it (e.g. the 4 define rounds over one pack) are
+    materially faster and ~cheaper on the cached tokens; set `stream=False`/`cache_prefix=None` to opt out."""
     from anthropic import AnthropicVertex
 
-    return first_text(AnthropicVertex(project_id=project, region=location).messages.create(
-        model=model, max_tokens=max_tokens, thinking={"type": "disabled"},
-        messages=[{"role": "user", "content": prompt}],
-    ))
+    client = AnthropicVertex(project_id=project, region=location)
+    kwargs = {
+        "model": model, "max_tokens": max_tokens, "thinking": {"type": "disabled"},
+        "messages": [{"role": "user", "content": _user_content(prompt, cache_prefix)}],
+    }
+    if stream:
+        with client.messages.stream(**kwargs) as s:
+            return first_text(s.get_final_message())
+    return first_text(client.messages.create(**kwargs))
 
 
-async def agenerate(prompt: str, *, project: str, location: str, model: str, max_tokens: int) -> str:
+async def agenerate(prompt: str, *, project: str, location: str, model: str, max_tokens: int,
+                    cache_prefix: str | None = None, stream: bool = True) -> str:
     """Non-blocking `complete()` — run the blocking Vertex call in a worker thread."""
-    return await asyncio.to_thread(complete, prompt, project=project, location=location, model=model, max_tokens=max_tokens)
+    return await asyncio.to_thread(complete, prompt, project=project, location=location, model=model,
+                                   max_tokens=max_tokens, cache_prefix=cache_prefix, stream=stream)

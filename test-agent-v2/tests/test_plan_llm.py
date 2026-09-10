@@ -87,6 +87,22 @@ def test_claude_brief_path(vertex_env, monkeypatch):
     assert "Brief" in brief
 
 
+def test_generator_caches_the_pack_prefix(vertex_env, monkeypatch):
+    """The pack (stable across rounds) is passed as complete(cache_prefix=…), NOT baked into the user
+    prompt — so Anthropic prompt-caches it and rounds 2-4 hit the cache."""
+    captured: dict = {}
+
+    def fake_complete(prompt, **kw):
+        captured.update(prompt=prompt, cache_prefix=kw.get("cache_prefix"))
+        return json.dumps([{"id": "Q-mth-1", "question": "Q?", "status": "open",
+                            "options": [{"label": "A", "implication": "x"}], "recommendation": "A"}])
+
+    monkeypatch.setattr("test_plan_definition.define.questions.complete", fake_complete)
+    make_generator("understanding")(_plan_pack().pack, "methodology")
+    assert captured["cache_prefix"] and captured["cache_prefix"].startswith("Context pack:")
+    assert "Context pack:" not in captured["prompt"]  # moved out of the variable user prompt
+
+
 async def test_generate_scenarios_uses_llm_agent_then_falls_back():
     """ScenarioGen is an ADK LlmAgent driven by an injected fake model; invalid output → heuristic."""
     from tests.tpd_fakes import FakeGeneratorModel, scenarios_json

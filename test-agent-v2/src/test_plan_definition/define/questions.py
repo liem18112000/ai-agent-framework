@@ -9,7 +9,7 @@ from common.interrogate.questions import build_round_questions
 from common.llm.parse import coerce_str, loads_array
 from common.llm.vertex import complete, vertex_config
 from common.models import Question
-from common.testplan.llm.prompts import question_prompt
+from common.testplan.llm.prompts import pack_block, question_prompt
 from common.testplan.models import ROUND_PREFIX as _PREFIX
 from test_plan_definition.monitoring import get_logger
 
@@ -29,8 +29,10 @@ def make_generator(understanding: str = "") -> Generator:
     proj, loc, model = cfg
 
     def generator(pack: Pack, round_name: str) -> list[Question]:
-        raw = complete(question_prompt(pack.summary_text(), understanding, round_name),
-                       project=proj, location=loc, model=model, max_tokens=6000)
+        summary = pack.summary_text()
+        raw = complete(question_prompt(summary, understanding, round_name, include_context=False),
+                       project=proj, location=loc, model=model, max_tokens=6000,
+                       cache_prefix=pack_block(summary))
         qs: list[Question] = []
         for it in loads_array(raw) or []:
             it.setdefault("round", round_name)
