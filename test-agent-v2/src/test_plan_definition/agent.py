@@ -19,7 +19,7 @@ class TpdRouter(BaseAgent):
     async def _run_async_impl(self, ctx):
         text = incoming_text(ctx).strip()
         low = text.lower()
-        if low.startswith(("get-test-plan", "get-scenarios")):
+        if low.startswith(("get-test-plan", "get-scenarios", "get-coverage")):
             yield text_event(self.name, self._read_helper(text))
             return
         if low.startswith("approve"):
@@ -43,12 +43,16 @@ class TpdRouter(BaseAgent):
                                         "get-test-plan <ctx> | get-scenarios <ctx>.")
 
     def _read_helper(self, text: str) -> str:
-        ctx_id = present.extract_ctx(text, ("get-test-plan", "get-scenarios"))
+        ctx_id = present.extract_ctx(text, ("get-test-plan", "get-scenarios", "get-coverage"))
         if not ctx_id:
             return "Provide a context id."
         bank = build_bank()
-        if text.lower().startswith("get-test-plan"):
+        low = text.lower()
+        if low.startswith("get-test-plan"):
             return store.read_plan_brief(bank, ctx_id) or f"No test plan yet for {ctx_id}."
+        if low.startswith("get-coverage"):
+            return store.read_coverage_md(bank, ctx_id) or \
+                f"No coverage matrix yet for {ctx_id} — run implement first."
         return store.read_scenarios_md(bank, ctx_id) or f"No scenarios yet for {ctx_id} — run implement first."
 
     def _approve(self, ctx, text: str) -> str:

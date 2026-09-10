@@ -50,9 +50,10 @@ def summarize_implement(result: ImplementResult) -> str:
     negative = sum(s.kind == NEGATIVE for s in result.scenarios)
     titles = "\n".join(f"- [{s.kind}] {s.title}" for s in result.scenarios)
     feature = "  Exported a BDD .feature.\n" if result.feature else ""
+    coverage = f"  {result.coverage_summary}\n" if result.coverage_summary else ""
     return (f"Implement complete: {len(result.test_data)} test-data, {len(result.scenarios)} "
             f"scenarios ({happy} happy / {negative} negative), {len(result.steps)} steps.\n"
-            f"{feature}{_quality_line(result)}\n{titles}")
+            f"{feature}{coverage}{_quality_line(result)}\n{titles}")
 
 
 class ImplementAgent(BaseAgent):

@@ -156,6 +156,21 @@ def read_implement_brief(bank, context_id: str) -> str | None:
     return bank.get_text(f"{_dir(context_id)}/implement-brief.md")
 
 
+def write_coverage(bank, context_id: str, matrix, md: str) -> str:
+    """Persist the Q5 coverage matrix (json) + its human-facing traceability/gap report (md)."""
+    from common.testplan.coverage import as_dict
+    bank.put_json(f"{_dir(context_id)}/coverage.json", as_dict(matrix))
+    return bank.put_text(f"{_dir(context_id)}/coverage-matrix.md", md)
+
+
+def read_coverage_md(bank, context_id: str) -> str | None:
+    return bank.get_text(f"{_dir(context_id)}/coverage-matrix.md")
+
+
+def read_coverage(bank, context_id: str) -> dict:
+    return bank.get_json(f"{_dir(context_id)}/coverage.json", {})
+
+
 def link_session(bank, a2a_context_id: str, pack_context_id: str) -> str:
     return bank.put_json(f"{ROOT}/test-plan/_sessions/{_slug(a2a_context_id)}.json",
                          {"pack_context_id": pack_context_id})

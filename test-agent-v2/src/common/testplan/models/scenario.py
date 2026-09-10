@@ -91,3 +91,4 @@ class ImplementResult:
     run: TestPlanRun | None = None
     message: str = ""
     quality: AssuredReport | None = None
+    coverage_summary: str = ""  # Q5 one-line coverage-matrix summary (full matrix persisted)

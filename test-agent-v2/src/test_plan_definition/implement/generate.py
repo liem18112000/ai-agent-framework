@@ -53,6 +53,7 @@ async def implement_plan(bank, context_id: str, *, run_id: str = "implement", no
     feature = export_features(bank, context_id) or ""
     bank.update_index(lambda g: _add_provenance(g, plan, scenarios))
     _project_nodes(bank, plan, scenarios)
+    coverage = _build_coverage(bank, context_id, plan, plan_pack, scenarios)
 
     run = TestPlanRun(
         run_id=run_id, context_id=context_id, plan_id=plan.id,
@@ -60,10 +61,29 @@ async def implement_plan(bank, context_id: str, *, run_id: str = "implement", no
         testdata_written=len(test_data), confidence=plan.confidence, started=now, ended=now,
     )
     store.append_plan_run_log(bank, run)
-    log.info("implement done: %d scenarios, %d steps, %d test-data, feature=%s, quality=%s",
+    log.info("implement done: %d scenarios, %d steps, %d test-data, feature=%s, quality=%s, %s",
              len(scenarios), len(steps), len(test_data), bool(feature),
-             quality.final_score if quality else "n/a")
-    return ImplementResult(plan, test_data, scenarios, steps, feature, run, quality=quality)
+             quality.final_score if quality else "n/a", coverage or "no-coverage")
+    return ImplementResult(plan, test_data, scenarios, steps, feature, run, quality=quality,
+                           coverage_summary=coverage)
+
+
+def _build_coverage(bank, context_id: str, plan, plan_pack, scenarios) -> str:
+    """Q5: build + persist the codegraph coverage matrix; return its one-line summary (best-effort)."""
+    try:
+        from common.testplan.coverage import (
+            build_coverage_matrix,
+            coverage_summary,
+            render_coverage_md,
+        )
+
+        matrix = build_coverage_matrix(bank, context_id, plan=plan, pack=plan_pack.pack,
+                                       scenarios=scenarios)
+        store.write_coverage(bank, context_id, matrix, render_coverage_md(matrix))
+        return coverage_summary(matrix)
+    except Exception as exc:  # noqa: BLE001 — coverage is a best-effort overlay, never breaks implement
+        log.warning("implement: coverage matrix skipped (%s)", exc)
+        return ""
 
 
 def _project_nodes(bank, plan: TestPlan, scenarios: list[TestScenario]) -> None:

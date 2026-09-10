@@ -30,3 +30,13 @@ def _upsert_index(bank, meta: dict) -> None:
     rows.append(meta)
     rows.sort(key=lambda r: r.get("repo", ""))
     bank.put_json(INDEX, rows)
+
+
+def read_registry(bank) -> list[dict]:
+    """The code-graph registry rows (one compact meta per repo: endpoints, god_nodes, counts…)."""
+    return bank.get_json(INDEX, []) or []
+
+
+def read_code_meta(bank, repo: str) -> dict:
+    """The `latest` meta for one repo (endpoints / rest_clients / enums / god_nodes / counts)."""
+    return bank.get_json(_slot_paths(repo, "latest")["meta"], {}) or {}

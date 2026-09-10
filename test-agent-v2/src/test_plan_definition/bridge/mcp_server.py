@@ -42,5 +42,12 @@ def register_tools(mcp: MCPServer, session: BridgeSession) -> dict:
         """Return the generated test scenarios + steps for a context id (read-only)."""
         return (await session.ask(f"get-scenarios {context_id}", context_id=context_id)).text
 
+    @mcp.tool()
+    async def get_coverage(context_id: str) -> str:
+        """Return the Q5 codegraph coverage matrix — requirement×kind traceability + gap report,
+        with a code-unit (endpoints/hubs) reached count. Read-only; run implement first."""
+        return (await session.ask(f"get-coverage {context_id}", context_id=context_id)).text
+
     return {"define_plan": define_plan, "get_plan": get_plan, "approve_plan": approve_plan,
-           "implement_plan": implement_plan, "get_scenarios": get_scenarios}
+           "implement_plan": implement_plan, "get_scenarios": get_scenarios,
+           "get_coverage": get_coverage}
