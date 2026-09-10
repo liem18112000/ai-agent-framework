@@ -35,7 +35,7 @@ paths (`define/loop.py`, `define/plan.py`, `implement/scenarios.py`, `implement/
 > runner, and port them into the same offline harness. (2) The deepest metric here — **mutation score /
 > real fault detection** — needs the scenarios to actually *run* against the system under test. That
 > execution stage does **not exist yet**; it is Pillar 2 ("Real Test Execution + Self-Healing") of
-> [`RESEARCH-agentic-qa-enhancements.md`](./RESEARCH-agentic-qa-enhancements.md). Until it ships, fault
+> [`RESEARCH-test-executor-agent.md`](./RESEARCH-test-executor-agent.md). Until it ships, fault
 > detection is measured by a **deterministic proxy** (fault-class coverage + oracle strength), and the
 > report says so at every step. (3) Where a claim comes from a single vendor blog rather than a primary
 > standard, it is marked *(unverified)*.
@@ -283,7 +283,7 @@ This is the deepest question and the one that separates a *plausible* suite from
 - **Mutation Score (the gold standard, later).** Inject small faults (mutants) into the system under test and
   measure the fraction the suite **kills**. Established since Jia & Harman's survey; on the JVM (the luz stack
   is Java) the tool is **PIT/pitest**. This requires the scenarios to *run* — which needs the execution stage
-  from [`RESEARCH-agentic-qa-enhancements.md`](./RESEARCH-agentic-qa-enhancements.md) Pillar 2. **Not
+  from [`RESEARCH-test-executor-agent.md`](./RESEARCH-test-executor-agent.md) Pillar 2. **Not
   available today.** When it is, mutation score becomes the TPS's heaviest term.
 - **Oracle Strength (the deterministic proxy, now).** A test that asserts only `2xx` kills almost no mutant;
   a test that asserts the real end-state kills many. Score each scenario/step for oracle strength:
@@ -533,7 +533,7 @@ shape as the KGA report's E0–E4 so the two roadmaps read as one program.
   the **execution-depth rubric** (real endpoint/state vs placeholder) benchmarked against the reference
   executed plan. Now the concreteness gap the human plan exposed becomes a *number*.
 - **T4 — Real mutation + TPS dashboard (gated on Pillar 2, then ongoing).** When the execution stage
-  ([`RESEARCH-agentic-qa-enhancements.md`](./RESEARCH-agentic-qa-enhancements.md)) can run the scenarios, wire
+  ([`RESEARCH-test-executor-agent.md`](./RESEARCH-test-executor-agent.md)) can run the scenarios, wire
   **PIT mutation score** and swap it in for the proxy in the TPS. Trend TPS over time; alert on a main-branch
   regression naming the offending component.
 
@@ -777,7 +777,7 @@ executed plan; the metric can tell a plausible-but-shallow suite from an executi
 **Goal.** Swap the fault-detection proxy for real mutation once the scenarios can run, and turn the scatter of
 per-surface scores into one trend number with domain-specific gates.
 
-1. **Blocked on the execution stage** ([`RESEARCH-agentic-qa-enhancements.md`](./RESEARCH-agentic-qa-enhancements.md)
+1. **Blocked on the execution stage** ([`RESEARCH-test-executor-agent.md`](./RESEARCH-test-executor-agent.md)
    Pillar 2). When runnable: wire **PIT** against the SUT, compute mutation score per suite, and replace the
    `oracle-strength + fault-class-coverage` proxy in the TPS FaultDetection term.
 2. `metrics/tps.py` — the weighted composite (§6), a direct copy of the shipped `pqs.py` shape: `WEIGHTS`
