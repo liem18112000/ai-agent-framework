@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from common.llm.vertex import complete, vertex_config
+from common.adk.model import complete, model_configured
 from common.models import Question
 from common.testplan.llm.prompts import brief_prompt, pack_block
 from common.testplan.models import ASSUMPTION, DRAFT, PlanDecision, TestPlan
@@ -55,17 +55,14 @@ def assemble_plan(
 
 
 def make_restater() -> Restater:
-    """Claude-on-Vertex prose brief when VERTEX_* is configured, else the heuristic assembly."""
-    cfg = vertex_config()
-    if not cfg:
+    """Provider-sourced prose brief when the model is configured, else the heuristic assembly."""
+    if not model_configured():
         return heuristic_brief
-    proj, loc, model = cfg
 
     def restater(plan: TestPlan, plan_pack: PlanPack, opens: list[Question]) -> str:
         summary = plan_pack.summary_text()
         prompt = brief_prompt(plan, summary, [q.question for q in opens], include_context=False)
-        return complete(prompt, project=proj, location=loc, model=model, max_tokens=700,
-                        cache_prefix=pack_block(summary)).strip() + "\n"
+        return complete(prompt, max_tokens=700, cache_prefix=pack_block(summary)).strip() + "\n"
 
     return restater
 

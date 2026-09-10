@@ -36,9 +36,10 @@ class VertexClaudeProvider:
                        max_tokens=max_tokens or get_config().default_max_tokens,
                        thinking={"type": "disabled"}, **extra)
 
-    def complete(self, prompt: str, *, max_tokens: int) -> str:
+    def complete(self, prompt: str, *, max_tokens: int, cache_prefix: str | None = None) -> str:
         project, location, model = self._require_config()
-        return _vertex_complete(prompt, project=project, location=location, model=model, max_tokens=max_tokens)
+        return _vertex_complete(prompt, project=project, location=location, model=model,
+                                max_tokens=max_tokens, cache_prefix=cache_prefix)
 
     async def agenerate(self, prompt: str, *, max_tokens: int) -> str:
         project, location, model = self._require_config()

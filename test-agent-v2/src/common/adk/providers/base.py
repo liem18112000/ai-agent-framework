@@ -19,8 +19,10 @@ class ModelProvider(Protocol):
         """The model object for an ADK `LlmAgent` (a `LiteLlm` for Claude-on-Vertex), or `None` when"""
         ...
 
-    def complete(self, prompt: str, *, max_tokens: int) -> str:
-        """Synchronous single-shot completion (engine text path; optional to route now — Option A)."""
+    def complete(self, prompt: str, *, max_tokens: int, cache_prefix: str | None = None) -> str:
+        """Synchronous single-shot completion (engine text path). ``cache_prefix`` is an optional
+        stable prefix a provider MAY prompt-cache (Anthropic ephemeral cache); ``None`` = no caching,
+        identical to a plain completion. Providers that can't cache simply ignore it."""
         ...
 
     async def agenerate(self, prompt: str, *, max_tokens: int) -> str:

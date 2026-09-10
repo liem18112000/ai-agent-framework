@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from common.adk.model import complete, model_configured
 from common.interrogate.pack import Pack
 from common.interrogate.questions import build_round_questions
 from common.llm.parse import coerce_str, loads_array
-from common.llm.vertex import complete, vertex_config
 from common.models import Question
 from common.testplan.llm.prompts import pack_block, question_prompt
 from common.testplan.models import ROUND_PREFIX as _PREFIX
@@ -22,17 +22,14 @@ _FIELDS = ("id", "round", "question", "why", "options", "recommendation",
 
 
 def make_generator(understanding: str = "") -> Generator:
-    """Select the generator: Claude-on-Vertex when VERTEX_* is configured, else the heuristic."""
-    cfg = vertex_config()
-    if not cfg:
+    """Select the generator: the configured model provider when ready, else the heuristic."""
+    if not model_configured():
         return lambda pack, round_name: heuristic_questions(pack, round_name)
-    proj, loc, model = cfg
 
     def generator(pack: Pack, round_name: str) -> list[Question]:
         summary = pack.summary_text()
         raw = complete(question_prompt(summary, understanding, round_name, include_context=False),
-                       project=proj, location=loc, model=model, max_tokens=6000,
-                       cache_prefix=pack_block(summary))
+                       max_tokens=6000, cache_prefix=pack_block(summary))
         qs: list[Question] = []
         for it in loads_array(raw) or []:
             it.setdefault("round", round_name)

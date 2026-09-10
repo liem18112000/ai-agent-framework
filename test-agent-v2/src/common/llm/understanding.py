@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from common.llm.prompts import understanding_prompt
-from common.llm.vertex import complete
 from common.models import Insight, Question
 
 if TYPE_CHECKING:
@@ -14,7 +13,10 @@ if TYPE_CHECKING:
 
 def claude_understanding(
     pack: Pack, insights: list[Insight], open_questions: list[Question], deferred: list[Question],
-    confidence: str, *, project: str, location: str, model: str,
+    confidence: str,
 ) -> str:
+    # Lazy import — see common.llm.questions.claude_questions for the cycle rationale.
+    from common.adk.model import complete
+
     return complete(understanding_prompt(pack, insights, open_questions, confidence),
-                    project=project, location=location, model=model, max_tokens=700).strip() + "\n"
+                    max_tokens=700).strip() + "\n"

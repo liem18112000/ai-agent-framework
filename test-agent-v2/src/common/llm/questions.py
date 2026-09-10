@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 
 from common.llm.parse import coerce_str, loads_array
 from common.llm.prompts import question_prompt
-from common.llm.vertex import complete
 from common.models import Question
 from common.monitoring import get_logger
 
@@ -21,8 +20,12 @@ _FIELDS = (
 )
 
 
-def claude_questions(pack: Pack, round_name: str, *, project: str, location: str, model: str) -> list[Question]:
-    raw = complete(question_prompt(pack, round_name), project=project, location=location, model=model, max_tokens=6000)
+def claude_questions(pack: Pack, round_name: str) -> list[Question]:
+    # Lazy: common.adk.model → common.adk package init imports common.interrogate, which imports
+    # this module — a top-level import would cycle (see the refactor note). Deferred to call time.
+    from common.adk.model import complete
+
+    raw = complete(question_prompt(pack, round_name), max_tokens=6000)
     return _parse(raw, round_name)
 
 

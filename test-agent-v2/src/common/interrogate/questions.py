@@ -7,7 +7,6 @@ from collections.abc import Callable
 from common.interrogate.pack import Pack
 from common.interrogate.round import RoundQuestions
 from common.llm.questions import claude_questions
-from common.llm.vertex import vertex_config
 from common.models import Question
 from common.monitoring import get_logger
 
@@ -58,12 +57,14 @@ def _defer_excess_open(questions: list[Question], cap: int) -> None:
 
 
 def make_generator() -> Generator:
-    cfg = vertex_config()
-    if cfg:
-        proj, loc, model = cfg
+    # Lazy: common.adk.model → common.adk imports common.interrogate (this package) — a top-level
+    # import would cycle. Deferred to call time (see common.llm.questions for the same rationale).
+    from common.adk.model import model_configured
+
+    if model_configured():
 
         def generator(pack: Pack, round_name: str) -> list[Question]:
-            qs = claude_questions(pack, round_name, project=proj, location=loc, model=model)
+            qs = claude_questions(pack, round_name)
             if not qs:
                 log.warning("round %s: LLM returned no questions — using heuristic fallback", round_name)
                 qs = heuristic_questions(pack, round_name)

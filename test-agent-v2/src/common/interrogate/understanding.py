@@ -6,7 +6,6 @@ from collections.abc import Callable
 
 from common.interrogate.pack import Pack
 from common.llm.understanding import claude_understanding
-from common.llm.vertex import vertex_config
 from common.models import ASSUMPTION, DECISION, GAP_SEED, Insight, Question
 
 Understander = Callable[[Pack, list[Insight], list[Question], list[Question], str], str]
@@ -28,12 +27,13 @@ def _confidence(insights: list[Insight], open_questions: list[Question]) -> str:
 
 
 def make_understander() -> Understander:
-    cfg = vertex_config()
-    if cfg:
-        proj, loc, model = cfg
+    # Lazy import — see common.interrogate.questions.make_generator for the cycle rationale.
+    from common.adk.model import model_configured
+
+    if model_configured():
 
         def understander(pack, insights, opens, deferred, confidence):
-            return claude_understanding(pack, insights, opens, deferred, confidence, project=proj, location=loc, model=model)
+            return claude_understanding(pack, insights, opens, deferred, confidence)
 
         return understander
     return heuristic_understanding
