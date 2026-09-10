@@ -1,66 +1,49 @@
-"""Vertex text embeddings for the recall tier (M3)."""
+"""Vertex text embeddings for the recall tier (M3).
+
+Thin facade over the ports-and-adapters Embedder (`common.embed`): the public functions below
+delegate to a lazily-built, cached embedder, so every existing call site keeps working while
+`vertexai` no longer lives at this module's top — it stays behind the selected adapter, imported
+lazily on first embed.
+"""
 
 from __future__ import annotations
 
-import asyncio
-import os
+from common.embed import TASK_DOCUMENT, Embedder, select_embedder
 
-from common.monitoring import get_logger
+_embedder: Embedder | None = None
 
-log = get_logger("memory.embed")
 
-_MODEL_NAME = os.environ.get("MEMORY_EMBED_MODEL", "text-multilingual-embedding-002")
-_EMBED_LOCATION = os.environ.get("MEMORY_EMBED_LOCATION", "us-central1")
-TASK_DOCUMENT = "RETRIEVAL_DOCUMENT"
-TASK_QUERY = "RETRIEVAL_QUERY"
-
-_model = None
+def _get_embedder() -> Embedder:
+    """The selected embedder, built once and cached (mirrors the old module-level model cache)."""
+    global _embedder
+    if _embedder is None:
+        _embedder = select_embedder()
+    return _embedder
 
 
 def embed_configured() -> bool:
     """True when the Vertex project needed to embed is present (location has a regional default)."""
-    return bool(os.environ.get("VERTEX_PROJECT"))
-
-
-def _get_model():
-    global _model
-    if _model is None:
-        import vertexai
-        from vertexai.language_models import TextEmbeddingModel
-
-        vertexai.init(project=os.environ["VERTEX_PROJECT"], location=_EMBED_LOCATION)
-        _model = TextEmbeddingModel.from_pretrained(_MODEL_NAME)
-    return _model
+    return _get_embedder().is_configured()
 
 
 def embed_texts(texts: list[str], *, task: str = TASK_DOCUMENT) -> list[list[float]]:
     """Embed a batch (blocking). Called only via `aembed_one` off the event loop."""
-    from vertexai.language_models import TextEmbeddingInput
-
-    return [e.values for e in _get_model().get_embeddings([TextEmbeddingInput(t, task) for t in texts])]
+    return _get_embedder().embed_texts(texts, task=task)
 
 
 async def aembed_one(text: str, *, task: str = TASK_DOCUMENT) -> list[float]:
     """One embedding, thread-offloaded; empty text or failure → []."""
-    if not text:
-        return []
-    try:
-        vecs = await asyncio.to_thread(embed_texts, [text], task=task)
-        return vecs[0] if vecs else []
-    except Exception as exc:  # noqa: BLE001 — embedding is best-effort; row lands without a vector
-        log.warning("memory: embed failed (%s); leaving embedding NULL", exc)
-        return []
+    return await _get_embedder().aembed_one(text, task=task)
 
 
 async def aembed_batch(texts: list[str], *, task: str = TASK_DOCUMENT) -> list[list[float]]:
     """Embed a whole batch in ONE Vertex call, thread-offloaded; best-effort → [] on failure."""
-    if not texts:
-        return []
-    try:
-        return await asyncio.to_thread(embed_texts, texts, task=task)
-    except Exception as exc:  # noqa: BLE001 — batch embedding is best-effort
-        log.warning("memory: batch embed of %d text(s) failed (%s); left NULL", len(texts), exc)
-        return []
+    return await _get_embedder().aembed_batch(texts, task=task)
+
+
+async def aembed_query(text: str) -> list[float]:
+    """Embed a search query (RETRIEVAL_QUERY). Used by the hybrid read path (M4)."""
+    return await _get_embedder().aembed_query(text)
 
 
 def build_embedder():
@@ -72,8 +55,3 @@ def build_embedder():
         return await aembed_batch(texts, task=TASK_DOCUMENT)
 
     return _embed
-
-
-async def aembed_query(text: str) -> list[float]:
-    """Embed a search query (RETRIEVAL_QUERY). Used by the hybrid read path (M4)."""
-    return await aembed_one(text, task=TASK_QUERY)
