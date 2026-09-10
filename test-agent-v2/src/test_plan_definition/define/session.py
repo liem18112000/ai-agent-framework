@@ -23,7 +23,7 @@ from test_plan_definition.define.plan import assemble_plan, confidence, restate
 from test_plan_definition.define.questions import make_generator
 from test_plan_definition.monitoring import get_logger
 
-log = get_logger("define.loop")
+log = get_logger("define.session")
 
 
 class PlanSession:

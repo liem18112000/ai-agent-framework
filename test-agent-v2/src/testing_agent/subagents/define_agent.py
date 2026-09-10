@@ -7,7 +7,7 @@ from google.adk.agents import BaseAgent
 from common.adk.events import text_event
 from common.interrogate.loop import accept_recommendation
 from common.memory.factory import build_bank
-from test_plan_definition.define.loop import define
+from test_plan_definition.define.session import define
 
 
 class DefineAgent(BaseAgent):

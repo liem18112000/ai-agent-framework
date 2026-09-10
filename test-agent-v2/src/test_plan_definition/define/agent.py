@@ -8,7 +8,7 @@ import json
 from common.adk.interrogation import InterrogationAgent, SessionSpec, register_spec
 from common.testplan import memory as store
 from common.testplan.models import ROUNDS
-from test_plan_definition.define.loop import PlanResult, PlanSession
+from test_plan_definition.define.session import PlanResult, PlanSession
 
 
 def wants_define(text: str) -> bool:

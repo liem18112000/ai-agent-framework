@@ -20,7 +20,7 @@ from common.testplan.pack import PlanPack, load_plan_pack
 from test_plan_definition.define.decision import assumption_from_self_answer, decision_from_answer
 from test_plan_definition.monitoring import get_logger
 
-log = get_logger("implement.loop")
+log = get_logger("implement.session")
 
 IMPLEMENT_ROUNDS = ("case-design", "data-design", "step-oracle")
 _IMPL_PREFIX = {"case-design": "cds", "data-design": "dds", "step-oracle": "sor"}

@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from common.llm.vertex import vertex_config
+from common.llm.vertex import complete, vertex_config
 from common.models import Question
+from common.testplan.llm.prompts import brief_prompt
 from common.testplan.models import ASSUMPTION, DRAFT, PlanDecision, TestPlan
 from common.testplan.pack import PlanPack
 
@@ -59,10 +60,11 @@ def make_restater() -> Restater:
     if not cfg:
         return heuristic_brief
     proj, loc, model = cfg
-    from test_plan_definition.define.llm import claude_brief
 
     def restater(plan: TestPlan, plan_pack: PlanPack, opens: list[Question]) -> str:
-        return claude_brief(plan, plan_pack, opens, project=proj, location=loc, model=model)
+        prompt = brief_prompt(plan, plan_pack.summary_text(), [q.question for q in opens])
+        return complete(prompt, project=proj, location=loc, model=model,
+                        max_tokens=700).strip() + "\n"
 
     return restater
 

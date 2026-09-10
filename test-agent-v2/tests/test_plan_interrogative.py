@@ -14,7 +14,7 @@ from common.testplan.models import CONFIRMED, ROUNDS, TestData, TestPlan
 from common.testplan.pack import PlanPack
 from test_plan_definition.define import define
 from test_plan_definition.implement.generate.scenarios import heuristic_scenarios
-from test_plan_definition.implement.interrogate.loop import ImplementSession
+from test_plan_definition.implement.interrogate.session import ImplementSession
 
 
 def _plan(**kw) -> TestPlan:
