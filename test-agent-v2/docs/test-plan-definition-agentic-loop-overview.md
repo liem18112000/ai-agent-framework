@@ -7,9 +7,8 @@ decisions that drive it, not a line-by-line walkthrough).
 
 ![TPD agentic loop — manager overview](./test-plan-definition-agentic-loop.png)
 
-> **Diagram note:** the PNG still shows the earlier *3-round define + one-shot implement*
-> shape; the text below is current (4-round define + interrogative implement + coverage
-> matrix). Diagram refresh pending.
+*Diagram and text both reflect the Q1–Q5 build (4-round define + interrogative implement +
+coverage matrix), refreshed 2026-09-10.*
 
 ---
 
