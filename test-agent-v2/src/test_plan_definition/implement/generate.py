@@ -44,7 +44,7 @@ async def implement_plan(bank, context_id: str, *, run_id: str = "implement", no
                                                          test_data, now=now, model=model)
     else:
         scenarios = await generate_scenarios(plan, plan_pack, test_data, now=now, model=model)
-    steps = await generate_all_steps(scenarios, plan, plan_pack, test_data, now=now,
+    steps = await generate_all_steps(scenarios, plan, plan_pack, test_data,
                                      detail=detail, model=model)
 
     store.write_test_data(bank, context_id, test_data)

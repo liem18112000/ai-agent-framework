@@ -43,7 +43,7 @@ def test_make_generator_defaults_to_heuristic(monkeypatch):
     gen = make_generator("understanding")
     qs = gen(_plan_pack().pack, "methodology")
     assert qs and qs[0].round == "methodology"
-    assert [q.id for q in qs] == [q.id for q in heuristic_questions(_plan_pack().pack, "u", "methodology")]
+    assert [q.id for q in qs] == [q.id for q in heuristic_questions(_plan_pack().pack, "methodology")]
 
 
 def test_make_restater_defaults_to_heuristic(monkeypatch):
@@ -75,7 +75,7 @@ def test_make_generator_falls_back_to_heuristic_when_claude_empty(vertex_env, mo
     qs = make_generator("understanding")(_plan_pack().pack, "methodology")
     assert qs and qs[0].round == "methodology"
     assert [q.id for q in qs] == [
-        q.id for q in heuristic_questions(_plan_pack().pack, "understanding", "methodology")]
+        q.id for q in heuristic_questions(_plan_pack().pack, "methodology")]
 
 
 def test_claude_brief_path(vertex_env, monkeypatch):

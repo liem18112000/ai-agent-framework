@@ -67,7 +67,7 @@ def generate_steps(scenario: TestScenario, plan: TestPlan) -> list[TestStep]:
 
 
 async def generate_all_steps(
-    scenarios: list[TestScenario], plan: TestPlan, plan_pack=None, test_data=None, *, now: str = "",
+    scenarios: list[TestScenario], plan: TestPlan, plan_pack=None, test_data=None, *,
     detail: bool = False, model=None,
 ) -> list[TestStep]:
     """Detailed keyworded heuristic steps by default; opt into the batched StepsGen ``LlmAgent`` per
@@ -78,7 +78,7 @@ async def generate_all_steps(
         by_id: dict[str, list[TestStep]] = {}
         for i in range(0, len(scenarios), _STEP_BATCH):
             part = await claude_steps(scenarios[i:i + _STEP_BATCH], plan, plan_pack, test_data or [],
-                                      now=now, model=model)
+                                      model=model)
             if part:
                 by_id.update(part)
         if by_id:

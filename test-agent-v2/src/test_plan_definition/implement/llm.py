@@ -55,7 +55,7 @@ async def claude_judge_scenarios(plan: TestPlan, plan_pack, scenarios: list[Test
 
 
 async def claude_steps(scenarios: list[TestScenario], plan: TestPlan, plan_pack, test_data, *,
-                       now: str = "", model=None) -> dict[str, list[TestStep]] | None:
+                       model=None) -> dict[str, list[TestStep]] | None:
     model = model or agent_model(max_tokens=8000)
     if model is None:
         return None

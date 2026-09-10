@@ -3,23 +3,18 @@ capture and reply summary."""
 
 from __future__ import annotations
 
-import datetime
 from dataclasses import asdict
 
 from google.adk.agents import BaseAgent
 
 from common import learn
-from common.adk.events import incoming_text, text_event
+from common.adk.events import incoming_text, now, text_event
 from common.memory.factory import build_bank
 from common.testplan.models import HAPPY, NEGATIVE
 from test_plan_definition.implement.generate import ImplementResult, implement_plan
 from test_plan_definition.monitoring import get_logger
 
 log = get_logger("tpd.implement")
-
-
-def _now() -> str:
-    return datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
 
 
 def _capture_implement(bank, context_id: str, result: ImplementResult) -> None:
@@ -63,7 +58,7 @@ class ImplementAgent(BaseAgent):
         ctx_id = ctx.session.id
         words = incoming_text(ctx).lower().split()
         bank = build_bank()
-        result = await implement_plan(bank, ctx_id, run_id=f"impl-{ctx_id[:8]}", now=_now(),
+        result = await implement_plan(bank, ctx_id, run_id=f"impl-{ctx_id[:8]}", now=now(),
                                       detail="detail" in words, assured="assured" in words)
         _capture_implement(bank, ctx_id, result)
         if not result.scenarios:
