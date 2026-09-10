@@ -4,9 +4,8 @@ directly); the old multi-round `run_explore_loop` was never ported to ADK and ha
 
 from __future__ import annotations
 
-from google.api_core.exceptions import PreconditionFailed
-
 from common.memory import MemoryBank
+from common.store import CASConflict
 
 
 class _Blob:
@@ -23,7 +22,7 @@ class _Blob:
     def upload_from_string(self, data, content_type=None, if_generation_match=None):
         cur = self._b.gens.get(self.name, 0)
         if if_generation_match is not None and if_generation_match != cur:
-            raise PreconditionFailed("gen")
+            raise CASConflict("gen")
         self._b.store[self.name] = data
         self._b.gens[self.name] = cur + 1
 

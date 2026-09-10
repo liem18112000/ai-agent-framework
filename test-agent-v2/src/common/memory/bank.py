@@ -7,8 +7,6 @@ import re
 from collections.abc import Callable
 from dataclasses import asdict
 
-from google.api_core.exceptions import PreconditionFailed
-
 from common.memory.render import (
     render_index_md,
     render_insight_md,
@@ -34,6 +32,7 @@ from common.models import (
     RunLog,
 )
 from common.monitoring import get_logger
+from common.store import CASConflict
 
 log = get_logger("memory.bank")
 
@@ -111,7 +110,7 @@ class MemoryBank:
             mutate(graph)
             try:
                 self._put(INDEX_JSON, json.dumps(graph.to_json(), indent=1, ensure_ascii=False), "application/json", if_generation_match=generation)
-            except PreconditionFailed:
+            except CASConflict:
                 continue
             self._put(INDEX_MD, self._redact(render_index_md(graph)), "text/markdown")
             return graph
@@ -126,7 +125,7 @@ class MemoryBank:
             new = mutate(current)
             try:
                 self._put(path, json.dumps(new, indent=1, ensure_ascii=False), "application/json", if_generation_match=generation)
-            except PreconditionFailed:
+            except CASConflict:
                 continue
             return new
         raise RuntimeError(f"mutate_json CAS retries exhausted for {path}")

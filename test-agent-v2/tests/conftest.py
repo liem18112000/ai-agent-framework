@@ -7,8 +7,9 @@ import pathlib
 
 import pytest
 from google.adk.models.base_llm import BaseLlm
-from google.api_core.exceptions import PreconditionFailed
 from pydantic import Field
+
+from common.store import CASConflict
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
 
@@ -48,7 +49,7 @@ class FakeBlob:
     def upload_from_string(self, data, content_type=None, if_generation_match=None):
         cur = self._b.gens.get(self.name, 0)
         if if_generation_match is not None and if_generation_match != cur:
-            raise PreconditionFailed("generation mismatch")
+            raise CASConflict("generation mismatch")
         self._b.store[self.name] = data
         self._b.gens[self.name] = cur + 1
 

@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from google.api_core.exceptions import PreconditionFailed
-
 from common.memory import MemoryBank
+from common.store import CASConflict
 from knowledge_gathering.gather.crawl import crawl
 from knowledge_gathering.gather.seed import normalize_seed
 
@@ -25,7 +24,7 @@ class FakeBlob:
     def upload_from_string(self, data, content_type=None, if_generation_match=None):
         cur = self._b.gens.get(self.name, 0)
         if if_generation_match is not None and if_generation_match != cur:
-            raise PreconditionFailed("gen mismatch")
+            raise CASConflict("gen mismatch")
         self._b.store[self.name] = data
         self._b.gens[self.name] = cur + 1
 

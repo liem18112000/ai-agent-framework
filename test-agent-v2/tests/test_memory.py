@@ -5,12 +5,12 @@ from __future__ import annotations
 import json
 
 import pytest
-from google.api_core.exceptions import PreconditionFailed
 
 from common.interrogate.pack import load_pack
 from common.memory import INDEX_JSON, MemoryBank
 from common.memory.serialize import note_from_dict
 from common.models import INSIGHT, LinkRecord, Note, RunLog
+from common.store import CASConflict
 
 
 class FakeBlob:
@@ -27,7 +27,7 @@ class FakeBlob:
     def upload_from_string(self, data, content_type=None, if_generation_match=None):
         current = self._bucket.gens.get(self.name, 0)
         if if_generation_match is not None and if_generation_match != current:
-            raise PreconditionFailed("generation mismatch")
+            raise CASConflict("generation mismatch")
         self._bucket.store[self.name] = data
         self._bucket.gens[self.name] = current + 1
 
