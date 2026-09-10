@@ -13,6 +13,7 @@ loop only attaches a quality signal and self-repairs before it.
 
 from __future__ import annotations
 
+import contextlib
 import os
 
 from common.testplan import memory as store
@@ -32,27 +33,6 @@ def assured_enabled(assured: bool = False) -> bool:
     return assured or bool(os.environ.get("TPD_ASSURED"))
 
 
-def _env_int(name: str, default: int) -> int:
-    try:
-        return max(1, int(os.environ.get(name, default)))
-    except ValueError:
-        return default
-
-
-def _env_float(name: str, default: float) -> float:
-    try:
-        return float(os.environ.get(name, default))
-    except ValueError:
-        return default
-
-
-def _resumable(saved: dict, max_iters: int) -> bool:
-    """Resume only a genuinely interrupted pass: some rounds done, not yet accepted, budget left.
-    A completed (accepted, or exhausted) prior pass means the client re-invoked implement → fresh."""
-    done = len(saved.get("iterations", []))
-    return bool(saved) and not saved.get("accepted") and 0 < done < max_iters
-
-
 async def run_assured_scenarios(
     bank, context_id: str, plan: TestPlan, plan_pack: PlanPack, test_data: list[TestData], *,
     now: str = "", model=None,
@@ -60,10 +40,16 @@ async def run_assured_scenarios(
     """Run the bounded assured loop and return the best scenario set + its quality report."""
     from test_plan_definition.implement.generate.llm import claude_judge_scenarios, claude_scenarios
 
-    max_iters, threshold = _env_int("TPD_ASSURED_MAX_ITERS", _DEFAULT_MAX_ITERS), _env_float(
-        "TPD_ASSURED_THRESHOLD", _DEFAULT_THRESHOLD)
+    # env-configured bounds (fall back to the defaults on a malformed value)
+    max_iters, threshold = _DEFAULT_MAX_ITERS, _DEFAULT_THRESHOLD
+    with contextlib.suppress(ValueError):
+        max_iters = max(1, int(os.environ.get("TPD_ASSURED_MAX_ITERS", _DEFAULT_MAX_ITERS)))
+    with contextlib.suppress(ValueError):
+        threshold = float(os.environ.get("TPD_ASSURED_THRESHOLD", _DEFAULT_THRESHOLD))
     saved = store.read_assured_state(bank, context_id)
-    resume = _resumable(saved, max_iters)
+    # resume only a genuinely interrupted pass: some rounds done, not accepted, budget left
+    done_rounds = len(saved.get("iterations", []))
+    resume = bool(saved) and not saved.get("accepted") and 0 < done_rounds < max_iters
     history: list[dict] = list(saved.get("iterations", [])) if resume else []
     reflections: list[str] = list(saved.get("reflections", [])) if resume else []
 

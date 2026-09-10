@@ -30,25 +30,20 @@ def _capture_implement(bank, context_id: str, result: ImplementResult) -> None:
         log.warning("implement: lesson capture skipped (%s)", exc)
 
 
-def _quality_line(result: ImplementResult) -> str:
-    """One-line P4 assured-loop verdict for the human, when the loop ran (§3.4)."""
-    q = result.quality
-    if q is None:
-        return ""
-    verdict = "PASS" if q.accepted else "BELOW BAR"
-    return (f"  Quality (assured loop, {q.rounds} round(s)): {verdict} — score "
-            f"{q.final_score:.2f} vs threshold {q.threshold:.2f}. {q.note}\n")
-
-
 def summarize_implement(result: ImplementResult) -> str:
     happy = sum(s.kind == HAPPY for s in result.scenarios)
     negative = sum(s.kind == NEGATIVE for s in result.scenarios)
     titles = "\n".join(f"- [{s.kind}] {s.title}" for s in result.scenarios)
     feature = "  Exported a BDD .feature.\n" if result.feature else ""
     coverage = f"  {result.coverage_summary}\n" if result.coverage_summary else ""
+    quality = ""  # the P4 assured-loop verdict line, when the loop ran (§3.4)
+    if (q := result.quality) is not None:
+        verdict = "PASS" if q.accepted else "BELOW BAR"
+        quality = (f"  Quality (assured loop, {q.rounds} round(s)): {verdict} — score "
+                   f"{q.final_score:.2f} vs threshold {q.threshold:.2f}. {q.note}\n")
     return (f"Implement complete: {len(result.test_data)} test-data, {len(result.scenarios)} "
             f"scenarios ({happy} happy / {negative} negative), {len(result.steps)} steps.\n"
-            f"{feature}{coverage}{_quality_line(result)}\n{titles}")
+            f"{feature}{coverage}{quality}\n{titles}")
 
 
 class ImplementAgent(BaseAgent):

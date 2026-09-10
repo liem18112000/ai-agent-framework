@@ -26,11 +26,6 @@ IMPLEMENT_ROUNDS = ("case-design", "data-design", "step-oracle")
 _IMPL_PREFIX = {"case-design": "cds", "data-design": "dds", "step-oracle": "sor"}
 
 
-def _impl_generator():
-    """Heuristic-only question generator (offline-safe, no model calls) via the round registry."""
-    return lambda pack, rnd: build_round_questions(pack, rnd, id_prefix=_IMPL_PREFIX[rnd])
-
-
 @dataclass
 class ImplementBrief:
     """The result of an implement-interrogation pass — the kinds/methods now driving generation."""
@@ -51,7 +46,9 @@ class ImplementSession:
         self.run_id, self.now = run_id, now
         self.plan = plan or store.read_plan(bank, context_id)
         self.plan_pack = plan_pack or load_plan_pack(bank, context_id, seed=seed)
-        self.generator = generator or _impl_generator()
+        # heuristic-only question generator (offline-safe, no model calls) via the round registry
+        self.generator = generator or (
+            lambda pack, rnd: build_round_questions(pack, rnd, id_prefix=_IMPL_PREFIX[rnd]))
 
         self.decisions: list[PlanDecision] = []
         self._pending: list[str] = list(self.rounds)
