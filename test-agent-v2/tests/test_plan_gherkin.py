@@ -6,7 +6,7 @@ from common.memory import MemoryBank
 from common.testplan import memory as store
 from test_plan_definition.define import define
 from test_plan_definition.implement import implement_plan
-from test_plan_definition.implement.generate.gherkin import export_features, render_feature
+from test_plan_definition.implement.generate.pipeline import export_features, render_feature
 
 
 async def _implemented(bank):

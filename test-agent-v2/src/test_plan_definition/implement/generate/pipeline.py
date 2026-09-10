@@ -11,10 +11,10 @@ from common.testplan.models import (
     TestPlan,
     TestPlanRun,
     TestScenario,
+    TestStep,
 )
 from common.testplan.pack import load_plan_pack
 from test_plan_definition.implement.generate.assured import assured_enabled, run_assured_scenarios
-from test_plan_definition.implement.generate.gherkin import export_features
 from test_plan_definition.implement.generate.scenarios import generate_scenarios
 from test_plan_definition.implement.generate.steps import generate_all_steps
 from test_plan_definition.implement.generate.testdata import generate_test_data
@@ -66,6 +66,35 @@ async def implement_plan(bank, context_id: str, *, run_id: str = "implement", no
              quality.final_score if quality else "n/a", coverage or "no-coverage")
     return ImplementResult(plan, test_data, scenarios, steps, feature, run, quality=quality,
                            coverage_summary=coverage)
+
+
+def render_feature(subject: str, scenarios: list[TestScenario], steps: list[TestStep]) -> str:
+    """Render generated scenarios/steps as a BDD/Gherkin ``.feature`` body."""
+    by_scenario: dict[str, list[TestStep]] = {}
+    for st in steps:
+        by_scenario.setdefault(st.scenario_id, []).append(st)
+
+    lines = [f"Feature: {subject}", ""]
+    for sc in scenarios:
+        steps_sorted = sorted(by_scenario.get(sc.id, []), key=lambda s: s.order)
+        lines += [f"  @{sc.kind} @{sc.methodology}", f"  Scenario: {sc.title}"]
+        if sc.data_refs and not any(s.keyword for s in steps_sorted):
+            lines.append(f"    Given the test data ({', '.join(sc.data_refs)}) is prepared")
+        for st in steps_sorted:
+            lines += [f"    {st.keyword} {st.action}"] if st.keyword else \
+                     [f"    When {st.action}", f"    Then {st.expected}"]
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def export_features(bank, context_id: str) -> str | None:
+    """Write memory/test-plan/<ctx>/features/<ctx>.feature from the persisted scenarios/steps."""
+    scenarios = store.read_scenarios(bank, context_id)
+    if not scenarios:
+        return None
+    text = render_feature(scenarios[0].title.split(" — ")[0], scenarios, store.read_steps(bank, context_id))
+    store.write_feature(bank, context_id, context_id, text)
+    return text
 
 
 def _build_coverage(bank, context_id: str, plan, plan_pack, scenarios) -> str:
