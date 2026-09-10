@@ -123,14 +123,14 @@ def brief_prompt(plan: TestPlan, summary: str, open_questions: list[str], *,
 
 
 def scenarios_prompt(plan: TestPlan, summary: str, test_data: list[TestData],
-                     reflections: list[str] | None = None) -> str:
+                     reflections: list[str] | None = None, *, include_context: bool = True) -> str:
     metrics = " ".join(plan.metrics).lower()
     happy_only = "happy only" in metrics or "happy-only" in metrics
     # Q2: the kinds come from the plan's elicited, OPEN taxonomy (test_kinds) when set — never a fixed 4.
     kinds = plan.test_kinds or (["happy"] if happy_only else ["happy", "negative", "boundary", "error"])
     data_ids = ", ".join(d.id for d in test_data) or "(none)"
     methods = ", ".join(plan.test_design) or "standard technique per behaviour"
-    return (
+    body = (
         "You are the QA Testing Agent generating TEST SCENARIOS from a confirmed plan.\n"
         f"Methodology: {', '.join(plan.methodology)}. Pass metric(s): {', '.join(plan.metrics)}.\n"
         f"Test-design method(s) to apply: {methods}.\n"
@@ -147,12 +147,12 @@ def scenarios_prompt(plan: TestPlan, summary: str, test_data: list[TestData],
         "preconditions:[], data_refs:[], source_refs:[]}. "
         f"Use id prefix 'scenario:{plan.context_id}:'.\n"
         + revision_feedback(reflections)
-        + f"\nContext pack:\n{summary}"
     )
+    return f"{body}\n{pack_block(summary)}" if include_context else body
 
 
-def testdata_prompt(plan: TestPlan, summary: str) -> str:
-    return (
+def testdata_prompt(plan: TestPlan, summary: str, *, include_context: bool = True) -> str:
+    body = (
         "You are the QA Testing Agent generating TEST DATA for a confirmed plan.\n"
         f"Methodology: {', '.join(plan.methodology)}.\n"
         "Produce the data the scenarios need: at least one test-account (authenticated caller, "
@@ -161,18 +161,19 @@ def testdata_prompt(plan: TestPlan, summary: str) -> str:
         "pack (not placeholders). Add a fixture for any input payload the API needs.\n\n"
         "Return ONLY a JSON array; each item: {id, kind (mock-data|test-account|fixture), "
         "spec (object of concrete fields), source_refs:[note ids]}. "
-        f"Use id prefix 'test-data:{plan.context_id}:'.\n\n"
-        f"Context pack:\n{summary}"
+        f"Use id prefix 'test-data:{plan.context_id}:'."
     )
+    return f"{body}\n\n{pack_block(summary)}" if include_context else body
 
 
-def judge_scenarios_prompt(plan: TestPlan, summary: str, scenarios: list[TestScenario]) -> str:
+def judge_scenarios_prompt(plan: TestPlan, summary: str, scenarios: list[TestScenario], *,
+                           include_context: bool = True) -> str:
     """The P4 LLM-as-judge rubric (§3.4). Deliberately avoids the 'TEST SCENARIOS'/'TEST DATA'/
     'STEP-BY-STEP' substrings the generator router keys on — its marker is 'QA CRITIC'."""
     listing = "\n".join(
         f"- {s.id} [{s.kind}] {s.title} :: {s.description} (cites: {', '.join(s.source_refs) or 'NOTHING'})"
         for s in scenarios) or "(none generated)"
-    return (
+    body = (
         "You are a STRICT, INDEPENDENT QA CRITIC. SCORE THE SCENARIOS below against the approved "
         "plan + context pack. You did not write them — reward real coverage, punish invention.\n"
         f"Methodology: {', '.join(plan.methodology)}. Pass metric(s): {', '.join(plan.metrics)}.\n\n"
@@ -190,16 +191,16 @@ def judge_scenarios_prompt(plan: TestPlan, summary: str, scenarios: list[TestSce
         "Return ONLY a JSON object: {overall, ac_coverage, atomicity, testability, traceability, "
         "faithfulness, negative_edge_coverage, non_duplication, accept (bool), issues:[], "
         "reflections:[]}.\n\n"
-        f"Scenarios under review:\n{listing}\n\n"
-        f"Approved plan + context pack:\n{summary}"
+        f"Scenarios under review:\n{listing}"
     )
+    return f"{body}\n\n{pack_block(summary)}" if include_context else body
 
 
 def steps_prompt(scenarios: list[TestScenario], plan: TestPlan, summary: str,
-                 test_data: list[TestData]) -> str:
+                 test_data: list[TestData], *, include_context: bool = True) -> str:
     data_ids = ", ".join(d.id for d in test_data) or "(none)"
     listing = "\n".join(f"- {s.id} [{s.kind}] {s.title}" for s in scenarios)
-    return (
+    body = (
         "You are the QA Testing Agent writing STEP-BY-STEP steps for each scenario.\n"
         f"Methodology: {', '.join(plan.methodology)}. Pass metric(s): {', '.join(plan.metrics)}.\n"
         f"Test-data ids (reference these in the Given step): {data_ids}.\n\n"
@@ -210,6 +211,6 @@ def steps_prompt(scenarios: list[TestScenario], plan: TestPlan, summary: str,
         "assert behaviour at the limit; error -> assert graceful failure + consistent state.\n\n"
         f"Scenarios:\n{listing}\n\n"
         "Return ONLY a JSON array; each item: {scenario_id, steps:[{order, "
-        "keyword (Given|When|Then|And), action, expected}]}.\n\n"
-        f"Context pack:\n{summary}"
+        "keyword (Given|When|Then|And), action, expected}]}."
     )
+    return f"{body}\n\n{pack_block(summary)}" if include_context else body

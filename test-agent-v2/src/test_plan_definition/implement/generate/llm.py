@@ -7,6 +7,7 @@ from common.adk import agent_model
 from common.testplan.llm.adk import build_generator_agent, run_json_agent
 from common.testplan.llm.prompts import (
     judge_scenarios_prompt,
+    pack_block,
     scenarios_prompt,
     steps_prompt,
     testdata_prompt,
@@ -24,11 +25,13 @@ async def claude_scenarios(plan: TestPlan, plan_pack, test_data: list[TestData],
     model = model or agent_model(max_tokens=6000)
     if model is None:
         return None
+    summary = plan_pack.summary_text()
     agent = build_generator_agent(
-        name="tpd_scenario_gen",
-        prompt=scenarios_prompt(plan, plan_pack.summary_text(), test_data, reflections),
+        name="tpd_scenario_gen", system=pack_block(summary),
         output_schema=Scenarios, output_key="tpd_scenarios", model=model)
-    data = await run_json_agent(agent, output_key="tpd_scenarios")
+    data = await run_json_agent(agent, output_key="tpd_scenarios",
+                                user=scenarios_prompt(plan, summary, test_data, reflections,
+                                                      include_context=False))
     if not data:
         log.warning("no scenarios from generator; falling back to heuristic")
         return None
@@ -43,11 +46,13 @@ async def claude_judge_scenarios(plan: TestPlan, plan_pack, scenarios: list[Test
     model = model or agent_model(max_tokens=1500)
     if model is None:
         return None
+    summary = plan_pack.summary_text()
     agent = build_generator_agent(
-        name="tpd_scenario_judge",
-        prompt=judge_scenarios_prompt(plan, plan_pack.summary_text(), scenarios),
+        name="tpd_scenario_judge", system=pack_block(summary),
         output_schema=JudgeVerdict, output_key="tpd_verdict", model=model)
-    data = await run_json_agent(agent, output_key="tpd_verdict")
+    data = await run_json_agent(agent, output_key="tpd_verdict",
+                                user=judge_scenarios_prompt(plan, summary, scenarios,
+                                                            include_context=False))
     if not data:
         log.warning("no verdict from judge; scenarios kept unscored")
         return None
@@ -60,10 +65,11 @@ async def claude_steps(scenarios: list[TestScenario], plan: TestPlan, plan_pack,
     if model is None:
         return None
     summary = plan_pack.summary_text() if plan_pack is not None else ""
-    agent = build_generator_agent(name="tpd_steps_gen",
-                                  prompt=steps_prompt(scenarios, plan, summary, test_data),
+    agent = build_generator_agent(name="tpd_steps_gen", system=pack_block(summary),
                                   output_schema=StepsList, output_key="tpd_steps", model=model)
-    data = await run_json_agent(agent, output_key="tpd_steps")
+    data = await run_json_agent(agent, output_key="tpd_steps",
+                                user=steps_prompt(scenarios, plan, summary, test_data,
+                                                  include_context=False))
     if not data:
         log.warning("could not parse steps output; falling back to heuristic")
         return None
@@ -75,10 +81,11 @@ async def claude_test_data(plan: TestPlan, plan_pack, *, now: str = "",
     model = model or agent_model(max_tokens=6000)
     if model is None:
         return None
-    agent = build_generator_agent(name="tpd_testdata_gen",
-                                  prompt=testdata_prompt(plan, plan_pack.summary_text()),
+    summary = plan_pack.summary_text()
+    agent = build_generator_agent(name="tpd_testdata_gen", system=pack_block(summary),
                                   output_schema=TestDataList, output_key="tpd_test_data", model=model)
-    data = await run_json_agent(agent, output_key="tpd_test_data")
+    data = await run_json_agent(agent, output_key="tpd_test_data",
+                                user=testdata_prompt(plan, summary, include_context=False))
     if not data:
         log.warning("could not parse test-data output; falling back to heuristic")
         return None

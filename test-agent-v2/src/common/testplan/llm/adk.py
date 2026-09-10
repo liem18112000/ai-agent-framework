@@ -19,15 +19,21 @@ from common.monitoring import get_logger
 log = get_logger("llm.adk")
 
 
-def build_generator_agent(*, name: str, prompt: str, output_schema, output_key: str, model):
-    """A structured-output leaf ``LlmAgent`` for one generator (model via the provider, I8)."""
+def build_generator_agent(*, name: str, system: str, output_schema, output_key: str, model):
+    """A structured-output leaf ``LlmAgent`` for one generator (model via the provider, I8).
+
+    ``system`` is the leaf's **instruction** — the shared, stable context pack. It is sent verbatim
+    (via the ``InstructionProvider`` closure, so literal ``{…}`` braces pass through) and, on the
+    LiteLlm/Vertex path, **prompt-cached** (see the provider's cache_control injection). The
+    per-generator TASK is the *user* message (``run_json_agent(..., user=…)``), so the pack stays a
+    stable cacheable prefix reused across generators + assured reflect-rounds."""
     return LlmAgent(name=name, model=model, output_schema=output_schema, output_key=output_key,
-                    instruction=lambda _ctx: prompt, disallow_transfer_to_parent=True,
+                    instruction=lambda _ctx: system, disallow_transfer_to_parent=True,
                     disallow_transfer_to_peers=True)
 
 
-async def run_json_agent(agent: LlmAgent, *, output_key: str) -> dict | None:
-    """Run ``agent`` once in a throwaway Runner; return ``state[output_key]`` (dict) or ``None``."""
+async def run_json_agent(agent: LlmAgent, *, output_key: str, user: str = "generate") -> dict | None:
+    """Run ``agent`` once in a throwaway Runner with ``user`` as the turn; return the validated dict."""
     from google.adk.runners import Runner
     from google.adk.sessions import InMemorySessionService
     from google.genai import types
@@ -37,7 +43,7 @@ async def run_json_agent(agent: LlmAgent, *, output_key: str) -> dict | None:
     runner = Runner(app_name="tpd-gen", agent=agent, session_service=svc)
     try:
         async for _ in runner.run_async(user_id="tpd", session_id="gen", new_message=types.Content(
-                role="user", parts=[types.Part(text="generate")])):
+                role="user", parts=[types.Part(text=user)])):
             pass
     except Exception as exc:  # noqa: BLE001 — invalid/empty output degrades to heuristic, never raises
         log.warning("%s: generator run failed (%s); falling back to heuristic", agent.name, exc)

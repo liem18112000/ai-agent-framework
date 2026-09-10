@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from common.adk.config import get_config
 from common.llm.vertex import agenerate as _vertex_agenerate
 from common.llm.vertex import complete as _vertex_complete
@@ -23,8 +25,16 @@ class VertexClaudeProvider:
         project, location, model = cfg
         from google.adk.models.lite_llm import LiteLlm
 
+        extra = {}
+        # Anthropic prompt caching on the shared system message (the cached context pack, see
+        # build_generator_agent). LiteLlm forwards this to litellm.acompletion → cache_control on the
+        # system block, so the pack is reused across generators + assured reflect-rounds. Escape hatch:
+        # TPD_ADK_CACHE=0 (unverifiable offline; disable if the installed litellm rejects the param).
+        if os.environ.get("TPD_ADK_CACHE", "1") != "0":
+            extra["cache_control_injection_points"] = [{"location": "message", "role": "system"}]
         return LiteLlm(model=f"vertex_ai/{model}", vertex_project=project, vertex_location=location,
-                       max_tokens=max_tokens or get_config().default_max_tokens, thinking={"type": "disabled"})
+                       max_tokens=max_tokens or get_config().default_max_tokens,
+                       thinking={"type": "disabled"}, **extra)
 
     def complete(self, prompt: str, *, max_tokens: int) -> str:
         project, location, model = self._require_config()

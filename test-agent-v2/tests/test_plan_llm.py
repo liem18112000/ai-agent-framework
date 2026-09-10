@@ -122,3 +122,31 @@ async def test_generate_scenarios_uses_llm_agent_then_falls_back():
 
 def test_pass_metric_prefers_the_non_coverage_metric():
     assert _pass_metric(_plan()) == "End-state verified"
+
+
+async def test_adk_generator_caches_pack_in_system_task_in_user():
+    """ADK-path caching split: the stable pack is the agent's system instruction (cache-injected on
+    the LiteLlm path); the per-call TASK is the user message. The pack is NOT duplicated in the task."""
+    from test_plan_definition.implement.generate.llm import claude_scenarios
+    from tests.tpd_fakes import FakeGeneratorModel, scenarios_json
+
+    seen: dict = {}
+
+    class Recorder(FakeGeneratorModel):
+        async def generate_content_async(self, llm_request, stream: bool = False):
+            si = getattr(getattr(llm_request, "config", None), "system_instruction", None)
+            seen["system"] = si if isinstance(si, str) else "".join(
+                p.text for p in (getattr(si, "parts", None) or []) if getattr(p, "text", None))
+            seen["user"] = " ".join(
+                p.text for c in (llm_request.contents or []) for p in (getattr(c, "parts", None) or [])
+                if getattr(p, "text", None))
+            async for r in super().generate_content_async(llm_request, stream):
+                yield r
+
+    fake = Recorder(model="fake", scenarios_json=scenarios_json(
+        [{"id": "scenario:run-x:a", "title": "A", "kind": "happy", "source_refs": ["jira:LUZ-1"]}]))
+    await claude_scenarios(_plan(), _plan_pack(), [TestData(id="td", kind="mock-data")], model=fake)
+
+    assert seen["system"].startswith("Context pack:")   # the cacheable shared prefix
+    assert "TEST SCENARIOS" in seen["user"]              # the per-call task went to the user turn
+    assert "Context pack:" not in seen["user"]           # pack not duplicated into the task
