@@ -10,6 +10,10 @@ decisions that drive it, not a line-by-line walkthrough).
 *Diagram and text both reflect the Q1–Q5 build (4-round define + interrogative implement +
 coverage matrix), refreshed 2026-09-10.*
 
+> **For engineers:** the deep technical companion — with real module/function names and 5 process
+> diagrams (architecture · define · implement · assured loop · coverage matrix) — is
+> [`test-plan-definition-agentic-loop-technical.md`](./test-plan-definition-agentic-loop-technical.md).
+
 ---
 
 ## TL;DR
