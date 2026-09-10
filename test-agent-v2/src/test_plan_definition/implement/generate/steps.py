@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import os
 
+from common.adk import agent_model
+from common.testplan.llm.adk import build_generator_agent, run_json_agent
+from common.testplan.llm.prompts import pack_block, steps_prompt
+from common.testplan.llm.schemas import StepsList
 from common.testplan.models import BOUNDARY, ERROR, NEGATIVE, TestPlan, TestScenario, TestStep
+from test_plan_definition.monitoring import get_logger
+
+log = get_logger("llm.implement")
 
 _STEP_BATCH = 8
 
@@ -71,16 +78,27 @@ async def generate_all_steps(
     detail: bool = False, model=None,
 ) -> list[TestStep]:
     """Detailed keyworded heuristic steps by default; opt into the batched StepsGen ``LlmAgent`` per
-    ``detail``/``TPD_LLM_DETAIL`` (one LLM call per ``_STEP_BATCH`` chunk — kept off the I3 default)."""
-    if detail or os.environ.get("TPD_LLM_DETAIL"):
-        from test_plan_definition.implement.generate.llm import claude_steps
+    ``detail``/``TPD_LLM_DETAIL`` (one LLM call per ``_STEP_BATCH`` chunk — kept off the I3 default).
 
-        by_id: dict[str, list[TestStep]] = {}
-        for i in range(0, len(scenarios), _STEP_BATCH):
-            part = await claude_steps(scenarios[i:i + _STEP_BATCH], plan, plan_pack, test_data or [],
-                                      model=model)
-            if part:
-                by_id.update(part)
-        if by_id:
-            return [st for sc in scenarios for st in (by_id.get(sc.id) or generate_steps(sc, plan))]
+    The generator run is inlined here (its sole caller): the stable context pack is the agent's cached
+    system instruction (``pack_block``) and the per-batch TASK is the user turn (``steps_prompt``, so
+    the pack isn't duplicated), matching the other implement generators."""
+    if detail or os.environ.get("TPD_LLM_DETAIL"):
+        model = model or agent_model(max_tokens=8000)
+        if model is not None:
+            td = test_data or []
+            summary = plan_pack.summary_text() if plan_pack is not None else ""
+            by_id: dict[str, list[TestStep]] = {}
+            for i in range(0, len(scenarios), _STEP_BATCH):
+                agent = build_generator_agent(name="tpd_steps_gen", system=pack_block(summary),
+                                              output_schema=StepsList, output_key="tpd_steps", model=model)
+                data = await run_json_agent(agent, output_key="tpd_steps", user=steps_prompt(
+                    scenarios[i:i + _STEP_BATCH], plan, summary, td, include_context=False))
+                if not data:
+                    log.warning("could not parse steps output; falling back to heuristic")
+                    continue
+                if part := StepsList(**data).to_steps(td):
+                    by_id.update(part)
+            if by_id:
+                return [st for sc in scenarios for st in (by_id.get(sc.id) or generate_steps(sc, plan))]
     return [st for sc in scenarios for st in generate_steps(sc, plan)]

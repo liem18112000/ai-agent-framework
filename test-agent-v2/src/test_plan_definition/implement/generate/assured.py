@@ -38,7 +38,11 @@ async def run_assured_scenarios(
     now: str = "", model=None,
 ) -> tuple[list[TestScenario], AssuredReport]:
     """Run the bounded assured loop and return the best scenario set + its quality report."""
-    from test_plan_definition.implement.generate.llm import claude_judge_scenarios, claude_scenarios
+    from common.adk import agent_model
+    from common.testplan.llm.adk import build_generator_agent, run_json_agent
+    from common.testplan.llm.prompts import judge_scenarios_prompt, pack_block
+    from common.testplan.llm.schemas import JudgeVerdict
+    from test_plan_definition.implement.generate.llm import claude_scenarios
 
     # env-configured bounds (fall back to the defaults on a malformed value)
     max_iters, threshold = _DEFAULT_MAX_ITERS, _DEFAULT_THRESHOLD
@@ -57,13 +61,32 @@ async def run_assured_scenarios(
     best_score = -1.0
     best_verdict = None
 
+    # The P4 LLM-as-judge model — its own smaller max_tokens (the verdict is short → cheap per round),
+    # resolved once (the injected/configured model is stable across rounds). None → no judge signal.
+    judge_model = model or agent_model(max_tokens=1500)
+
     for _ in range(len(history), max_iters):
         scenarios = await claude_scenarios(plan, plan_pack, test_data, now=now, model=model,
                                            reflections=reflections)
         if not scenarios:  # generation unconfigured/invalid → degrade, best-effort (never raise)
             scenarios = heuristic_scenarios(plan, plan_pack, test_data, now=now)
 
-        verdict = await claude_judge_scenarios(plan, plan_pack, scenarios, model=model)
+        # P4 LLM-as-judge (§3.4), inlined (sole caller): the stable pack is the agent's cached system
+        # instruction and the scenarios-to-critique are the user turn; None (unconfigured/invalid
+        # output) means no signal to gate on — the loop stops with a single unscored pass.
+        verdict = None
+        if judge_model is not None:
+            summary = plan_pack.summary_text()
+            judge = build_generator_agent(name="tpd_scenario_judge", system=pack_block(summary),
+                                          output_schema=JudgeVerdict, output_key="tpd_verdict",
+                                          model=judge_model)
+            data = await run_json_agent(judge, output_key="tpd_verdict", user=judge_scenarios_prompt(
+                plan, summary, scenarios, include_context=False))
+            if data:
+                verdict = JudgeVerdict(**data)
+            else:
+                log.warning("no verdict from judge; scenarios kept unscored")
+
         if verdict is None:  # no judge signal → nothing to gate on; stop with what we have
             best_scenarios = best_scenarios or scenarios
             note = "no judge configured — single unscored pass"

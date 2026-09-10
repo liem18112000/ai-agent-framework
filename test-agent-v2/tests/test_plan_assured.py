@@ -6,7 +6,6 @@ call-counted), never the real Vertex network. The default (assured-off) path sta
 
 from __future__ import annotations
 
-from common.interrogate.pack import Pack
 from common.memory import MemoryBank
 from common.testplan import memory as store
 from common.testplan.llm.prompts import (
@@ -14,20 +13,14 @@ from common.testplan.llm.prompts import (
     scenarios_prompt,
 )
 from common.testplan.models import CONFIRMED, TestPlan, TestScenario
-from common.testplan.pack import PlanPack
 from test_plan_definition.define import define
 from test_plan_definition.implement import implement_plan
-from test_plan_definition.implement.generate.llm import claude_judge_scenarios
-from tests.tpd_fakes import FakeGeneratorModel, full_fake_model, judge_verdict
+from tests.tpd_fakes import full_fake_model, judge_verdict
 
 
 def _plan() -> TestPlan:
     return TestPlan(id="plan:run-x", context_id="run-x", methodology=["api"], status=CONFIRMED,
                     scope=["jira:LUZ-1"], metrics=["End-state verified"])
-
-
-def _plan_pack() -> PlanPack:
-    return PlanPack(pack=Pack(context_id="run-x", seed="LUZ-1"), understanding="X is done.")
 
 
 def _scenario() -> TestScenario:
@@ -66,20 +59,22 @@ def test_judge_prompt_avoids_generator_router_markers():
         assert marker not in text
 
 
-# --- P4: the judge seam ----------------------------------------------------------------------
+# --- P4: the judge seam (inlined into run_assured_scenarios) ----------------------------------
 
-async def test_claude_judge_scenarios_parses_verdict():
-    fake = FakeGeneratorModel(model="fake", judge_json=judge_verdict(0.82, reflections=["r1"]))
-    verdict = await claude_judge_scenarios(_plan(), _plan_pack(), [_scenario()], model=fake)
-    assert verdict is not None
-    assert abs(verdict.score() - 0.82) < 1e-6
-    assert verdict.reflections == ["r1"]
-    assert fake.judge_calls == 1
+async def test_assured_bad_judge_output_yields_single_unscored_pass(pack_bucket, monkeypatch):
+    """Judge output that fails ``JudgeVerdict`` validation → no signal to gate on → one unscored,
+    unaccepted pass (covers the inlined judge's degrade-to-None branch)."""
+    monkeypatch.delenv("TPD_LLM_DETAIL", raising=False)
+    bank = MemoryBank(pack_bucket)
+    await _confirmed(bank)
+    fake = full_fake_model()
+    fake.judge_json = "not json at all"  # judge output fails schema → run_json_agent returns None
 
-
-async def test_claude_judge_scenarios_degrades_to_none_on_bad_output():
-    fake = FakeGeneratorModel(model="fake", judge_json="not json at all")
-    assert await claude_judge_scenarios(_plan(), _plan_pack(), [_scenario()], model=fake) is None
+    res = await implement_plan(bank, "run-6f2a", assured=True, model=fake)
+    assert res.quality is not None and not res.quality.accepted
+    assert res.quality.rounds == 0 and "no judge" in res.quality.note
+    assert res.scenarios  # still the best-effort scenario set (never empty)
+    assert store.read_assured_state(bank, "run-6f2a").get("accepted") is False
 
 
 # --- P4: the assured loop --------------------------------------------------------------------
