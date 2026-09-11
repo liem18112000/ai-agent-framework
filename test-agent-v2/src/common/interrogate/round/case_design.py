@@ -3,6 +3,8 @@ how deep, applying the plan's chosen test-design method. Distils into the plan's
 
 from __future__ import annotations
 
+import re
+
 from common.interrogate.pack import Pack
 from common.interrogate.round.base import QFactory, RoundQuestions
 from common.models import Note, Question
@@ -40,7 +42,9 @@ def kinds_from_answer(chosen: str) -> list[str]:
     """Parse the chosen/added kinds out of a case-design answer into an ordered, deduped list.
     Recognises the default four plus the known extras; falls back to the defaults when none match."""
     low = chosen.lower()
-    found = [k for k in [*DEFAULT_KINDS, *EXTRA_KINDS] if k in low]
+    # whole-word match, and drop a kind the user negated ("no negative", "not performance")
+    found = [k for k in [*DEFAULT_KINDS, *EXTRA_KINDS]
+             if re.search(rf"(?<!no )(?<!not )\b{k}\b", low)]
     # a bare "+ security" style answer implies the defaults too
     if any(k in EXTRA_KINDS for k in found) and not all(k in low for k in DEFAULT_KINDS):
         found = list(dict.fromkeys([*DEFAULT_KINDS, *found]))

@@ -79,6 +79,7 @@ def test_kinds_from_answer_parses_open_kinds():
     assert "security" in kinds_from_answer("+ security")
     assert kinds_from_answer("+ security")[:4] == ["happy", "negative", "boundary", "error"]
     assert kinds_from_answer("gibberish") == ["happy", "negative", "boundary", "error"]
+    assert "negative" not in kinds_from_answer("happy, boundary — no negative cases")  # negation dropped
 
 
 async def _confirm(bank):

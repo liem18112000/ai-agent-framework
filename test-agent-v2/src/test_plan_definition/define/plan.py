@@ -35,7 +35,7 @@ def assemble_plan(
         if d.round == "methodology":
             methodology += [m for m in _METHODOLOGIES if m in d.chosen.lower()]
         elif d.round == "scope":
-            (out_of_scope if d.chosen.lower().startswith("out") else scope).append(ref or d.chosen)
+            (out_of_scope if d.chosen.lower().startswith("out of") else scope).append(ref or d.chosen)
         elif d.round == "metrics":
             metrics.append(d.chosen)
         elif d.round == "test-design":

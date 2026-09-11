@@ -32,6 +32,15 @@ def test_ingest_line_format_matches_option():
     assert qs[0].status == "answered" and not res.carried
 
 
+def test_ingest_short_label_not_matched_midword():
+    """A 2-char option label must not match inside an unrelated word (\"ui\" ⊄ \"build\"/\"suite\")."""
+    opts = [{"label": "UI", "implication": "x"}, {"label": "API", "implication": "y"}]
+    res = ingest([_q(options=opts)], "Q-biz-1: cover the whole build suite")
+    assert res.answers[0].chosen_option == ""                      # no false UI match
+    res2 = ingest([_q(options=opts)], "Q-biz-1: use the API here")
+    assert res2.answers[0].chosen_option == "API"                  # a real token still maps
+
+
 def test_ingest_json_list_and_new_seed():
     qs = [_q("Q-biz-1"), _q("Q-biz-2")]
     raw = '[{"question_id": "Q-biz-1", "text": "read it", "new_seed": "confluence:999"}]'

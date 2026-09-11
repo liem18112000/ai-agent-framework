@@ -32,6 +32,8 @@ def make_generator(understanding: str = "") -> Generator:
                        max_tokens=6000, cache_prefix=pack_block(summary))
         qs: list[Question] = []
         for it in loads_array(raw) or []:
+            if not isinstance(it, dict):  # valid-but-non-object array element → skip, don't crash
+                continue
             it.setdefault("round", round_name)
             if "applies_to" in it:
                 it["applies_to"] = coerce_str(it["applies_to"])

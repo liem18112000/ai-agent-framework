@@ -44,7 +44,13 @@ def _coerce(value) -> tuple[str, str, str | None]:
 
 def _match_option(text: str, options: list[dict]) -> str:
     low = text.lower()
-    return next((o["label"] for o in options if o.get("label") and (o["label"].lower() in low or low in o["label"].lower())), "")
+
+    def present(label: str) -> bool:
+        # label appears as a standalone run in the answer (so 2-char "ui" ≠ b*ui*ld / s*ui*te),
+        # or a short answer is a substring of the label (e.g. "rest" in "api (rest)").
+        return bool(re.search(rf"(?<![a-z0-9]){re.escape(label)}(?![a-z0-9])", low)) or low in label
+
+    return next((o["label"] for o in options if o.get("label") and present(o["label"].lower())), "")
 
 
 def ingest(questions: list[Question], raw, *, now: str = "", answered_by: str = "human") -> IngestResult:
