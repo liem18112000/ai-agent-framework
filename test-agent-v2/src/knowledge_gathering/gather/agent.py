@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 from google.adk.agents import BaseAgent
 
 from common.adk.events import incoming_text, text_event
@@ -13,6 +15,7 @@ from common.models import Scope
 from knowledge_gathering.gather.crawl import crawl
 from knowledge_gathering.gather.domain import (
     capture_gather,
+    exclude_ids,
     parse_input,
     seed_probe,
     summarize_gather,
@@ -70,7 +73,7 @@ class GatherAgent(BaseAgent):
         return terms, leads, planner_md
 
     async def _run_async_impl(self, ctx):
-        seed, depth, repo, _exclude = parse_input(incoming_text(ctx).strip())
+        seed, depth, repo, exclude = parse_input(incoming_text(ctx).strip())
         if not seed:
             yield text_event(self.name, "Provide a seed, e.g. 'gather LUZ-158390 depth 2'.")
             return
@@ -79,19 +82,32 @@ class GatherAgent(BaseAgent):
         except Exception as exc:  # noqa: BLE001 — missing config/creds → graceful reply
             yield text_event(self.name, f"Config error: {exc}")
             return
-        extra_seeds = [repo] if repo else []
-        probe = await seed_probe(client, seed)
-        terms, leads, planner_md = await self._plan(ctx, probe)
-        new_seeds, md_blocks = await expansion_round(
-            bank, client, seed=seed, terms=terms, thin=probe.thin, project=probe.project,
-            parent=probe.parent, exclude=set(extra_seeds), leads=leads)
-        extra_seeds += [s for s in new_seeds if s not in extra_seeds]
-        result = await crawl(client, bank, seed, depth=depth, scope=Scope(follow_web=True),
-                             distiller=None, run_id=ctx.session.id, extra_seeds=extra_seeds or None,
-                             max_seconds=600.0 if repo else 180.0)
-        summary = summarize_gather(result) + "".join(f"\n\n{md}" for md in planner_md + md_blocks)
-        capture_gather(bank, context_id=ctx.session.id or seed, seed=seed, result=result)
-        yield text_event(self.name, summary)
+        owns_client = self.client is None  # close only the client WE built (injected clients aren't ours)
+        try:
+            excluded = exclude_ids(exclude)
+            extra_seeds = [repo] if repo else []
+            probe = await seed_probe(client, seed)
+            terms, leads, planner_md = await self._plan(ctx, probe)
+            new_seeds, md_blocks = await expansion_round(
+                bank, client, seed=seed, terms=terms, thin=probe.thin, project=probe.project,
+                parent=probe.parent, exclude=excluded | set(extra_seeds), leads=leads)
+            extra_seeds += [s for s in new_seeds if s not in extra_seeds]
+            try:
+                result = await crawl(client, bank, seed, depth=depth, scope=Scope(follow_web=True),
+                                     distiller=None, run_id=ctx.session.id, extra_seeds=extra_seeds or None,
+                                     max_seconds=600.0 if repo else 180.0, exclude=excluded)
+            except Exception as exc:  # noqa: BLE001 — a crawl/persist failure degrades, never 500s
+                log.warning("A2A gather: crawl/persist failed (%s)", exc)
+                yield text_event(self.name, f"Gather could not complete: {exc}")
+                return
+            summary = summarize_gather(result) + "".join(f"\n\n{md}" for md in planner_md + md_blocks)
+            capture_gather(bank, context_id=ctx.session.id or seed, seed=seed, result=result)
+            yield text_event(self.name, summary)
+        finally:
+            closer = getattr(client, "aclose", None)
+            if owns_client and closer is not None:  # release the httpx pool we opened (no FD leak)
+                with contextlib.suppress(Exception):
+                    await closer()
 
 
 def build_gather_agent(name: str = "gather") -> GatherAgent:

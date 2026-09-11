@@ -28,7 +28,6 @@ async def expansion_round(
     seed_norm = normalize_seed(seed)
     new_seeds: list[str] = []
     climb_md = prior_md = sem_md = search_md = leads_md = ""
-    focus = terms
 
     def _add(candidates: list[str]) -> None:
         new_seeds.extend(s for s in candidates if s not in new_seeds and s not in exclude)
@@ -41,13 +40,13 @@ async def expansion_round(
         log.info("A2A gather: thin seed=%s → climbed to parent %s", seed, parent)
 
     if not climbed:
-        prior_seeds, prior_md = memory_self_seed(bank, seed, focus)
+        prior_seeds, prior_md = memory_self_seed(bank, seed, terms)
         _add(prior_seeds)
-        sem_seeds, sem_md = await semantic_self_seed(bank, seed, focus, exclude=exclude | set(new_seeds) | {seed_norm})
+        sem_seeds, sem_md = await semantic_self_seed(bank, seed, terms, exclude=exclude | set(new_seeds) | {seed_norm})
         _add(sem_seeds)
 
-    if thin and focus:
-        search_seeds, search_md = await atlassian_search_seeds(client, focus, project=project, exclude=exclude | set(new_seeds) | {seed_norm})
+    if thin and terms:
+        search_seeds, search_md = await atlassian_search_seeds(client, terms, project=project, exclude=exclude | set(new_seeds) | {seed_norm})
         _add(search_seeds)
         log.info("A2A gather: thin seed=%s → atlassian search promoted %d seed(s): %s", seed, len(search_seeds), search_seeds)
 

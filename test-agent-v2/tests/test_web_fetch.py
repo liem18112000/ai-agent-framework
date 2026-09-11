@@ -129,6 +129,24 @@ async def test_web_fetch_timeout_raises(monkeypatch):
         await web.WebFetcher().fetch(None, "", "https://example.com/slow", Scope(follow_web=True))
 
 
+def test_host_blocked_rejects_nonpublic_addresses():
+    """H1: the SSRF guard flags private / loopback / link-local / reserved literals and internal names."""
+    for host in ("169.254.169.254", "10.0.0.1", "127.0.0.1", "192.168.1.5", "::1",
+                 "0.0.0.0", "localhost", "metadata.google.internal"):
+        assert web._host_blocked(host) is True, host
+    assert web._host_blocked("8.8.8.8") is False           # public literal is allowed
+    assert web._host_blocked("") is True                   # empty host is not fetchable
+
+
+async def test_fetch_web_blocks_ssrf_to_internal_literal():
+    """H1 end-to-end: _fetch_web (real guarded client) refuses a link-local / private target BEFORE any
+    connection — covers both the direct-seed and planted-link attack paths."""
+    with pytest.raises(ValueError, match="non-public"):
+        await web._fetch_web("http://169.254.169.254/latest/meta-data/")
+    with pytest.raises(ValueError, match="non-public"):
+        await web._fetch_web("http://10.0.0.1/admin")
+
+
 def test_http_and_https_both_registered():
     assert {"http", "https"}.issubset(NodeFetcher.registry)
     assert (

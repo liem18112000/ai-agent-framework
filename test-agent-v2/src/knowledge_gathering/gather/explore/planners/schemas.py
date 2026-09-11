@@ -41,9 +41,9 @@ class Hypothesis(BaseModel):
     entities: list[str] = Field(default_factory=list)
     subsystems: list[str] = Field(default_factory=list)
 
-    def as_terms(self, cap: int = _MAX_TERMS) -> str:
+    def as_terms(self) -> str:
         """Flatten the three fields into a deduped, order-stable, capped space-joined string."""
-        return " ".join(_dedupe((*self.key_phrases, *self.entities, *self.subsystems), cap))
+        return " ".join(_dedupe((*self.key_phrases, *self.entities, *self.subsystems), _MAX_TERMS))
 
 
 class Leads(BaseModel):
@@ -51,6 +51,6 @@ class Leads(BaseModel):
 
     phrases: list[str] = Field(default_factory=list)
 
-    def as_leads(self, cap: int = _MAX_LEADS) -> list[str]:
+    def as_leads(self) -> list[str]:
         """Deduped, order-stable, capped list of non-empty lead phrases (mirrors `_coerce_leads`)."""
-        return _dedupe(self.phrases, cap)
+        return _dedupe(self.phrases, _MAX_LEADS)

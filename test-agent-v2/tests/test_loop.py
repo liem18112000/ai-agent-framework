@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+
+import pytest
+
 from common.memory import MemoryBank
 from common.store import CASConflict
 from knowledge_gathering.gather.crawl import crawl
@@ -164,3 +168,61 @@ async def test_crawl_persists_index_and_runlog():
     assert "memory/index/knowledge-index.json" in bucket.store
     assert any(k.startswith("memory/runs/") for k in bucket.store)
     assert "memory/notes/jira-issue/jira_LUZ-1.md" in bucket.store
+
+
+def test_parse_input_malformed_json_yields_no_seed():
+    """H2/M5: a truncated or ill-typed `{...}` body no longer raises out of the handler; it degrades to
+    'no seed' (→ the friendly prompt) instead of a 500."""
+    from knowledge_gathering.gather import parse_input
+    assert parse_input('{"seed": "LUZ-1"') == (None, 2, None, None)          # truncated JSON
+    assert parse_input('{"seed": "X", "depth": "two"}') == (None, 2, None, None)  # depth not an int
+
+
+def test_exclude_ids_normalizes_keys_ids_and_urls():
+    from knowledge_gathering.gather.domain import exclude_ids
+    assert exclude_ids(None) == set()
+    assert exclude_ids("  ") == set()
+    assert exclude_ids("LUZ-999") == {"jira:LUZ-999"}
+    assert exclude_ids("LUZ-1, 123456") == {"jira:LUZ-1", "confluence:123456"}
+
+
+async def test_crawl_excludes_seed_and_links():
+    """H2: excluded canonical ids are never fetched — neither as a start seed nor when reached via a
+    link — while non-excluded siblings still follow."""
+    issues = {"LUZ-1": _issue("LUZ-1", links_to=["LUZ-2", "LUZ-3"]),
+              "LUZ-2": _issue("LUZ-2"), "LUZ-3": _issue("LUZ-3")}
+    result = await crawl(FakeClient(issues), MemoryBank(FakeBucket()), "LUZ-1",
+                         depth=2, run_id="t", exclude={"jira:LUZ-2"})
+    ids = {n.id for n in result.notes}
+    assert "jira:LUZ-2" not in ids
+    assert {"jira:LUZ-1", "jira:LUZ-3"} <= ids
+
+    only_seed = await crawl(FakeClient(issues), MemoryBank(FakeBucket()), "LUZ-1",
+                            depth=0, run_id="t", exclude={"jira:LUZ-1"})
+    assert only_seed.notes == []
+
+
+async def test_over_budget_level_flags_dropped_as_gaps():
+    """L10: nodes an under-budget level can't afford are surfaced as gaps, not dropped silently."""
+    issues = {"LUZ-1": _issue("LUZ-1", links_to=["LUZ-2", "LUZ-3", "LUZ-4"]),
+              "LUZ-2": _issue("LUZ-2"), "LUZ-3": _issue("LUZ-3"), "LUZ-4": _issue("LUZ-4")}
+    result = await crawl(FakeClient(issues), MemoryBank(FakeBucket()), "LUZ-1",
+                         depth=1, max_nodes=2, run_id="t")
+    assert len(result.notes) == 2                       # seed + the one child we could afford
+    assert len(result.gaps) == 2                        # the two we couldn't are flagged
+    assert all(g.startswith("jira:") for g in result.gaps)
+
+
+async def test_crawl_reraises_cancellation():
+    """L11: a child CancelledError is propagated, not silently downgraded to a 'gap'."""
+    class _Cancelling:
+        base_url = BASE
+
+        async def get_issue(self, key):
+            raise asyncio.CancelledError
+
+        async def get_issue_remote_links(self, key):
+            return []
+
+    with pytest.raises(asyncio.CancelledError):
+        await crawl(_Cancelling(), MemoryBank(FakeBucket()), "LUZ-1", depth=0, run_id="t")

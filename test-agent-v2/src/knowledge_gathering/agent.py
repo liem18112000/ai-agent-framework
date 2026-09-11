@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 from google.adk.agents import BaseAgent
@@ -11,7 +12,10 @@ from common.adk.events import incoming_text, text_event
 from common.interrogate import present
 from common.memory.factory import build_bank
 from knowledge_gathering.gather import build_gather_agent
+from knowledge_gathering.monitoring import get_logger
 from knowledge_gathering.refine.agent import build_refine_agent, wants_refine
+
+log = get_logger("adk.router")
 
 _READ_TOOLS = {"search-memory": tools.search_memory, "get-note": tools.get_note,
                "search-lessons": tools.search_lessons, "veto-lesson": tools.veto_lesson}
@@ -30,10 +34,19 @@ class KgaRouter(BaseAgent):
         if low.startswith(tuple(_READ_TOOLS)):
             yield text_event(self.name, await self._read_tool(text))
             return
-        state = build_bank().read_refine_state(ctx.session.id) or {}
+        state = await self._refine_state(ctx.session.id)
         target = self.refine if (state and not state.get("done")) or wants_refine(text) else self.gather
         async for ev in target.run_async(ctx):
             yield ev
+
+    async def _refine_state(self, session_id) -> dict:
+        """Read the session's refine state OFF the event loop (sync GCS), degrading to {} on any error
+        so a transient memory hiccup can't crash routing."""
+        try:
+            return await asyncio.to_thread(lambda: build_bank().read_refine_state(session_id)) or {}
+        except Exception as exc:  # noqa: BLE001 — routing must survive a memory read failure
+            log.warning("A2A router: refine-state read failed (%s)", exc)
+            return {}
 
     def _read_helper(self, text: str) -> str:
         ctx_id = present.extract_ctx(text, ("get-questions", "get-understanding"))

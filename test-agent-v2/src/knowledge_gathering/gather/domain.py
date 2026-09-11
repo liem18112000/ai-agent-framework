@@ -65,15 +65,28 @@ async def seed_probe(client, seed: str) -> SeedProbe:
         return SeedProbe()
 
 
+def exclude_ids(raw: str | None) -> set[str]:
+    """Canonical node ids to keep OUT of expansion + crawl, parsed from a free-text `exclude`
+    (issue keys / ids / URLs split on whitespace or commas; a phrase that isn't a seed simply
+    normalises to itself and matches no node)."""
+    if not raw:
+        return set()
+    return {normalize_seed(tok) for tok in re.split(r"[,\s]+", raw.strip()) if tok}
+
+
 def parse_input(text: str) -> tuple[str | None, int, str | None, str | None]:
     """Return (seed, depth, repo, exclude). `repo` is an optional "<ws>/<repo>" whose graphify code"""
     text = text.strip()
     if text.startswith("{"):
-        d = json.loads(text)
+        try:
+            d = json.loads(text)
+            depth = int(d.get("depth", 2))
+        except (json.JSONDecodeError, ValueError, TypeError):  # malformed body → no seed → friendly reply
+            return None, 2, None, None
         exclude = d.get("exclude")
         if isinstance(exclude, list):
             exclude = " ".join(exclude)
-        return d.get("seed"), int(d.get("depth", 2)), d.get("repo") or None, (exclude or None)
+        return d.get("seed"), depth, d.get("repo") or None, (exclude or None)
     seed = re.search(r"[A-Z][A-Z0-9]+-\d+|\d{6,}|https?://\S+", text)
     depth = re.search(r"depth\s+(\d+)", text)
     repo = re.search(r"repo\s+([\w.-]+/[\w.-]+)", text)

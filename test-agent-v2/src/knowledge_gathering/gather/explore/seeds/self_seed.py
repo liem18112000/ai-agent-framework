@@ -22,9 +22,11 @@ def salient_tokens(text: str) -> list[str]:
 
 
 def _queries(seed_key: str, terms: str) -> list[str]:
-    """Distinct match queries: the seed's own key + each usable token in `terms`."""
-    return list(dict.fromkeys(tok for tok in [seed_key.strip().lower(), *salient_tokens(terms)]
-                              if len(tok) >= 3 and tok not in _STOPWORDS))
+    """Distinct match queries: the seed's own key (when usable) + each usable token in `terms`
+    (`salient_tokens` already applied the len/stopword filter, so only the key needs guarding)."""
+    key = seed_key.strip().lower()
+    head = [key] if len(key) >= 3 and key not in _STOPWORDS else []
+    return list(dict.fromkeys([*head, *salient_tokens(terms)]))
 
 
 def _render(matched: dict[str, dict], *, limit: int = 8) -> str:
