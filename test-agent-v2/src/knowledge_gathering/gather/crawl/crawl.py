@@ -103,6 +103,10 @@ def _persist(bank, result: CrawlResult) -> None:
 
 
 def _fetchable(canonical: str, scope: Scope) -> bool:
-    """Which canonical node ids can be fetched + followed (external-web gated by scope.follow_web)."""
+    """Which canonical node ids can be fetched + followed (external-web/cloudsvc gated by scope flags)."""
     kind = canonical.split(":", 1)[0]
-    return scope.follow_web if kind in ("http", "https") else kind in ("jira", "confluence", "bitbucket", "codegraph")
+    if kind in ("http", "https"):
+        return scope.follow_web
+    if kind == "cloudsvc":
+        return scope.explore_cloud
+    return kind in ("jira", "confluence", "bitbucket", "codegraph")

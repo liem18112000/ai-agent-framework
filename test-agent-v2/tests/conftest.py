@@ -221,3 +221,29 @@ async def run_planner_agent(agent, plan_input: dict, *, output_key: str):
         pass
     sess = await svc.get_session(app_name="t", user_id="u", session_id="s")
     return sess.state.get(output_key)
+
+
+# --- Offline fake CloudProvider (X-tiers 5/6/7) — the port makes the fakes clean (no google client) --
+class FakeCloudProvider:
+    """A `CloudProvider` double: canned discovery + logs, no cloud SDK. Inject via the module-level
+    `_providers` seam (cloud_discover / cloud_service). `discover_fn`/`read_logs_fn` may raise to
+    exercise per-provider/env isolation and the unconfigured-degrade paths."""
+
+    def __init__(self, name="fake", *, envs=("dev",), discover_fn=None, read_logs_fn=None, configured=True):
+        self.name = name
+        self._envs = list(envs)
+        self._discover_fn = discover_fn or (lambda env_key: [])
+        self._read_logs_fn = read_logs_fn or (lambda ref, days, cap, min_severity: [])
+        self._configured = configured
+
+    def is_configured(self):
+        return self._configured
+
+    def env_keys(self):
+        return list(self._envs)
+
+    def discover(self, env_key):
+        return self._discover_fn(env_key)
+
+    def read_logs(self, ref, days, *, cap, min_severity="WARNING"):
+        return self._read_logs_fn(ref, days, cap, min_severity)

@@ -24,3 +24,11 @@ atlassian_email    = "liem.doanvanthanh@axonactive.com"
 # Terraform (random_password) and stored in Secret Manager — no secret to supply here.
 # Set false for in-memory sessions (the GCS bank stays durable regardless).
 # deploy_cloudsql      = false    # opt OUT of the dedicated instance
+#
+# Cloud exploration tiers 5/6/7 (KGA discover/logs/relate). OFF by default. To enable:
+#   1) set gcp_env_matrix to your env->infra map (config presence is the toggle — no separate flag),
+#   2) list the projects the agent may READ in cloud_exploration_projects (grants read-only viewer roles),
+#   3) the deployed image already installs the [gcp] extra.
+# The example map lives in ./gcp-env-matrix.example.json — inline it as one JSON string here:
+# gcp_env_matrix = "{\"dev\":{\"project\":\"klara-nonprod\",\"region\":\"europe-west6\",\"cluster\":\"klara-nonprod\",\"namespace\":\"dev\"},\"prod\":{\"project\":\"klara-prod\",\"region\":\"europe-west6\",\"cluster\":\"klara-prod\",\"namespace\":\"prod\"}}"
+# cloud_exploration_projects = ["klara-nonprod"]           # add "klara-prod" only after approving cross-project read

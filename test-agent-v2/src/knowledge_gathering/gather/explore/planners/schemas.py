@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 _MAX_TERMS = 8
 _MAX_LEADS = 6
+_MAX_CLOUD_HINTS = 12
 
 PLAN_INPUT_KEY = "kga_plan_in"
 
@@ -54,3 +55,16 @@ class Leads(BaseModel):
     def as_leads(self) -> list[str]:
         """Deduped, order-stable, capped list of non-empty lead phrases (mirrors `_coerce_leads`)."""
         return _dedupe(self.phrases, _MAX_LEADS)
+
+
+class CloudExplorePlan(BaseModel):
+    """X5 (Tier 5): re-rank/cluster HINTS for the discovered cloud services. Grounding gate — these are
+    service-NAME priorities/clusters, never authoritative ids: they only REORDER what discovery
+    actually returned, so the LLM can never add a service that isn't live."""
+
+    priority_services: list[str] = Field(default_factory=list)   # ordered service-name hints
+    clusters: list[list[str]] = Field(default_factory=list)      # "same logical service across envs"
+
+    def hints(self) -> list[str]:
+        """Deduped, order-stable, capped priority service-name hints (lowercased for matching)."""
+        return _dedupe([h.lower() for h in self.priority_services], _MAX_CLOUD_HINTS)

@@ -4,6 +4,8 @@ from common.models.bridge import A2AResult
 from common.models.graph import (
     ATTACHMENT,
     BITBUCKET,
+    CLOUD_EDGE,
+    CLOUD_SERVICE,
     CODEGRAPH,
     CONFLUENCE_PAGE,
     EXTERNAL_WEB,
@@ -35,8 +37,9 @@ from common.models.refine import (
 )
 
 __all__ = [
-    "ASSUMPTION", "ATTACHMENT", "BITBUCKET", "CODEGRAPH", "CONFLUENCE_PAGE", "CORRECTION", "DECISION",
-    "EXTERNAL_WEB", "FIGMA", "GAP_SEED", "GOOGLE_DOC", "GOTCHA", "INSIGHT", "JIRA_ISSUE", "LESSON", "ROUNDS",
+    "ASSUMPTION", "ATTACHMENT", "BITBUCKET", "CLOUD_EDGE", "CLOUD_SERVICE", "CODEGRAPH",
+    "CONFLUENCE_PAGE", "CORRECTION", "DECISION", "EXTERNAL_WEB", "FIGMA", "GAP_SEED", "GOOGLE_DOC",
+    "GOTCHA", "INSIGHT", "JIRA_ISSUE", "LESSON", "ROUNDS",
     "A2AResult", "Answer", "Graph", "IngestResult", "Insight", "LinkRecord", "Note", "Pack", "Question",
     "RefineResult", "RefinementRun", "RunLog", "Scope",
 ]

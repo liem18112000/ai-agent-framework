@@ -79,6 +79,33 @@ resource "google_storage_bucket_iam_member" "bucket_object_admin" {
 }
 
 # ---------------------------------------------------------------------------
+# Cloud exploration tiers 5/6/7 (KGA) — READ-ONLY viewer roles for the CloudProvider GCP adapter.
+# Least-privilege + opt-in: NOTHING is granted unless `cloud_exploration_projects` is set. List each
+# project whose estate the agent may read (this project, and/or a prod project for cross-project envs).
+# ---------------------------------------------------------------------------
+locals {
+  cloud_viewer_roles = [
+    "roles/cloudasset.viewer", # Tier 5 — searchAllResources
+    "roles/logging.viewer",    # Tier 6 — read logs
+    "roles/run.viewer",        # Tier 5 — Cloud Run list (fallback)
+    "roles/container.viewer",  # Tier 5 — GKE list (fallback)
+    "roles/monitoring.viewer", # liveness signals
+    "roles/cloudtrace.user",   # Tier 7 — read trace spans
+  ]
+  cloud_viewer_bindings = {
+    for pair in setproduct(var.cloud_exploration_projects, local.cloud_viewer_roles) :
+    "${pair[0]}::${pair[1]}" => { project = pair[0], role = pair[1] }
+  }
+}
+
+resource "google_project_iam_member" "cloud_viewer" {
+  for_each = local.cloud_viewer_bindings
+  project  = each.value.project
+  role     = each.value.role
+  member   = "serviceAccount:${google_service_account.kga.email}"
+}
+
+# ---------------------------------------------------------------------------
 # Secrets (containers only — add versions out-of-band, never in tfvars)
 # ---------------------------------------------------------------------------
 resource "google_secret_manager_secret" "atlassian_token" {

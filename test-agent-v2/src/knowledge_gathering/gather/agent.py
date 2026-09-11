@@ -9,6 +9,7 @@ from google.adk.agents import BaseAgent
 from common.adk.events import incoming_text, text_event
 from common.atlassian import AtlassianClient
 from common.atlassian.factory import build_client
+from common.cloud import cloud_configured, cloud_max_services
 from common.memory import MemoryBank
 from common.memory.factory import build_bank
 from common.models import Scope
@@ -23,10 +24,13 @@ from knowledge_gathering.gather.domain import (
 from knowledge_gathering.gather.explore.expand import expansion_round
 from knowledge_gathering.gather.explore.planners.ask_llm import OUTPUT_KEY as LEADS_KEY
 from knowledge_gathering.gather.explore.planners.ask_llm import build_leads_agent
+from knowledge_gathering.gather.explore.planners.cloud_explore import OUTPUT_KEY as CLOUD_KEY
+from knowledge_gathering.gather.explore.planners.cloud_explore import build_cloud_explore_agent
 from knowledge_gathering.gather.explore.planners.hypothesize import OUTPUT_KEY as HYP_KEY
 from knowledge_gathering.gather.explore.planners.hypothesize import build_hypothesize_agent
 from knowledge_gathering.gather.explore.planners.schemas import (
     PLAN_INPUT_KEY,
+    CloudExplorePlan,
     Hypothesis,
     Leads,
     PlanInput,
@@ -39,6 +43,7 @@ log = get_logger("adk.gather")
 class GatherAgent(BaseAgent):
     hypothesize_agent: BaseAgent | None = None
     leads_agent: BaseAgent | None = None
+    cloud_explore_agent: BaseAgent | None = None
     bank: MemoryBank | None = None
     client: AtlassianClient | None = None
 
@@ -54,12 +59,13 @@ class GatherAgent(BaseAgent):
             log.warning("KGA planner %r degraded (%s)", output_key, exc)
         return result
 
-    async def _plan(self, ctx, probe) -> tuple[str, list[str] | None, list[str]]:
+    async def _plan(self, ctx, probe, cloud_on: bool) -> tuple[str, list[str] | None, list[str], CloudExplorePlan | None]:
         """Run the search planners (one that can't reach a model degrades in `_run_planner`);
-        return (focus_terms, leads, planner_md)."""
-        terms, leads, planner_md = probe.terms, None, []
-        if not probe.title or (self.hypothesize_agent is None and self.leads_agent is None):
-            return terms, leads, planner_md
+        return (focus_terms, leads, planner_md, cloud_plan). `cloud_on` gates the cloud planner."""
+        terms, leads, planner_md, cloud_plan = probe.terms, None, [], None
+        if not probe.title or all(a is None for a in
+                                  (self.hypothesize_agent, self.leads_agent, self.cloud_explore_agent)):
+            return terms, leads, planner_md, cloud_plan
         ctx.session.state[PLAN_INPUT_KEY] = PlanInput.from_probe(probe).model_dump()
         if self.hypothesize_agent is not None:
             raw = await self._run_planner(ctx, self.hypothesize_agent, HYP_KEY)
@@ -70,7 +76,12 @@ class GatherAgent(BaseAgent):
         if self.leads_agent is not None:
             raw = await self._run_planner(ctx, self.leads_agent, LEADS_KEY)
             leads = Leads(**raw).as_leads() if raw else None
-        return terms, leads, planner_md
+        # X5: cloud re-rank plan — only when the tier is on (grounding-gated in cloud_discover). A no-op
+        # when the agent can't reach a model (`_run_planner` swallows it) → numeric rank in discover.
+        if self.cloud_explore_agent is not None and cloud_on:
+            raw = await self._run_planner(ctx, self.cloud_explore_agent, CLOUD_KEY)
+            cloud_plan = CloudExplorePlan(**raw) if raw else None
+        return terms, leads, planner_md, cloud_plan
 
     async def _run_async_impl(self, ctx):
         seed, depth, repo, exclude = parse_input(incoming_text(ctx).strip())
@@ -87,13 +98,17 @@ class GatherAgent(BaseAgent):
             excluded = exclude_ids(exclude)
             extra_seeds = [repo] if repo else []
             probe = await seed_probe(client, seed)
-            terms, leads, planner_md = await self._plan(ctx, probe)
+            cloud_on = cloud_configured()  # tiers 5/6/7 on iff a provider env map is configured
+            terms, leads, planner_md, cloud_plan = await self._plan(ctx, probe, cloud_on)
             new_seeds, md_blocks = await expansion_round(
                 bank, client, seed=seed, terms=terms, thin=probe.thin, project=probe.project,
-                parent=probe.parent, exclude=excluded | set(extra_seeds), leads=leads)
+                parent=probe.parent, exclude=excluded | set(extra_seeds), leads=leads,
+                explore_cloud=cloud_on, cloud_max_services=cloud_max_services(), cloud_plan=cloud_plan)
             extra_seeds += [s for s in new_seeds if s not in extra_seeds]
             try:
-                result = await crawl(client, bank, seed, depth=depth, scope=Scope(follow_web=True),
+                result = await crawl(client, bank, seed, depth=depth,
+                                     scope=Scope(follow_web=True, explore_cloud=cloud_on,
+                                                 cloud_max_services=cloud_max_services()),
                                      distiller=None, run_id=ctx.session.id, extra_seeds=extra_seeds or None,
                                      max_seconds=600.0 if repo else 180.0, exclude=excluded)
             except Exception as exc:  # noqa: BLE001 — a crawl/persist failure degrades, never 500s
@@ -111,7 +126,9 @@ class GatherAgent(BaseAgent):
 
 
 def build_gather_agent(name: str = "gather") -> GatherAgent:
-    """The gather agent + its two explore planners (D15) as sub_agents; `client`/`bank` are injectable,
-    built lazily by the handler when unset."""
-    hyp, leads = build_hypothesize_agent(), build_leads_agent()
-    return GatherAgent(name=name, hypothesize_agent=hyp, leads_agent=leads, sub_agents=[hyp, leads])
+    """The gather agent + its three explore planners (D15 / X5) as sub_agents; `client`/`bank` are
+    injectable, built lazily by the handler when unset. The cloud planner is a no-op unless a provider
+    env map is configured (`cloud_configured()`) + Vertex is reachable (guarded in `_plan`)."""
+    hyp, leads, cloud = build_hypothesize_agent(), build_leads_agent(), build_cloud_explore_agent()
+    return GatherAgent(name=name, hypothesize_agent=hyp, leads_agent=leads, cloud_explore_agent=cloud,
+                       sub_agents=[hyp, leads, cloud])

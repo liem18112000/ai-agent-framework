@@ -8,12 +8,13 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Install the package incl. the [bridge] extra (mcp), so this one image can run EITHER the
+# Install the package incl. the [bridge] extra (mcp) and [gcp] extra (CloudProvider GCP adapter for
+# KGA tiers 5/6/7 — inert at runtime until a cloud env matrix is configured). One image runs EITHER the
 # agent (default CMD below) OR the A2A->MCP bridge service (override the command — see README).
 COPY pyproject.toml ./
 COPY src ./src
 COPY main.py ./
-RUN pip install ".[bridge]"
+RUN pip install ".[bridge,gcp]"
 
 # Run as non-root.
 RUN useradd -m -u 10001 appuser

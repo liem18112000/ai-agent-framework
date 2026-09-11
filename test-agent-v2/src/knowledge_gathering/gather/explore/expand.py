@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from knowledge_gathering.gather.explore.planners.schemas import CloudExplorePlan
 from knowledge_gathering.gather.explore.seeds.atlassian_search import atlassian_search_seeds
+from knowledge_gathering.gather.explore.seeds.cloud_discover import cloud_service_seeds
 from knowledge_gathering.gather.explore.seeds.ground_leads import ground_leads
 from knowledge_gathering.gather.explore.seeds.self_seed import memory_self_seed, semantic_self_seed
 from knowledge_gathering.gather.seed import normalize_seed
@@ -22,12 +24,16 @@ async def expansion_round(
     parent: str | None = None,
     exclude: set[str] | None = None,
     leads: list[str] | None = None,
+    explore_cloud: bool = False,
+    cloud_max_services: int = 8,
+    cloud_plan: CloudExplorePlan | None = None,
 ) -> tuple[list[str], list[str]]:
-    """Run ONE pre-crawl fan-out (B1 → G0 → G1 → G4-grounding) and return `(new_seeds, md_blocks)`."""
+    """Run ONE pre-crawl fan-out (B1 → G0 → G1 → G4-grounding → X2 cloud-discover) and return
+    `(new_seeds, md_blocks)`."""
     exclude = set(exclude or ())
     seed_norm = normalize_seed(seed)
     new_seeds: list[str] = []
-    climb_md = prior_md = sem_md = search_md = leads_md = ""
+    climb_md = prior_md = sem_md = search_md = leads_md = cloud_md = ""
 
     def _add(candidates: list[str]) -> None:
         new_seeds.extend(s for s in candidates if s not in new_seeds and s not in exclude)
@@ -55,5 +61,12 @@ async def expansion_round(
         _add(grounded)
         log.info("A2A gather: seed=%s → external-LLM leads grounded=%d unconfirmed=%d", seed, len(grounded), len(unconfirmed))
 
-    md_blocks = [md for md in (climb_md, prior_md, sem_md, search_md, leads_md) if md]
+    if explore_cloud:  # Tier 5 — discover live services across provider(s) + envs (opt-in, default off)
+        cloud_seeds, cloud_md = await cloud_service_seeds(
+            terms, exclude=exclude | set(new_seeds) | {seed_norm},
+            cloud_max_services=cloud_max_services, plan=cloud_plan)
+        _add(cloud_seeds)
+        log.info("A2A gather: seed=%s → cloud discover promoted %d service(s): %s", seed, len(cloud_seeds), cloud_seeds)
+
+    md_blocks = [md for md in (climb_md, prior_md, sem_md, search_md, leads_md, cloud_md) if md]
     return new_seeds, md_blocks

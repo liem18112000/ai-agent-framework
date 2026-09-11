@@ -18,6 +18,8 @@ GOOGLE_DOC = "google-doc"
 ATTACHMENT = "attachment"
 EXTERNAL_WEB = "external-web"
 CODEGRAPH = "codegraph"
+CLOUD_SERVICE = "cloud-service"
+CLOUD_EDGE = "cloud-edge"
 
 
 @dataclass
@@ -43,6 +45,8 @@ class Scope:
     follow_types: tuple[str, ...] = (JIRA_ISSUE, CONFLUENCE_PAGE)
     follow_web: bool = False
     max_web: int = 8
+    explore_cloud: bool = False
+    cloud_max_services: int = 8
 
     def follows(self, typ: str) -> bool:
         """True if a link of ``typ`` should be pushed to the frontier (vs recorded-only)."""

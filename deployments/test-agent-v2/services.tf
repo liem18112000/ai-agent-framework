@@ -84,6 +84,10 @@ module "kga" {
           { name = "KGA_CAPTURE_LESSONS", value = "1" }, # L2/L3 self-learning capture
           { name = "KGA_RECALL_LESSONS", value = "1" },  # L4 recall prior grounded lessons
         ],
+        # Cloud exploration tiers 5/6/7 — presence of the env matrix IS the toggle (no separate flag).
+        var.gcp_env_matrix != "" ? [
+          { name = "KGA_GCP_ENV_MATRIX", value = var.gcp_env_matrix },
+        ] : [],
       )
     },
   ]
@@ -248,14 +252,14 @@ module "gateway" {
 
   containers = [
     {
-      name                   = "gateway"
-      image                  = var.image
-      command                = ["python", "-m", "gateway"]
-      ingress_port           = 8080
-      cpu                    = var.bridge_cpu
-      memory                 = var.bridge_memory
-      cpu_idle               = false
-      startup_cpu_boost      = true
+      name                     = "gateway"
+      image                    = var.image
+      command                  = ["python", "-m", "gateway"]
+      ingress_port             = 8080
+      cpu                      = var.bridge_cpu
+      memory                   = var.bridge_memory
+      cpu_idle                 = false
+      startup_cpu_boost        = true
       startup_probe_http_path  = "/livez"
       liveness_probe_http_path = "/livez"
       env = [

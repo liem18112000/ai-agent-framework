@@ -5,6 +5,7 @@ from __future__ import annotations
 from common.models import LinkRecord, Note, Scope
 from knowledge_gathering.gather.crawl.fetch import (  # noqa: F401  (registration)
     bitbucket,
+    cloud_service,
     codegraph,
     confluence,
     jira,

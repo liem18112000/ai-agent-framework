@@ -47,6 +47,29 @@ back to EXPAND. 🔁
 
 ---
 
+## NEW rock pile — TIERS 5·6·7, the LIVE CLOUD 🟪🔮 (purple dashed box, bottom-left)
+
+Robot no stop at PAPER. Old tiers 1–4 all read documents — what system *supposed* to do.
+New tiers look at what REALLY RUNNING in Google Cloud — what system *actually* do. 🌩️
+
+- **TIER 5 · DISCOVER** 🔵 — find the prominent services in **every** env
+  (`dev · dev-staging · performance · test · prod`) for **GKE · Cloud Run · managed**
+  (SQL / PubSub). Ask Cloud Asset Inventory. Rank by name-match + still-alive + how-close-
+  to-prod → promote **`gcpsvc:`** seeds. 🗺️
+- **TIER 6 · LOGS** 🟠 — for each service, read Cloud Logging. Window START small **7 day**,
+  grow **→ 14 → 21 → 28** only until ENOUGH signal. Then stop. **Redact secret / PII** —
+  no password go in the note. 🔦
+- **TIER 7 · RELATE** 🟢 — who-call-who? Read log fields · config · trace, draw **edges**
+  between services. Crawl then WALK the service graph, same as it walk a Jira link. 🕸️
+
+**Same loop, new food.** These three = PEERS of tier 1–4, not a new machine. Candidate
+services go through the **SAME ③ GROUND gate** (see the little arrow poking up into GROUND).
+**One sub-agent** (1 LlmAgent) plan the envs, rank prominence, distill logs — but it
+**never INVENT a service or an edge**; only real GCP field make a node. Read-only, opt-in,
+bounded. Full rock: **`PLAN-gcp-service-exploration-tiers`** (+ its own diagram). 🪨
+
+---
+
 ## Rock color meaning 🎨
 
 - 🔴 **red** = the thin/blank seed (the hard start)
@@ -56,15 +79,19 @@ back to EXPAND. 🔁
 - 🟠 **orange** = external tiers (web = cited · external LLM = breadth-only)
 - ⬜ **grey** = the PRINCIPLE, the grounding gate, and reflect
 - 🔴 **dashed red** = leads recycle into new queries (leads, never facts)
+- 🟪 **purple dashed box** = the NEW tiers 5·6·7 pile (live GCP estate) — box inside colored
+  like the tiers it mirrors (5 blue · 6 orange · 7 green)
 
 ---
 
 ## One grunt takeaway
 
-**Thin seed? Guess → fan out 3 tiers (memory → Atlassian → web/LLM) → keep only what you
-can CITE → triangulate ≥2 → promote → crawl → reflect → loop till converged.**
-Deterministic crawl still the executor; LLM only a lead-scout, never truth; human still
-the last gate. Robot stop dead-ending on empty tickets. 🧭👍
+**Thin seed? Guess → fan out (memory → Atlassian → web/LLM → LIVE GCP) → keep only what
+you can CITE → triangulate ≥2 → promote → crawl → reflect → loop till converged.**
+Now robot read PAPER *and* the RUNNING CLOUD (tiers 5·6·7: discover services → grow log
+window → map who-call-who). Deterministic crawl still the executor; LLM only a lead-scout,
+never truth; human still the last gate. Robot stop dead-ending on empty tickets. 🧭👍
 
-*(Sibling rocks: `self-explore-memory-bias` = the drift a thin seed can cause here;
+*(Sibling rocks: `gcp-service-exploration-tiers` = the deep dive on tiers 5·6·7;
+`self-explore-memory-bias` = the drift a thin seed can cause here;
 `self-learning-memory-loop` = how each reflection becomes durable memory.)*

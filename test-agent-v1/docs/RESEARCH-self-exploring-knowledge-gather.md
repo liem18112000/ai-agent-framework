@@ -16,6 +16,14 @@ gaps, a target architecture, a phased roadmap, and constraints drawn from this s
 
 > **Diagram (open in Excalidraw, PNG renders inline):**
 > - The Self-Exploration Loop — [`self-exploring-knowledge-gather.excalidraw`](./self-exploring-knowledge-gather.excalidraw) · [`.png`](./self-exploring-knowledge-gather.png)
+>   The loop now carries a **TIERS 5·6·7 — LIVE GCP ESTATE (NEW)** band (see §8).
+
+> **Extension — reach the live cloud estate (tiers 5/6/7).** The three source tiers below are all
+> *document* sources. A companion plan adds three **operational** tiers that ground the pack in what is
+> actually deployed and running — service discovery across every env, expanding-window log inspection, and
+> service-to-service communication mapping — via one GCP-explore sub-agent riding the same seams. See
+> [`../../test-agent-v2/docs/PLAN-gcp-service-exploration-tiers.md`](../../test-agent-v2/docs/PLAN-gcp-service-exploration-tiers.md)
+> · [`.excalidraw`](../../test-agent-v2/docs/gcp-service-exploration-tiers.excalidraw) and §8 below.
 
 ---
 
@@ -54,6 +62,13 @@ agentic **hypothesize → fan-out → promote → converge** loop that feeds it 
 | **2** | **Atlassian search** (JQL / CQL) | authoritative · cheap | only pre-existing **links** followed | **search** from title+hypotheses → promote hits to seeds |
 | **3a** | **External web** (search + fetch) | verifiable · metered | classified, **never fetched** | make `external-web` fetchable; grounded + cited |
 | **3b** | **External LLM** (e.g. Gemini) | **unverified** · cheap breadth | absent | **lead generator only** → grounded back before pack entry |
+| **5** | **GCP discover** (Cloud Asset Inventory) | authoritative · metered | absent | enumerate deployed services across every env × platform → promote `gcpsvc:` seeds |
+| **6** | **GCP logs** (Cloud Logging) | authoritative · metered | absent | read each service's logs over an **expanding window** 7→14→21→28 d until *enough* |
+| **7** | **GCP relate** (log · config · trace) | authoritative · metered | absent | infer service-to-service communication edges → the crawl walks the service graph |
+
+> Tiers **5/6/7** are the *operational* peers of the document tiers above — same hypothesize→ground→promote→crawl
+> loop, but the source is the **live GCP estate** instead of documents. Full design in §8 /
+> [`PLAN-gcp-service-exploration-tiers.md`](../../test-agent-v2/docs/PLAN-gcp-service-exploration-tiers.md).
 
 ---
 
@@ -359,6 +374,33 @@ All new loop state (`anchor`, `carry`, `ref`, `anchor_ids`, `exclude`) is persis
 that B2's codegraph build now works **server-side** (the agent container now carries Bitbucket creds), but still
 needs a **fresh** context — passing `repo=` on an already-complete `context_id` short-circuits the build and
 returns 0 nodes.
+
+---
+
+## 8. Extension — the live GCP estate (tiers 5/6/7)
+
+The three source tiers above are all **document** sources — they answer *what the system is meant to do*.
+A companion plan adds three **operational** tiers that answer *what is actually deployed and running*, so the
+pack exercises the real failure modes, not only the designed ones. They are the operational peers of tiers
+1–4 and feed the **same** hypothesize → ground → promote → crawl loop; only the source changes.
+
+> **Full design + diagram:**
+> [`../../test-agent-v2/docs/PLAN-gcp-service-exploration-tiers.md`](../../test-agent-v2/docs/PLAN-gcp-service-exploration-tiers.md)
+> · [`gcp-service-exploration-tiers.excalidraw`](../../test-agent-v2/docs/gcp-service-exploration-tiers.excalidraw)
+> · [`.png`](../../test-agent-v2/docs/gcp-service-exploration-tiers.png)
+
+| Tier | Does | Rides which existing seam |
+|---|---|---|
+| **5 · DISCOVER** | Enumerate the *prominent* services across every env (`dev`, `dev-staging`, `performance`, `test`, `prod`) for **GKE**, **Cloud Run**, **managed** (Cloud SQL / Pub/Sub) via Cloud Asset Inventory; rank by term-match ∪ liveness ∪ env → promote top-N. | new **seed producer** in `expansion_round` → `gcpsvc:<env>/<platform>/<name>` ids |
+| **6 · LOGS** | For each service, read Cloud Logging over an **expanding window** 7 → 14 → 21 → 28 d, widening only until *enough* signal (marginal-yield on time); distill purpose · error-sigs · deps; **redact** secrets/PII. | new **`NodeFetcher(kind="gcpsvc")`** — the "fetch" seam |
+| **7 · RELATE** | Infer service-to-service communication edges from log fields · config · Cloud Trace; emit them as `LinkRecord`s so the crawl **walks the service graph**. | in-scope `LinkRecord` + `gcpsvc` in `_fetchable` — the "follow" seam |
+
+**Why this fits the loop, not fights it.** One GCP-explore **sub-agent** (a single `LlmAgent` of the same
+shape as `hypothesize`/`leads`) plans envs, ranks prominence, and distills/labels — it never *invents* a
+service or an edge; discovery and edges come only from real GCP fields (the **grounding gate**, ported from
+tier 3b). The reach is read-only, offloaded to threads, opt-in (`Scope.explore_gcp`, like `follow_web`), and
+bounded by the crawl's existing budget. Candidate service-nodes pass through the **same ③ GROUND gate** as
+every other tier before promotion — which is exactly what the new band in the diagram shows.
 
 ---
 *Companion to the agentic-QA enhancement report. The deterministic crawl is the executor; this report adds the

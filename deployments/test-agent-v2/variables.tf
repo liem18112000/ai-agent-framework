@@ -230,3 +230,20 @@ variable "gateway_service_name" {
   description = "Cloud Run service name for the single MCP gateway."
   default     = "mcp-gateway-v2"
 }
+
+# ---------------------------------------------------------------------------
+# Cloud exploration tiers 5/6/7 (KGA) — config-driven, opt-in via config PRESENCE (no separate flag).
+# Set `gcp_env_matrix` to a non-empty JSON map to turn the tiers ON; grant read access by listing the
+# projects in `cloud_exploration_projects`. Both empty (the default) = tiers stay OFF.
+# ---------------------------------------------------------------------------
+variable "gcp_env_matrix" {
+  type        = string
+  description = "JSON for KGA_GCP_ENV_MATRIX — env -> {project, region, cluster, namespace}. Empty = cloud tiers off. See gcp-env-matrix.example.json."
+  default     = ""
+}
+
+variable "cloud_exploration_projects" {
+  type        = list(string)
+  description = "Projects the KGA runtime SA may READ (viewer roles) for cloud tiers 5/6/7. Empty = no bindings created."
+  default     = []
+}
