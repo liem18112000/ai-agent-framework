@@ -14,7 +14,9 @@ def cites_only_real_ids(understanding: str, pack_node_ids: set[str]) -> RubricRe
     """Every Jira key named in the understanding must belong to a pack node. Fabrication guard."""
     mentioned = set(_JIRA_KEY.findall(understanding))
     real = {nid.split(":", 1)[-1].upper() for nid in pack_node_ids if nid.lower().startswith("jira:")}
-    invented = sorted(k for k in mentioned if k.upper() not in real)
+    real_prefixes = {k.split("-", 1)[0] for k in real}  # only judge keys in a project the pack actually cites
+    invented = sorted(k for k in mentioned  # ISO-20022 / CVE-2021 / RFC-2616 etc. are NOT Jira keys
+                      if k.upper() not in real and k.upper().split("-", 1)[0] in real_prefixes)
     return RubricResult(passed=not invented, invented=invented)
 
 

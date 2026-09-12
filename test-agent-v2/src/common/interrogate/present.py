@@ -18,7 +18,8 @@ def extract_ctx(text: str, prefixes: tuple[str, ...]) -> str | None:
         return m.group(1)
     parts = t.split()
     if len(parts) > 1 and parts[0].lower() in prefixes:
-        return parts[1]
+        # skip any chained command noun (e.g. "evaluate plan <ctx>") → first non-command token
+        return next((tok for tok in parts[1:] if tok.lower() not in prefixes), None)
     return None
 
 

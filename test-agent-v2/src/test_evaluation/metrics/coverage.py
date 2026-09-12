@@ -17,7 +17,7 @@ def coverage_scores(scenarios: list[dict], behaviours: list[dict],
     beh = {b["id"] for b in behaviours if "id" in b}
     covered = {r for sc in scenarios for r in sc.get("source_refs", [])}
     per = {b["id"]: _frac({sc.get("kind") for sc in scenarios if b["id"] in sc.get("source_refs", [])},
-                          set(b.get("expected_partitions", []))) for b in behaviours}
+                          set(b.get("expected_partitions", []))) for b in behaviours if "id" in b}
     valid = set(valid_refs) or beh
     untraceable = sorted({sc.get("id", "") for sc in scenarios
                           if not set(sc.get("source_refs", [])) & valid})

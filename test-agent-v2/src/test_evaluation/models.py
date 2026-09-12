@@ -31,11 +31,10 @@ class EvalCase:
 
 @dataclass
 class RetrievalScore:
-    """RAGAS Context Precision/Recall/F1 by node-id set overlap + the hard-negative leak gate."""
+    """RAGAS Context Precision/Recall by node-id set overlap + the hard-negative leak gate."""
 
     precision: float
     recall: float
-    f1: float
     leaked: list[str] = field(default_factory=list)
     missing: list[str] = field(default_factory=list)
 
@@ -141,7 +140,6 @@ class EvalReport:
     # Judged tier only (V2): set by eval/judged.py's opt-in path, NEVER by evaluate_pack (stays
     # None on the deterministic default path — the LLM-free product property).
     semantic: SemanticRubricResult | None = None
-    tiers: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -166,9 +164,6 @@ class PlanEvalCase:
     def from_dict(cls, d: dict) -> PlanEvalCase:
         known = {f.name for f in fields(cls)}
         return cls(**{k: v for k, v in d.items() if k in known})
-
-    def behaviour_ids(self) -> list[str]:
-        return [b["id"] for b in self.behaviours if "id" in b]
 
 
 @dataclass

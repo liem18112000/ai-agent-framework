@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from test_evaluation.metrics.coverage import coverage_scores
 from test_evaluation.metrics.entities import entities_recall
 from test_evaluation.metrics.history import regressed
 from test_evaluation.metrics.node_overlap import retrieval_scores
@@ -56,8 +57,19 @@ def test_rubric_id_and_url_fabrication_guards():
     assert not bad.passed and bad.invented == ["LUZ-999999"]
     assert no_invented_urls("see https://x/y", "docs at https://x/y here").passed
     assert not no_invented_urls("see https://evil/z", "no links").passed
+    # M3: standards / CVE / RFC tokens share the Jira-key shape but aren't Jira keys (prefix not a pack project)
+    assert cites_only_real_ids("Conforms to ISO-20022 and CVE-2021-1234 over UTF-8.", pack).passed
 
 
 def test_regressed_band():
     assert regressed(0.80, 0.90, band=0.05) is True
     assert regressed(0.88, 0.90, band=0.05) is False
+
+
+def test_coverage_scores_tolerates_id_less_behaviour():
+    """L4: a golden behaviour missing 'id' must degrade, not raise KeyError into a 500."""
+    cov = coverage_scores(
+        [{"id": "s1", "kind": "happy", "source_refs": ["jira:LUZ-1"]}],
+        [{"id": "jira:LUZ-1", "expected_partitions": ["happy"]}, {"expected_partitions": ["negative"]}],
+    )
+    assert cov.ac_recall == 1.0 and cov.uncovered == []

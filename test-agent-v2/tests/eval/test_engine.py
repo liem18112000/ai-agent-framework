@@ -51,3 +51,27 @@ async def test_agent_evaluates_pack_by_ctx(monkeypatch):
     monkeypatch.setattr(agent_mod, "build_bank", lambda: bank)
     out = await drive_adk(agent_mod.build_root_agent, "evaluate LUZ-501", session_id="LUZ-501")
     assert "Pack Quality Score for LUZ-501" in out and "Components:" in out
+
+
+def test_extract_ctx_handles_three_token_plan_command():
+    """M1: `evaluate plan <ctx>` is 3 tokens — must return the ctx, not the literal 'plan'."""
+    from test_evaluation.ops import extract_ctx
+
+    assert extract_ctx("evaluate plan LUZ-158390") == "LUZ-158390"  # was "plan" before the fix
+    assert extract_ctx("evaluate plan run-abc123") == "run-abc123"
+    assert extract_ctx("score pack LUZ-9") == "LUZ-9"
+    assert extract_ctx("evaluate LUZ-501") == "LUZ-501"  # 2-token command still works
+
+
+def test_evaluate_pack_url_check_uses_pack_summary_not_titles(monkeypatch):
+    """M2: a URL that lives in a note synopsis (not its title) is grounded, not 'invented'."""
+    import test_evaluation.engine as eng
+    from common.models import Note, Pack
+
+    url = "https://axonivy.atlassian.net/browse/LUZ-501"
+    pack = Pack(context_id="LUZ-501",
+                notes=[Note(id="jira:LUZ-501", type="jira-issue", title="Dunning", synopsis=f"see {url}")])
+    monkeypatch.setattr(eng, "load_pack", lambda bank, ctx: pack)
+    bank = type("_B", (), {"read_understanding": lambda self, ctx: f"Grounded per {url}"})()
+    r = eng.evaluate_pack(bank, "LUZ-501")
+    assert r.rubrics.no_invented_urls.passed and r.rubrics.no_invented_urls.invented == []

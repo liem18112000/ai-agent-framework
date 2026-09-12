@@ -13,18 +13,17 @@ from test_evaluation.monitoring import get_logger
 log = get_logger("engine")
 
 
-def _pack_view(bank, context_id: str) -> tuple[set[str], list[str]]:
-    """Run-scoped node ids + per-node text (title + id) for this context's pack."""
+def _pack_view(bank, context_id: str):
+    """The loaded pack + run-scoped node ids + per-node text (title + id) for this context."""
     pack = load_pack(bank, context_id)
     ids = {n.id for n in pack.notes}
     texts = [f"{n.title} {n.id}" for n in pack.notes]
-    return ids, texts
+    return pack, ids, texts
 
 
-def evaluate_pack(bank, context_id: str, case: EvalCase | None = None,
-                  *, trajectory: float = 1.0) -> EvalReport:
+def evaluate_pack(bank, context_id: str, case: EvalCase | None = None) -> EvalReport:
     """Score the pack `context_id` gathered. `case` supplies the golden ground truth (relevant/"""
-    node_ids, node_texts = _pack_view(bank, context_id)
+    pack, node_ids, node_texts = _pack_view(bank, context_id)
     understanding = bank.read_understanding(context_id) or ""
 
     retr = retrieval_scores(
@@ -34,14 +33,14 @@ def evaluate_pack(bank, context_id: str, case: EvalCase | None = None,
     )
     ents = entities_recall(node_texts, case.key_entities if case else [])
     rub_ids = cites_only_real_ids(understanding, node_ids)
-    rub_urls = no_invented_urls(understanding, " ".join(node_texts))
+    rub_urls = no_invented_urls(understanding, pack.summary_text())
 
     components = PQSComponents(
         faithfulness=float(rub_ids.passed and rub_urls.passed),
         ctx_precision=retr.precision,
         ctx_recall=retr.recall,
         relevancy=ents.recall,
-        trajectory=trajectory,
+        trajectory=1.0,  # fixed placeholder — real trajectory is scored in the adk eval harness, not the live path
     )
     out = pqs(components)
     log.info("evaluate_pack %s: PQS=%s leaked=%s", context_id, out.pqs, retr.leaked)

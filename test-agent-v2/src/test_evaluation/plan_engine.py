@@ -20,7 +20,7 @@ _FULL_MATRIX = ["happy", "negative", "boundary", "error"]
 
 
 def evaluate_plan(bank, context_id: str, case: PlanEvalCase | None = None,
-                  *, trajectory: float = 1.0, detail: bool = False) -> PlanReport:
+                  *, detail: bool = False) -> PlanReport:
     """Score the plan+suite `context_id` produced. `case` supplies the golden ground truth"""
     d = f"{ROOT}/test-plan/{_slug(context_id)}"
     plan = bank.get_json(f"{d}/plan.json", None) or {}
@@ -54,7 +54,7 @@ def evaluate_plan(bank, context_id: str, case: PlanEvalCase | None = None,
         brief_groundedness=round((brief_ok + scope.precision) / 2, 3),
         coverage=round(cov.ac_recall * cov.matrix_completeness, 3),
         oracle_strength=orc.score,
-        trajectory=trajectory,
+        trajectory=1.0,  # fixed placeholder — real trajectory is scored in the adk eval harness, not the live path
     )
     out = tps(components)
     log.info("evaluate_plan %s: TPS=%s scope_leaked=%s", context_id, out.tps, scope.leaked)
