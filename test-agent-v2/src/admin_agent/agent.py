@@ -77,6 +77,13 @@ class AdminRouter(RouterAgent):
             return "Provide a context id: get-run <ctx>."
         return await self._bank_call(lambda b: admin.get_run(b, rest))
 
+    @command("compare-runs", "compare-runs <ctx-a> <ctx-b>")
+    async def _compare_runs(self, rest: str) -> str:
+        parts = rest.split()
+        if len(parts) != 2:
+            return "Provide two run ids: compare-runs <ctx-a> <ctx-b>."
+        return await self._bank_call(lambda b: admin.compare_runs(b, parts[0], parts[1]))
+
     @command("backup-memory", "backup-memory <summary>")
     async def _backup_memory(self, rest: str) -> str:
         if not rest:

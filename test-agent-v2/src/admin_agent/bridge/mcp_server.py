@@ -26,6 +26,13 @@ def register_tools(mcp: MCPServer, session: BridgeSession) -> dict:
         return (await session.ask(f"get-run {context_id}", context_id=context_id)).text
 
     @mcp.tool()
+    async def compare_runs(context_a: str, context_b: str) -> str:
+        """[ADMIN — not part of the testing pipeline] Diff two runs of the same ticket into COMMON
+        (stable across runs — trust it) vs DIVERGENT (only in one — drift / model variance to review),
+        across understanding / plan / scenarios / lessons, with a cross-run consensus score."""
+        return (await session.ask(f"compare-runs {context_a} {context_b}", context_id=context_a)).text
+
+    @mcp.tool()
     async def view_memory(tier: str = "all", context_id: str | None = None) -> str:
         """[ADMIN — not part of the testing pipeline] View the four memory tiers
         (all|working|episodic|semantic|procedural). `working` needs a context_id."""
@@ -52,6 +59,7 @@ def register_tools(mcp: MCPServer, session: BridgeSession) -> dict:
         return (await session.ask(f"wipe-all {confirm}")).text
 
     return {
-        "list_runs": list_runs, "get_run": get_run, "view_memory": view_memory,
-        "backup_memory": backup_memory, "list_backups": list_backups, "wipe_all": wipe_all,
+        "list_runs": list_runs, "get_run": get_run, "compare_runs": compare_runs,
+        "view_memory": view_memory, "backup_memory": backup_memory,
+        "list_backups": list_backups, "wipe_all": wipe_all,
     }

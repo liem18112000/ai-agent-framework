@@ -15,13 +15,14 @@ from __future__ import annotations
 
 from common.admin.backup import backup_memory, list_backups
 from common.admin.memory_view import view_memory
-from common.admin.runs import RunDetail, RunSummary, get_run, list_runs
+from common.admin.runs import RunDetail, RunSummary, compare_runs, get_run, list_runs
 from common.admin.wipe import wipe_all, wipe_required_token
 
 __all__ = [
     "RunDetail",
     "RunSummary",
     "backup_memory",
+    "compare_runs",
     "get_run",
     "list_backups",
     "list_runs",

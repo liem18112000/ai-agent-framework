@@ -91,6 +91,28 @@ def test_get_run_unknown_context_is_clean_message():
     assert "No such run" in out and "run-nope" in out
 
 
+def test_compare_runs_splits_common_and_divergent():
+    """Two runs of the same ticket → shared understanding bullets land in COMMON, unique ones in the
+    per-run buckets, plus a consensus header."""
+    bank = _bank()
+    _seed_run(bank, "run-a", seed="LUZ-9", now="2026-01-01T00-00-00Z",
+              understanding="- import is partial\n- HEALTH type carries healthData\n- only-in-A point")
+    _seed_run(bank, "run-b", seed="LUZ-9", now="2026-02-01T00-00-00Z",
+              understanding="- import is partial\n- HEALTH type carries healthData\n- only-in-B point")
+    out = admin.compare_runs(bank, "run-a", "run-b")
+    assert "Compare runs: run-a vs run-b" in out and "Consensus" in out
+    assert "import is partial" in out and "HEALTH type carries healthData" in out  # common
+    assert "only-in-A point" in out and "only-in-B point" in out                   # divergent
+    assert "Only in run-a" in out and "Only in run-b" in out
+
+
+def test_compare_runs_rejects_same_or_unknown():
+    bank = _bank()
+    _seed_run(bank, "run-a", seed="LUZ-9", now="2026-01-01T00-00-00Z", understanding="- x")
+    assert "two DIFFERENT run ids" in admin.compare_runs(bank, "run-a", "run-a")
+    assert "No such run" in admin.compare_runs(bank, "run-a", "run-nope")
+
+
 def test_get_run_caps_oversized_sections():
     """A huge section (real case: run-cd156028's scenarios_md was ~1.4 MB) must be clipped with a
     pointer to the full-read tool, so get_run stays a bounded summary under the MCP token limit."""

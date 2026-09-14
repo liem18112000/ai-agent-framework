@@ -191,3 +191,98 @@ def get_run(bank, context_id: str) -> str:
         run_logs=sorted(run_logs), lessons=lessons,
     )
     return detail.md()
+
+
+# --- F3: cross-run comparison (COMMON vs DIVERGENT) ------------------------------------------------
+
+_CMP_CAP = 25  # items listed per bucket per layer — keeps the diff bounded
+
+
+def _bullets(text: str | None) -> set[str]:
+    """Normalised bullet lines of a brief, for set comparison (drop headers / table rows / short noise)."""
+    out: set[str] = set()
+    for line in (text or "").splitlines():
+        s = line.strip().lstrip("-*•> ").strip()
+        if len(s) > 3 and not s.startswith(("#", "|")):
+            out.add(s)
+    return out
+
+
+def _plan_items(bank, ctx: str) -> set[str]:
+    from common.testplan import memory as tpd_store
+
+    plan = tpd_store.read_plan(bank, ctx)
+    if plan is None:
+        return set()
+    return ({f"method: {m}" for m in plan.methodology or []}
+            | {f"scope: {s}" for s in plan.scope or []}
+            | {f"metric: {m}" for m in plan.metrics or []})
+
+
+def _scenario_keys(bank, ctx: str) -> set[str]:
+    """Scenario identity independent of the run id: kind + the title's subject (before the ' — kind')."""
+    from common.testplan import memory as tpd_store
+
+    return {f"[{s.kind}] {s.title.split(' — ')[0].strip()}"
+            for s in (tpd_store.read_scenarios(bank, ctx) or [])}
+
+
+def _lesson_stmts(bank, ctx: str) -> set[str]:
+    return {i.statement for i in iter_lessons(bank) if i.context_id == ctx}
+
+
+def _run_exists(bank, ctx: str) -> bool:
+    return bool(bank.read_refine_state(ctx) or bank.read_understanding(ctx)
+                or bank.read_questions(ctx) or load_pack(bank, ctx).notes)
+
+
+def _pct(n: int, d: int) -> str:
+    return f"{100 * n // d}%" if d else "n/a"
+
+
+def _bucket(label: str, items: list[str]) -> list[str]:
+    out = [f"**{label} ({len(items)})**"]
+    if not items:
+        return out + ["_none_"]
+    out += [f"- {x}" for x in items[:_CMP_CAP]]
+    if len(items) > _CMP_CAP:
+        out.append(f"… (+{len(items) - _CMP_CAP} more)")
+    return out
+
+
+def compare_runs(bank, context_a: str, context_b: str) -> str:
+    """F3 — diff two runs of the same ticket into COMMON (stable across runs) vs DIVERGENT (only in one).
+
+    A read-only cross-run consensus view over understanding / plan / scenarios / lessons: a high common
+    ratio means the run is reproducible (trust it); divergence flags drift or model variance to review."""
+    if context_a == context_b:
+        return "Provide two DIFFERENT run ids: compare-runs <ctx-a> <ctx-b>."
+    missing = [c for c in (context_a, context_b) if not _run_exists(bank, c)]
+    if missing:
+        return f"No such run(s): {', '.join(missing)} — check `list-runs` for known ids."
+
+    layers = [
+        ("Understanding", _bullets(bank.read_understanding(context_a)),
+         _bullets(bank.read_understanding(context_b))),
+        ("Test plan", _plan_items(bank, context_a), _plan_items(bank, context_b)),
+        ("Scenarios", _scenario_keys(bank, context_a), _scenario_keys(bank, context_b)),
+        ("Lessons", _lesson_stmts(bank, context_a), _lesson_stmts(bank, context_b)),
+    ]
+    body: list[str] = []
+    agree_sum = union_sum = 0
+    for title, a, b in layers:
+        common, only_a, only_b = sorted(a & b), sorted(a - b), sorted(b - a)
+        union = len(a | b)
+        agree_sum, union_sum = agree_sum + len(common), union_sum + union
+        body.append(f"\n## {title} — {len(common)}/{union} common ({_pct(len(common), union)})")
+        body += _bucket("Common (stable)", common)
+        body += _bucket(f"Only in {context_a}", only_a)
+        body += _bucket(f"Only in {context_b}", only_b)
+
+    head = [f"# Compare runs: {context_a} vs {context_b}", "",
+            f"**Consensus {agree_sum}/{union_sum} ({_pct(agree_sum, union_sum)})** — higher = more "
+            "stable across runs; divergence flags drift or model variance to review."]
+    report = "\n".join(head + body)
+    if len(report) > _TOTAL_CAP:
+        report = report[:_TOTAL_CAP] + f"\n\n… [compare-runs report capped at {_TOTAL_CAP} chars]"
+    return report
