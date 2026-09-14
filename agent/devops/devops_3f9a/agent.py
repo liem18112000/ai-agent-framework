@@ -13,7 +13,10 @@
 # limitations under the License.
 
 from google.adk.agents import Agent
+from google.adk.models.lite_llm import LiteLlm
 from google.adk.tools import FunctionTool
+
+from mcp_bridge.config import PROJECT_ID
 
 from .prompt import agent_instruction
 from .tools.gke_tools import (
@@ -44,7 +47,13 @@ _mutating_tools = [
 ]
 
 root_agent = Agent(
-    model="gemini-2.5-flash",
+    model=LiteLlm(
+        model="vertex_ai/claude-sonnet-5",
+        vertex_project=PROJECT_ID,
+        # Claude on Vertex AI Model Garden is served from "global", not the
+        # us-central1 region this agent itself deploys into.
+        vertex_location="global",
+    ),
     name="devops_3f9a",
     description=(
         "GKE DevOps assistant for klara-nonprod/klara-performance/"
