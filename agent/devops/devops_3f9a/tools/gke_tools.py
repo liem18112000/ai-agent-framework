@@ -208,8 +208,15 @@ def _build_k8s_api_client(
 
     configuration = k8s_client.Configuration()
     configuration.host = f"https://{endpoint}"
-    configuration.api_key["authorization"] = creds.token
-    configuration.api_key_prefix["authorization"] = "Bearer"
+    # kubernetes>=36 keys the api_key *value* lookup under "BearerToken" or
+    # (for back-compat) the "authorization" alias, but only ever keys the
+    # *prefix* lookup under "BearerToken" -- api_key_prefix["authorization"]
+    # is silently ignored, so the header goes out with no "Bearer " scheme
+    # and GKE can't parse it, falling back to system:anonymous. Use the
+    # real key so the prefix actually applies.
+    # https://github.com/kubernetes-client/python/issues/2595
+    configuration.api_key["BearerToken"] = creds.token
+    configuration.api_key_prefix["BearerToken"] = "Bearer"
     configuration.ssl_ca_cert = ca_cert_path
 
     return k8s_client.ApiClient(configuration)
