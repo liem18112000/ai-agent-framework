@@ -72,3 +72,15 @@ def test_cap_defers_excess_open_questions():
     assert sum(q.status == "open" for q in out) == 7
     assert sum(q.status == "deferred" for q in out) == 2
     assert len(out) == 9
+
+
+def test_refine_per_round_cap_defaults_to_50_and_is_env_tunable(monkeypatch):
+    """Per-round cap is now 50 (was 7), overridable via REFINE_MAX_QUESTIONS; malformed → 50."""
+    from common.interrogate.loop import _resolve_max_questions
+
+    monkeypatch.delenv("REFINE_MAX_QUESTIONS", raising=False)
+    assert _resolve_max_questions() == 50
+    monkeypatch.setenv("REFINE_MAX_QUESTIONS", "120")
+    assert _resolve_max_questions() == 120
+    monkeypatch.setenv("REFINE_MAX_QUESTIONS", "not-a-number")
+    assert _resolve_max_questions() == 50

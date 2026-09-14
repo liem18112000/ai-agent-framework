@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import os
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict
 
@@ -18,15 +20,26 @@ log = get_logger("refine.loop")
 
 Gatherer = Callable[[str], Awaitable[None]]
 
+_DEFAULT_MAX_QUESTIONS = 50  # per-round open-question cap; overflow is DEFERRED not dropped
+
+
+def _resolve_max_questions() -> int:
+    """Per-round open-question cap: env ``REFINE_MAX_QUESTIONS`` (default 50). Raise it to surface more
+    questions per round; there is no hard ceiling beyond this — extra questions just defer to later."""
+    with contextlib.suppress(KeyError, ValueError, TypeError):
+        return max(1, int(os.environ["REFINE_MAX_QUESTIONS"]))
+    return _DEFAULT_MAX_QUESTIONS
+
 
 class RefineSession:
     def __init__(
-        self, bank, context_id: str, *, seed: str = "", rounds=ROUNDS, max_questions: int = 7,
+        self, bank, context_id: str, *, seed: str = "", rounds=ROUNDS, max_questions: int | None = None,
         max_rounds: int = 4, generator=None, understander=None, gatherer: Gatherer | None = None,
         answered_by: str = "human", run_id: str = "refine", now: str = "",
     ) -> None:
         self.bank, self.context_id, self.rounds = bank, context_id, tuple(rounds)
-        self.max_questions, self.max_rounds = max_questions, max_rounds
+        self.max_questions = max_questions if max_questions is not None else _resolve_max_questions()
+        self.max_rounds = max_rounds
         self.generator, self.understander, self.gatherer = generator, understander, gatherer
         self.answered_by, self.run_id, self.now = answered_by, run_id, now
 
@@ -125,7 +138,7 @@ class RefineSession:
         st = bank.read_refine_state(context_id)
         self = cls(
             bank, context_id, seed=st.get("seed", ""), rounds=st.get("rounds", ROUNDS),
-            max_questions=st.get("max_questions", 7), max_rounds=st.get("max_rounds", 4),
+            max_questions=st.get("max_questions"), max_rounds=st.get("max_rounds", 4),
             generator=generator, understander=understander, gatherer=gatherer,
             answered_by=st.get("answered_by", "human"), run_id=st.get("run_id", "refine"),
             now=st.get("now", ""),
