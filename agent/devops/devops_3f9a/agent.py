@@ -16,8 +16,6 @@ from google.adk.agents import Agent
 from google.adk.models.lite_llm import LiteLlm
 from google.adk.tools import FunctionTool
 
-from mcp_bridge.config import PROJECT_ID
-
 from .prompt import agent_instruction
 from .tools.gke_tools import (
     get_cluster,
@@ -46,10 +44,16 @@ _mutating_tools = [
     FunctionTool(scale_deployment, require_confirmation=True),
 ]
 
+# The GCP project this agent is deployed into (matches mcp_bridge/config.py's
+# PROJECT_ID -- not imported from there since mcp_bridge isn't packaged into
+# the deployed Agent Engine container; see deployment/deploy.py's
+# extra_packages).
+_DEPLOY_PROJECT_ID = "klara-nonprod"
+
 root_agent = Agent(
     model=LiteLlm(
         model="vertex_ai/claude-sonnet-5",
-        vertex_project=PROJECT_ID,
+        vertex_project=_DEPLOY_PROJECT_ID,
         # Claude on Vertex AI Model Garden is served from "global", not the
         # us-central1 region this agent itself deploys into.
         vertex_location="global",
