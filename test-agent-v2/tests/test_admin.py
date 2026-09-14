@@ -91,6 +91,16 @@ def test_get_run_unknown_context_is_clean_message():
     assert "No such run" in out and "run-nope" in out
 
 
+def test_get_run_caps_oversized_sections():
+    """A huge section (real case: run-cd156028's scenarios_md was ~1.4 MB) must be clipped with a
+    pointer to the full-read tool, so get_run stays a bounded summary under the MCP token limit."""
+    from common.admin.runs import _TOTAL_CAP, RunDetail
+
+    md = RunDetail(context_id="run-x", scenarios_md="x" * 2_000_000).md()
+    assert len(md) <= _TOTAL_CAP + 200          # bounded — no more 1.4 MB dumps
+    assert "truncated" in md and "get_scenarios" in md  # clipped + points to the tool that returns it in full
+
+
 # --- F2: memory introspection ----------------------------------------------------------------------
 
 async def test_view_memory_all_degrades_without_db():

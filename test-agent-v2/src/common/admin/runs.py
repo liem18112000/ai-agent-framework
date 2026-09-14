@@ -16,6 +16,20 @@ from common.interrogate.pack import load_pack
 from common.learn.store import iter_lessons
 from common.models import INSIGHT
 
+_SECTION_CAP = 4000   # per free-text section — get_run is a summary; full bodies via the dedicated tools
+_TOTAL_CAP = 24000    # hard backstop on the whole report so it never blows the MCP token limit
+
+
+def _clip(text: str, hint: str, empty: str, cap: int = _SECTION_CAP) -> str:
+    """A get_run section body, capped: full text if small, else a head + a pointer to the read tool
+    that returns it in full. Keeps get_run a bounded summary instead of an unbounded dump."""
+    text = (text or "").strip()
+    if not text:
+        return empty
+    if len(text) <= cap:
+        return text
+    return f"{text[:cap]}\n\n… [truncated {len(text) - cap} more chars — full via `{hint}`]"
+
 
 @dataclass
 class RunSummary:
@@ -62,7 +76,7 @@ class RunDetail:
         out.append(f"- pack: {self.pack_nodes} nodes ({_kinds_str(self.pack_kinds or {})})")
         out.append("")
         out.append("## Understanding brief")
-        out.append(self.understanding.strip() if self.understanding else "_none yet_")
+        out.append(_clip(self.understanding, "get_understanding", "_none yet_"))
         out.append("")
         by_ans = {a.question_id: a for a in ans}
         out.append(f"## Q&A ({len([q for q in qs if q.id in by_ans])}/{len(qs)} answered)")
@@ -75,13 +89,13 @@ class RunDetail:
             out.append("_no questions_")
         out.append("")
         out.append("## Test plan")
-        out.append(self.plan_brief.strip() if self.plan_brief else "_no plan yet_")
+        out.append(_clip(self.plan_brief, "get_plan", "_no plan yet_"))
         out.append("")
         out.append("## Scenarios")
-        out.append(self.scenarios_md.strip() if self.scenarios_md else "_no scenarios yet_")
+        out.append(_clip(self.scenarios_md, "get_scenarios", "_no scenarios yet_"))
         out.append("")
         out.append("## Coverage matrix")
-        out.append(self.coverage_md.strip() if self.coverage_md else "_no coverage yet_")
+        out.append(_clip(self.coverage_md, "get_coverage", "_no coverage yet_"))
         out.append("")
         out.append("## Run logs")
         out.extend(f"- {r}" for r in (self.run_logs or ["_none_"]))
@@ -92,7 +106,10 @@ class RunDetail:
             out.append("_none_")
         out.append("")
         out.append("_Eval scores are computed on demand via evaluate_pack / evaluate_plan; not stored._")
-        return "\n".join(out)
+        report = "\n".join(out)
+        if len(report) > _TOTAL_CAP:  # backstop: never exceed the MCP token limit regardless of section
+            report = report[:_TOTAL_CAP] + f"\n\n… [get_run report capped at {_TOTAL_CAP} chars]"
+        return report
 
 
 def _pack_counts(bank) -> tuple[dict[str, int], dict[str, dict]]:
