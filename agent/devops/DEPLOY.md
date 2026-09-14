@@ -44,8 +44,30 @@ gcloud storage buckets create gs://klara-nonprod-agent-engine-staging-us-central
   --project=klara-nonprod --location=us-central1 --uniform-bucket-level-access
 ```
 
-**GKE access for the agent's runtime service account** -- required before
-any tool call will actually work, not optional:
+**Custom runtime service account.** devops-3f9a deploys with a
+dedicated runtime service account, `devops-agent-runtime-sa@klara-nonprod.iam.gserviceaccount.com`
+(set as `SERVICE_ACCOUNT` in `deployment/deploy.py`, passed as
+`service_account=` to `agent_engines.create`/`update`), instead of the
+Agent Engine default per-project service agent. Two things need to
+exist before deploying:
+
+```bash
+# Create the SA if it doesn't already exist.
+gcloud iam service-accounts create devops-agent-runtime-sa \
+  --project=klara-nonprod \
+  --display-name="devops-3f9a Agent Engine runtime SA"
+
+# The Reasoning Engine build/runtime service agent needs permission to
+# attach (act as) this custom SA when creating/updating the engine.
+gcloud iam service-accounts add-iam-policy-binding \
+  devops-agent-runtime-sa@klara-nonprod.iam.gserviceaccount.com \
+  --project=klara-nonprod \
+  --member="serviceAccount:service-<PROJECT_NUMBER>@gcp-sa-aiplatform-re.iam.gserviceaccount.com" \
+  --role="roles/iam.serviceAccountUser"
+```
+
+**GKE access for `devops-agent-runtime-sa`** -- required before any
+tool call will actually work, not optional:
 
 ```bash
 # Requires roles/resourcemanager.projectIamAdmin (or Owner) on each project.
@@ -53,7 +75,7 @@ any tool call will actually work, not optional:
 # deliberately, it's a real cross-project IAM change.
 for proj in klara-nonprod klara-performance klara-infra klara-repo; do
   gcloud projects add-iam-policy-binding "$proj" \
-    --member="serviceAccount:service-<PROJECT_NUMBER>@gcp-sa-aiplatform-re.iam.gserviceaccount.com" \
+    --member="serviceAccount:devops-agent-runtime-sa@klara-nonprod.iam.gserviceaccount.com" \
     --role="roles/container.admin"
 done
 ```
@@ -61,9 +83,10 @@ done
 Replace `<PROJECT_NUMBER>` with the *deploying* project's number (for
 `klara-nonprod`, that's `335505349498` -- confirm with
 `gcloud projects describe klara-nonprod --format='value(projectNumber)'`).
-This service account identity is fixed per deploying-project, not
-per-agent -- if you deploy a second agent into the same project, it reuses
-this same service account and doesn't need the grant repeated.
+`devops-agent-runtime-sa` is per-agent (unlike the old default service
+agent, which was shared per deploying-project) -- a second agent
+deployed into `klara-nonprod` should get its own dedicated runtime SA
+and its own grants, not reuse this one.
 
 ## 3. Verify the package imports cleanly, locally, before deploying
 

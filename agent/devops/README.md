@@ -90,15 +90,17 @@ pretend the call succeeded.
 
 ### GCP-side prerequisite (one-time, not yet done)
 
-The Agent Engine runtime service account for whichever project it's
-deployed into (e.g.
-`service-<project-number>@gcp-sa-aiplatform-re.iam.gserviceaccount.com`
-for `klara-nonprod`) needs `roles/container.admin` (or narrower, e.g.
+devops-3f9a deploys with a dedicated runtime service account,
+`devops-agent-runtime-sa@klara-nonprod.iam.gserviceaccount.com`,
+rather than the Agent Engine default per-project service agent. It
+needs `roles/container.admin` (or narrower, e.g.
 `roles/container.developer` for read + most mutations without full
-admin) on each of the 4 allowed projects. **This has not been granted
+admin) on each of the 4 allowed projects, and the Reasoning Engine
+build/runtime service agent needs `roles/iam.serviceAccountUser` on it
+so it can be attached at deploy time. **This has not been granted
 yet** -- tool calls will fail with a permission error until it is.
 Granting cross-project IAM roles needs explicit sign-off; see
-`DEPLOY.md` for the exact command.
+`DEPLOY.md` for the exact commands.
 
 ### Install
 

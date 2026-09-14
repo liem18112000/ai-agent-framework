@@ -31,6 +31,7 @@ from devops_3f9a.agent import root_agent
 from mcp_bridge.config import LOCATION, PROJECT_ID
 
 STAGING_BUCKET = "gs://klara-nonprod-agent-engine-staging-us-central1"
+SERVICE_ACCOUNT = "devops-agent-runtime-sa@klara-nonprod.iam.gserviceaccount.com"
 
 _PYPROJECT = tomllib.loads((Path(__file__).parent.parent / "pyproject.toml").read_text())
 REQUIREMENTS = _PYPROJECT["project"]["dependencies"]
@@ -66,6 +67,7 @@ def main() -> None:
             "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true",
             "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true",
         },
+        service_account=SERVICE_ACCOUNT,
     )
 
     if args.resource_name:
