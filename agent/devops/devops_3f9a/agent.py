@@ -33,7 +33,7 @@ from .tools.gke_tools import (
 # terraform/kustomize READMEs) -- see agent/devops/RAG.md for how this
 # corpus was built and how to refresh it.
 _RAG_CORPUS = (
-    "projects/335505349498/locations/us-west1/ragCorpora/4611686018427387904"
+    "projects/335505349498/locations/europe-west6/ragCorpora/2227030015734710272"
 )
 
 _ops_docs_retrieval = VertexAiRagRetrieval(

@@ -8,18 +8,43 @@ instead of guessing.
 ## Corpus
 
 ```
-projects/335505349498/locations/us-west1/ragCorpora/4611686018427387904
+projects/335505349498/locations/europe-west6/ragCorpora/2227030015734710272
 ```
 
 Referenced as `_RAG_CORPUS` in `devops_3f9a/agent.py`.
 
-**Why `us-west1`, not `us-central1`:** this agent's Agent Engine
-deployment and staging bucket are `us-central1`, but RAG Engine's
-default Spanner-backed mode (`Basic`/`Scaled` tier) is capacity-restricted
-to allowlisted projects in `us-central1`/`us-east1`/`us-east4` for new
-projects. `us-west1` isn't restricted, so the corpus lives there instead
--- cross-region reference from the agent (deployed in `us-central1`) to
-the corpus (`us-west1`) works fine within the same project.
+**Why `europe-west6` (Zurich):** LUZ's own workloads (the `klara-nonprod`
+GKE cluster itself, etc.) run in `europe-west6`, and EU/Swiss data
+residency is the actual requirement here -- so the corpus belongs there,
+not in the US.
+
+`europe-west6` was not the first region tried. This agent's Agent Engine
+deployment and staging bucket are `us-central1`, and RAG Engine's default
+Spanner-backed mode (`Basic`/`Scaled` tier) is capacity-restricted to
+allowlisted projects in `us-central1`/`us-east1`/`us-east4` for new
+projects -- so the corpus was first created in `us-west1` to route
+around that. That was a mistake: the restriction is specific to those
+three regions, not a general regional limitation, and `europe-west6`
+works directly with no workaround needed. The corpus was migrated
+(re-created + re-imported) from `us-west1` to `europe-west6`; the old
+`us-west1` corpus was deleted.
+
+**Residency caveat -- this only fixes the corpus, not the whole agent.**
+Two other pieces of this agent are still `us-central1`:
+- The GCS staging bucket (`klara-nonprod-agent-engine-staging-us-central1`)
+  the source docs are uploaded to before `rag.import_files` reads them --
+  transient build/staging data, not a long-term store, but it does
+  physically transit `us-central1`.
+- The Agent Engine deployment itself (the reasoning engine resource,
+  `projects/335505349498/locations/us-central1/reasoningEngines/...`) --
+  the actual compute that runs this agent's model calls and tool code.
+
+Cross-region reference from the agent (`us-central1`) to the corpus
+(`europe-west6`) works fine within the same project -- but if EU/Swiss
+residency needs to hold for this agent end-to-end, not just the RAG
+corpus, moving the deployment region and staging bucket is a separate,
+larger change (would need a new Agent Engine resource, since reasoning
+engines aren't region-migratable in place).
 
 ## What's indexed
 
@@ -53,9 +78,9 @@ gcloud storage rsync -r <local-staging-dir> `
 python -c "
 import vertexai
 from vertexai import rag
-vertexai.init(project='klara-nonprod', location='us-west1')
+vertexai.init(project='klara-nonprod', location='europe-west6')
 rag.import_files(
-    'projects/335505349498/locations/us-west1/ragCorpora/4611686018427387904',
+    'projects/335505349498/locations/europe-west6/ragCorpora/2227030015734710272',
     paths=['gs://klara-nonprod-agent-engine-staging-us-central1/devops-3f9a-rag-docs'],
 )
 "
@@ -67,6 +92,14 @@ transient when the corpus was first built (0 of 68 files landed, no
 partial state to clean up) and succeeded on a plain retry. If it
 persists across retries, fall back to importing files individually or
 in small batches instead of the whole prefix at once.
+
+It can also raise a client-side `TimeoutError` / `RetryError` (default
+600s) while polling the long-running import operation, even though the
+import completes server-side -- this happened importing 68 files into
+`europe-west6`. Don't treat that as a failure by itself: check
+`len(list(rag.list_files(corpus_name)))` before retrying or falling back
+to per-file import, since a retry against files that already imported
+just wastes time re-embedding them.
 
 ## Vertex AI RAG Engine config note
 
