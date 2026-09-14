@@ -161,6 +161,93 @@ async def test_assured_below_bar_surfaces_for_human_review(pack_bucket, monkeypa
     assert res.scenarios  # still emits the best-effort best set (never empty)
 
 
+async def test_assured_generation_timeout_degrades_to_heuristic(pack_bucket, monkeypatch):
+    """A generator slower than TPD_GEN_TIMEOUT_S must be cancelled and degrade to the heuristic,
+    STILL returning + persisting a non-empty scenario set. Regression guard: the deployed
+    implement_plan once hung past the 900s server ceiling and checkpointed nothing (empty
+    get_scenarios), so evaluate_plan had nothing to score."""
+    monkeypatch.delenv("TPD_LLM_DETAIL", raising=False)
+    monkeypatch.setenv("TPD_GEN_TIMEOUT_S", "1")  # the helper floors the timeout at 1.0s
+    bank = MemoryBank(pack_bucket)
+    await _confirmed(bank)
+    fake = full_fake_model()
+    fake.delay_s = 1.2  # every model turn stalls past the 1.0s per-call ceiling → wait_for cancels it
+
+    res = await implement_plan(bank, "run-6f2a", model=fake)
+    assert res.scenarios  # non-empty best-effort (heuristic) set despite every LLM call timing out
+    # not the canned LLM ids {a, b} → proves the heuristic fallback produced them
+    assert {s.id for s in res.scenarios} != {"scenario:run-6f2a:a", "scenario:run-6f2a:b"}
+    assert store.read_scenarios(bank, "run-6f2a")  # persisted → get_scenarios / evaluate_plan have input
+    assert res.quality is not None and not res.quality.accepted
+    assert "degraded" in res.quality.note  # the stuck/degraded signal surfaced for the client
+
+
+async def test_assured_guidance_resumes_stuck_pass_for_another_round(pack_bucket, monkeypatch):
+    """A stuck (below-bar, iters-exhausted) pass resumes when the client sends `guidance`: the steer
+    becomes the top reflection and buys another round that can then accept — the interactive hook."""
+    monkeypatch.delenv("TPD_LLM_DETAIL", raising=False)
+    monkeypatch.setenv("TPD_ASSURED_MAX_ITERS", "1")
+    bank = MemoryBank(pack_bucket)
+    await _confirmed(bank)
+    store.write_assured_state(bank, "run-6f2a", {  # a prior pass that ran its 1 round and stayed below bar
+        "iterations": [{"iter": 1, "score": 0.3, "accepted": False, "issues": ["too shallow"]}],
+        "reflections": [], "accepted": False})
+    fake = full_fake_model()  # judge 0.9 → the guided round clears the bar
+
+    res = await implement_plan(bank, "run-6f2a", model=fake, guidance="Add auth-boundary scenarios")
+    assert res.quality.accepted and res.quality.rounds == 2  # resumed round 1 + one guided round
+    assert any("Add auth-boundary scenarios" in t for t in fake.seen)  # steer threaded into generation
+    assert store.read_assured_state(bank, "run-6f2a")["accepted"] is True
+
+
+async def test_summarize_shows_per_round_critique_and_guidance_prompt(pack_bucket, monkeypatch):
+    """The implement reply carries the judge's per-round evaluation + criticism (reference view) and,
+    when below bar, prompts the client to re-run with guidance."""
+    from test_plan_definition.implement.generate.agent import summarize_implement
+
+    monkeypatch.delenv("TPD_LLM_DETAIL", raising=False)
+    monkeypatch.setenv("TPD_ASSURED_MAX_ITERS", "1")
+    bank = MemoryBank(pack_bucket)
+    await _confirmed(bank)
+    fake = full_fake_model()
+    fake.judge_json = judge_verdict(0.3, issues=["missing negative cases"], reflections=["add a 400 case"])
+
+    text = summarize_implement(await implement_plan(bank, "run-6f2a", model=fake))
+    assert "round 1: score 0.3" in text and "missing negative cases" in text  # per-round critique view
+    assert "guidance=" in text  # the stuck → ask-for-steer prompt
+
+
+async def test_interrogation_round_critique_renders_with_model():
+    """The shared per-round critic renders an 'AI assessment' reference block (refine + define) from a
+    configured model — the judge-critique-per-interrogation-round feature."""
+    from common.interrogate.critique import critique_round
+    from tests.tpd_fakes import FakeGeneratorModel
+
+    fake = FakeGeneratorModel(model="fake", default_json=(
+        '{"confidence": 0.55, "weaknesses": ["HEALTH type scope is vague"], '
+        '"focus_next": ["confirm partial-import"]}'))
+
+    class _Pack:
+        def summary_text(self):
+            return "pack summary"
+
+    text = await critique_round(_Pack(), "refine", "Q-bus-001: ...", model=fake)
+    assert "AI assessment (confidence 0.55)" in text
+    assert "HEALTH type scope is vague" in text
+    assert "focus next: confirm partial-import" in text
+
+
+async def test_interrogation_round_critique_empty_without_model():
+    """No model configured (the offline default) → no critique, so the round is never blocked/slowed."""
+    from common.interrogate.critique import critique_round
+
+    class _Pack:
+        def summary_text(self):
+            return "x"
+
+    assert await critique_round(_Pack(), "plan", "Qs", model=None) == ""
+
+
 async def test_assured_persists_and_resumes_rather_than_restarts(pack_bucket, monkeypatch):
     monkeypatch.delenv("TPD_LLM_DETAIL", raising=False)
     monkeypatch.setenv("TPD_ASSURED_MAX_ITERS", "2")

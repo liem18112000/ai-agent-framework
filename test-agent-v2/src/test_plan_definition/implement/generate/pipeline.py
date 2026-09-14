@@ -23,7 +23,7 @@ log = get_logger("implement.generate")
 
 
 async def implement_plan(bank, context_id: str, *, run_id: str = "implement", now: str = "",
-                         detail: bool = False, model=None) -> ImplementResult:
+                         detail: bool = False, model=None, guidance: str = "") -> ImplementResult:
     plan = store.read_plan(bank, context_id)
     if plan is None:
         return ImplementResult(message=f"No test plan for {context_id}; run define first.")
@@ -37,7 +37,7 @@ async def implement_plan(bank, context_id: str, *, run_id: str = "implement", no
     # P4 (§3.4): the assured loop (generate→judge→gate→reflect→regenerate) is ALWAYS the scenario path
     # now — no opt-in. It trades away I3 (adds the judge call per round); TPD_ASSURED_MAX_ITERS bounds it.
     scenarios, quality = await run_assured_scenarios(bank, context_id, plan, plan_pack,
-                                                     test_data, now=now, model=model)
+                                                     test_data, now=now, model=model, guidance=guidance)
     steps = await generate_all_steps(scenarios, plan, plan_pack, test_data,
                                      detail=detail, model=model)
 

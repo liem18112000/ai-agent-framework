@@ -29,12 +29,16 @@ def register_tools(mcp: MCPServer, session: BridgeSession) -> dict:
         return res.text
 
     @mcp.tool()
-    async def implement_plan(context_id: str, detail: bool = False) -> str:
+    async def implement_plan(context_id: str, detail: bool = False, guidance: str = "") -> str:
         """Generate the test data / scenarios (happy + negative) / steps from the confirmed plan.
 
-        Scenarios always run through the P4 assured loop (generate→judge→gate→reflect→regenerate), so
-        the reply carries a quality score. `detail=True` also puts test-data + steps on the LLM."""
+        Scenarios always run through the P4 assured loop (generate→judge→gate→reflect→regenerate); the
+        reply carries a quality score AND the judge's per-round evaluation + criticism (the reference
+        view). If it comes back BELOW BAR, re-invoke with `guidance="<your steer>"` to run another
+        round seeded by that steer. `detail=True` also puts test-data + steps on the LLM."""
         msg = f"implement {context_id}" + (" detail" if detail else "")
+        if guidance:
+            msg += f"\nguidance: {guidance}"
         return (await session.ask(msg, context_id=context_id)).text
 
     @mcp.tool()

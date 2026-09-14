@@ -9,6 +9,7 @@ generators never touch the real Vertex network.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncGenerator
 
@@ -52,10 +53,13 @@ class FakeGeneratorModel(BaseLlm):
     judge_queue: list[str] = Field(default_factory=list)
     seen: list[str] = Field(default_factory=list)
     default_json: str = "{}"
+    delay_s: float = 0.0  # stall each turn (to exercise run_json_agent's per-call timeout)
 
     async def generate_content_async(
         self, llm_request, stream: bool = False,
     ) -> AsyncGenerator[LlmResponse, None]:
+        if self.delay_s:
+            await asyncio.sleep(self.delay_s)
         self.calls += 1
         text = _request_text(llm_request)
         self.seen.append(text)

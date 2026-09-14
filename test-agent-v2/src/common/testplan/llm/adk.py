@@ -12,11 +12,26 @@ degrade to its heuristic (the best-effort contract — never raise).
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import os
+
 from google.adk.agents import LlmAgent
 
 from common.monitoring import get_logger
 
 log = get_logger("llm.adk")
+
+_DEFAULT_GEN_TIMEOUT_S = 180.0
+
+
+def _gen_timeout_s() -> float:
+    """Per-call ceiling (s) for one generator run (env ``TPD_GEN_TIMEOUT_S``). Bounds a slow Vertex
+    call so it degrades to the caller's heuristic instead of hanging the handler past the server's
+    request ceiling — the root cause of implement_plan timing out with nothing persisted."""
+    with contextlib.suppress(KeyError, ValueError, TypeError):
+        return max(1.0, float(os.environ["TPD_GEN_TIMEOUT_S"]))
+    return _DEFAULT_GEN_TIMEOUT_S
 
 
 def build_generator_agent(*, name: str, system: str, output_schema, output_key: str, model):
@@ -41,10 +56,18 @@ async def run_json_agent(agent: LlmAgent, *, output_key: str, user: str = "gener
     svc = InMemorySessionService()
     await svc.create_session(app_name="tpd-gen", user_id="tpd", session_id="gen")
     runner = Runner(app_name="tpd-gen", agent=agent, session_service=svc)
-    try:
+
+    async def _drive() -> None:
         async for _ in runner.run_async(user_id="tpd", session_id="gen", new_message=types.Content(
                 role="user", parts=[types.Part(text=user)])):
             pass
+
+    timeout = _gen_timeout_s()
+    try:
+        await asyncio.wait_for(_drive(), timeout=timeout)
+    except TimeoutError:  # slow Vertex call → bounded → degrade to heuristic (never hang the handler)
+        log.warning("%s: generator timed out after %.0fs; falling back to heuristic", agent.name, timeout)
+        return None
     except Exception as exc:  # noqa: BLE001 — invalid/empty output degrades to heuristic, never raises
         log.warning("%s: generator run failed (%s); falling back to heuristic", agent.name, exc)
         return None

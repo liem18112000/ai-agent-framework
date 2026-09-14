@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import time
 from dataclasses import asdict
 
 from common.testplan import memory as store
@@ -31,14 +32,20 @@ log = get_logger("implement.assured")
 
 _DEFAULT_MAX_ITERS = 2
 _DEFAULT_THRESHOLD = 0.7
+_DEFAULT_BUDGET_S = 540.0  # whole-loop wall-clock cap; keeps one implement call under the server ceiling
 _MAX_ISSUES = 5
+_DEGRADED_NOTE = " · generation degraded to the heuristic fallback (LLM timed out / unconfigured)"
 
 
 async def run_assured_scenarios(
     bank, context_id: str, plan: TestPlan, plan_pack: PlanPack, test_data: list[TestData], *,
-    now: str = "", model=None,
+    now: str = "", model=None, guidance: str = "",
 ) -> tuple[list[TestScenario], AssuredReport]:
-    """Run the bounded assured loop and return the best scenario set + its quality report."""
+    """Run the bounded assured loop and return the best scenario set + its quality report.
+
+    ``guidance`` is an optional human steer (from ``implement_plan(guidance=…)``): when the loop last
+    reported below-bar, passing it resumes the stuck pass — seeding the steer as the top reflection and
+    granting ``max_iters`` more rounds — so the client can course-correct the AI critique interactively."""
     from common.adk import agent_model
     from common.testplan.llm.adk import build_generator_agent, run_json_agent
     from common.testplan.llm.prompts import judge_scenarios_prompt, pack_block
@@ -47,17 +54,25 @@ async def run_assured_scenarios(
     from test_plan_definition.implement.generate.scenarios import heuristic_scenarios
 
     # env-configured bounds (fall back to the defaults on a malformed value)
-    max_iters, threshold = _DEFAULT_MAX_ITERS, _DEFAULT_THRESHOLD
+    max_iters, threshold, budget_s = _DEFAULT_MAX_ITERS, _DEFAULT_THRESHOLD, _DEFAULT_BUDGET_S
     with contextlib.suppress(ValueError):
         max_iters = max(1, int(os.environ.get("TPD_ASSURED_MAX_ITERS", _DEFAULT_MAX_ITERS)))
     with contextlib.suppress(ValueError):
         threshold = float(os.environ.get("TPD_ASSURED_THRESHOLD", _DEFAULT_THRESHOLD))
+    with contextlib.suppress(ValueError):
+        budget_s = max(1.0, float(os.environ.get("TPD_ASSURED_BUDGET_S", _DEFAULT_BUDGET_S)))
+    start = time.monotonic()
+    degraded = False  # a round fell back to the heuristic (LLM timed out / unconfigured / invalid)
     saved = store.read_assured_state(bank, context_id)
-    # resume only a genuinely interrupted pass: some rounds done, not accepted, budget left
+    # resume a genuinely interrupted pass (rounds done, not accepted, budget left) OR a stuck pass the
+    # client is now steering with `guidance` (carry the prior rounds + reflections and add more rounds).
     done_rounds = len(saved.get("iterations", []))
-    resume = bool(saved) and not saved.get("accepted") and 0 < done_rounds < max_iters
+    resume = bool(saved) and not saved.get("accepted") and (0 < done_rounds < max_iters or bool(guidance))
     history: list[dict] = list(saved.get("iterations", [])) if resume else []
     reflections: list[str] = list(saved.get("reflections", [])) if resume else []
+    if guidance:  # the human steer is the top-priority reflection for the next generation
+        reflections = list(dict.fromkeys([guidance, *reflections]))
+    cap = len(history) + max_iters if guidance else max_iters  # guidance buys `max_iters` more rounds
 
     best_scenarios: list[TestScenario] = []
     # seed from the resumed rounds so final_score never under-reports a better pre-crash round
@@ -68,11 +83,17 @@ async def run_assured_scenarios(
     # resolved once (the injected/configured model is stable across rounds). None → no judge signal.
     judge_model = model or agent_model(max_tokens=1500)
 
-    for _ in range(len(history), max_iters):
+    scenarios: list[TestScenario] = []
+    for _ in range(len(history), cap):
+        if history and time.monotonic() - start > budget_s:  # keep the whole call under the ceiling
+            log.warning("assured: wall-clock budget %.0fs spent after %d round(s); stopping early",
+                        budget_s, len(history))
+            break
         scenarios = await claude_scenarios(plan, plan_pack, test_data, now=now, model=model,
                                            reflections=reflections)
-        if not scenarios:  # generation unconfigured/invalid → degrade, best-effort (never raise)
+        if not scenarios:  # unconfigured/invalid/TIMED-OUT → degrade to heuristic, best-effort (never raise)
             scenarios = heuristic_scenarios(plan, plan_pack, test_data, now=now)
+            degraded = True
 
         # P4 LLM-as-judge (§3.4), inlined (sole caller): the stable pack is the agent's cached system
         # instruction and the scenarios-to-critique are the user turn; None (unconfigured/invalid
@@ -94,7 +115,7 @@ async def run_assured_scenarios(
 
         if verdict is None:  # no judge signal → nothing to gate on; stop with what we have
             best_scenarios = best_scenarios or scenarios
-            note = "no judge configured — single unscored pass"
+            note = "no judge configured — single unscored pass" + (_DEGRADED_NOTE if degraded else "")
             log.info("assured: %s", note)
             report = AssuredReport(iterations=history, final_score=0.0, threshold=threshold,
                                    accepted=False, reflections=reflections, note=note)
@@ -124,15 +145,19 @@ async def run_assured_scenarios(
         # REFLECT — carry the judge's imperative fixes into the next generation (dedup, ordered).
         reflections = list(dict.fromkeys(reflections + verdict.reflections))
 
-    note = (f"best {best_score:.2f} < {threshold:.2f} after {len(history)} rounds — "
-            "surfaced for human review")
+    reason = ("stopped early on the time budget" if history and time.monotonic() - start > budget_s
+              else f"best {best_score:.2f} < {threshold:.2f} after {len(history)} round(s)")
+    note = (f"{reason} — surfaced for human review: re-run implement to retry, or send guidance to "
+            f"steer the next round.{_DEGRADED_NOTE if degraded else ''}")
+    # never hand back an empty set — the whole point of the fallback (get_scenarios/evaluate_plan need it)
+    final = best_scenarios or scenarios or heuristic_scenarios(plan, plan_pack, test_data, now=now)
     report = AssuredReport(
         iterations=history, final_score=round(max(best_score, 0.0), 3), threshold=threshold,
         accepted=False, issues=(best_verdict.issues if best_verdict else []),
         reflections=reflections, note=note)
     _persist(bank, context_id, report)
     log.info("assured: %s", note)
-    return best_scenarios or scenarios, report
+    return final, report
 
 
 def _persist(bank, context_id: str, report: AssuredReport) -> None:

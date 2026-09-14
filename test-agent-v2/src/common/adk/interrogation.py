@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from google.adk.agents import BaseAgent
 
 from common.adk.events import incoming_text, now, text_event
+from common.interrogate.critique import critique_round
 from common.interrogate.present import render_questions
 from common.memory.factory import build_bank
 from common.monitoring import get_logger
@@ -69,8 +70,11 @@ class InterrogationAgent(BaseAgent):
             return
 
         session.save()
+        questions = render_questions(ctx_id, rnd, header=self.header)
+        # per-round AI evaluation + criticism (reference view); best-effort + bounded, "" if unconfigured
+        critique = await critique_round(spec.pack_of(session), self.kind, questions)
         yield text_event(
-            self.name, render_questions(ctx_id, rnd, header=self.header),
+            self.name, questions + critique,
             state_delta={"io_active": True, "io_pack_ctx": ctx_id},
         )
 

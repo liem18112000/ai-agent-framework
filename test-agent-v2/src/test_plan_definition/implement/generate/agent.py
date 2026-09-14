@@ -36,11 +36,20 @@ def summarize_implement(result: ImplementResult) -> str:
     titles = "\n".join(f"- [{s.kind}] {s.title}" for s in result.scenarios)
     feature = "  Exported a BDD .feature.\n" if result.feature else ""
     coverage = f"  {result.coverage_summary}\n" if result.coverage_summary else ""
-    quality = ""  # the P4 assured-loop verdict line, when the loop ran (§3.4)
+    quality = ""  # the P4 assured-loop verdict + per-round AI critique — the reference view (§3.4)
     if (q := result.quality) is not None:
         verdict = "PASS" if q.accepted else "BELOW BAR"
         quality = (f"  Quality (assured loop, {q.rounds} round(s)): {verdict} — score "
                    f"{q.final_score:.2f} vs threshold {q.threshold:.2f}. {q.note}\n")
+        for it in q.iterations:  # per-round evaluation + criticism, so the client can view the AI's reasoning
+            critique = "; ".join(it.get("issues", [])) or "—"
+            quality += (f"    round {it.get('iter')}: score {it.get('score')} "
+                        f"({'accepted' if it.get('accepted') else 'below bar'}) · critique: {critique}\n")
+        if q.reflections:
+            quality += "    suggested fixes: " + "; ".join(q.reflections) + "\n"
+        if not q.accepted:
+            quality += ('    ⟳ not accepted — re-run implement_plan(guidance="<your steer>") for '
+                        "another round, or accept these as-is.\n")
     return (f"Implement complete: {len(result.test_data)} test-data, {len(result.scenarios)} "
             f"scenarios ({happy} happy / {negative} negative), {len(result.steps)} steps.\n"
             f"{feature}{coverage}{quality}\n{titles}")
@@ -51,10 +60,10 @@ class ImplementAgent(BaseAgent):
 
     async def _run_async_impl(self, ctx):
         ctx_id = ctx.session.id
-        words = incoming_text(ctx).lower().split()
+        head, _, tail = incoming_text(ctx).partition("guidance:")  # optional steer for the next round
         bank = build_bank()
         result = await implement_plan(bank, ctx_id, run_id=f"impl-{ctx_id[:8]}", now=now(),
-                                      detail="detail" in words)
+                                      detail="detail" in head.lower().split(), guidance=tail.strip())
         _capture_implement(bank, ctx_id, result)
         if not result.scenarios:
             yield text_event(self.name, result.message or f"Nothing generated for {ctx_id}.")
