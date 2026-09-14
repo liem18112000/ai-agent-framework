@@ -1,0 +1,85 @@
+# devops-3f9a ops-docs RAG corpus
+
+devops-3f9a has a `search_ops_docs` tool backed by a Vertex AI RAG Engine
+corpus indexing documentation across the LUZ ops repo, so the agent can
+answer questions about naming conventions, setup steps, and known gaps
+instead of guessing.
+
+## Corpus
+
+```
+projects/335505349498/locations/us-west1/ragCorpora/4611686018427387904
+```
+
+Referenced as `_RAG_CORPUS` in `devops_3f9a/agent.py`.
+
+**Why `us-west1`, not `us-central1`:** this agent's Agent Engine
+deployment and staging bucket are `us-central1`, but RAG Engine's
+default Spanner-backed mode (`Basic`/`Scaled` tier) is capacity-restricted
+to allowlisted projects in `us-central1`/`us-east1`/`us-east4` for new
+projects. `us-west1` isn't restricted, so the corpus lives there instead
+-- cross-region reference from the agent (deployed in `us-central1`) to
+the corpus (`us-west1`) works fine within the same project.
+
+## What's indexed
+
+~67 markdown files, curated (not the whole repo) via a staging copy at
+publish time -- there's no ongoing sync:
+
+- `agent/devops/*.md` (this agent's own README/DEPLOY docs)
+- `.claude/agents/gcp-*.md` and `.claude/skills/gcp-*/SKILL.md` (the GCP
+  domain runbooks: GKE, IAM, network, secrets, observability, pubsub,
+  GCS, Cloud Run)
+- `*.md`/`readme.md` across `luz_kubernetes/`, `luz_kubernetes_infra/`,
+  and `luz_dockerfiles/` (terraform modules, kustomize overlays, runtime
+  agent instructions, Docker image build docs)
+
+Excluded: vendored third-party library docs (e.g. the Keycloak theme's
+bundled Angular treeview README) -- noise, not ops knowledge.
+
+## Refreshing the corpus
+
+There's no automation for this yet -- docs drift out of date until
+someone re-runs the import. To refresh:
+
+```powershell
+# 1. Re-stage the curated doc set (same file list as above) to a local dir,
+#    then upload it, replacing what's there:
+gcloud storage rsync -r <local-staging-dir> `
+  gs://klara-nonprod-agent-engine-staging-us-central1/devops-3f9a-rag-docs
+
+# 2. Re-import (skips files already indexed; delete + re-add a RagFile via
+#    rag.delete_file if you need to force a specific file to refresh):
+python -c "
+import vertexai
+from vertexai import rag
+vertexai.init(project='klara-nonprod', location='us-west1')
+rag.import_files(
+    'projects/335505349498/locations/us-west1/ragCorpora/4611686018427387904',
+    paths=['gs://klara-nonprod-agent-engine-staging-us-central1/devops-3f9a-rag-docs'],
+)
+"
+```
+
+`rag.import_files` on the whole GCS prefix occasionally returns a bare
+`500 An internal error occurred` on the first attempt -- this was
+transient when the corpus was first built (0 of 68 files landed, no
+partial state to clean up) and succeeded on a plain retry. If it
+persists across retries, fall back to importing files individually or
+in small batches instead of the whole prefix at once.
+
+## Vertex AI RAG Engine config note
+
+`vertexai.rag` is itself a deprecated module (the SDK warns to migrate to
+the `agentplatform` client eventually), but it's what `google-adk`'s
+`VertexAiRagRetrieval` tool integrates with today, and it's what was used
+here.
+
+The RAG Engine config for `klara-nonprod`'s `us-central1` was changed
+from the default `Basic` (Spanner-backed) tier to `Unprovisioned` while
+diagnosing the region-capacity error above, before switching to
+`us-west1` for the actual corpus. That config change is harmless (it's
+just project/region-level config, not a running resource) but if
+`us-central1` RAG Engine is ever needed for this project, its tier will
+need to be set back to `Basic`/`Scaled` first via
+`rag.update_rag_engine_config`.

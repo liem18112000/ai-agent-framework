@@ -15,6 +15,7 @@
 from google.adk.agents import Agent
 from google.adk.models.lite_llm import LiteLlm
 from google.adk.tools import FunctionTool
+from google.adk.tools.retrieval.vertex_ai_rag_retrieval import VertexAiRagRetrieval
 
 from .prompt import agent_instruction
 from .tools.gke_tools import (
@@ -28,6 +29,26 @@ from .tools.gke_tools import (
     scale_deployment,
 )
 
+# RAG corpus of LUZ ops repo docs (agent docs, gcp-* domain runbooks,
+# terraform/kustomize READMEs) -- see agent/devops/RAG.md for how this
+# corpus was built and how to refresh it.
+_RAG_CORPUS = (
+    "projects/335505349498/locations/us-west1/ragCorpora/4611686018427387904"
+)
+
+_ops_docs_retrieval = VertexAiRagRetrieval(
+    name="search_ops_docs",
+    description=(
+        "Searches the LUZ ops repo's documentation -- this agent's own "
+        "README/DEPLOY docs, GCP domain runbooks (GKE, IAM, network, "
+        "secrets, observability, pubsub, GCS, Cloud Run), and "
+        "terraform/kustomize READMEs across the ops estate. Use this to "
+        "answer questions about naming conventions, setup steps, or "
+        "cluster/service context instead of guessing."
+    ),
+    rag_corpora=[_RAG_CORPUS],
+)
+
 # Read-only tools -- no confirmation needed.
 _read_tools = [
     FunctionTool(list_clusters),
@@ -35,6 +56,7 @@ _read_tools = [
     FunctionTool(list_node_pools),
     FunctionTool(list_pods),
     FunctionTool(get_pod_logs),
+    _ops_docs_retrieval,
 ]
 
 # Mutating tools -- ADK pauses for human confirmation before executing these.

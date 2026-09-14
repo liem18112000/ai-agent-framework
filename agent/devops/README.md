@@ -52,6 +52,7 @@ based on.
 | `list_node_pools` | read | no |
 | `list_pods` | read | no |
 | `get_pod_logs` | read | no |
+| `search_ops_docs` | read (RAG retrieval) | no |
 | `resize_node_pool` | mutating | **yes** |
 | `restart_deployment` | mutating | **yes** |
 | `scale_deployment` | mutating | **yes** |
@@ -142,10 +143,13 @@ See `DEPLOY.md` "Wire it into Claude Code via MCP" for setup.
 - `devops_3f9a/agent.py` -- `root_agent` definition (model, tools, instruction).
 - `devops_3f9a/prompt.py` -- the agent's system instruction.
 - `devops_3f9a/config.py` -- the hard-coded project allowlist.
-- `devops_3f9a/tools/gke_tools.py` -- all 8 tools.
+- `devops_3f9a/tools/gke_tools.py` -- all 8 GKE tools (`search_ops_docs`
+  is defined inline in `agent.py`, backed by the RAG corpus below).
 - `deployment/deploy.py` -- create/update the Agent Engine deployment.
 - `mcp_bridge/server.py` -- local MCP server exposing this agent to
   Claude Code (or any MCP client) on your machine.
 - `architecture-diagram.svg` -- the diagram above.
+- `RAG.md` -- the `search_ops_docs` RAG corpus: what's indexed, why it
+  lives in `us-west1`, and how to refresh it.
 - `DEPLOY.md` -- step-by-step instructions to deploy this agent from a
   local machine to Vertex AI Agent Engine.
