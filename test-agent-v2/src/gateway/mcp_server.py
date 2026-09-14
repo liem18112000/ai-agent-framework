@@ -6,6 +6,7 @@ import os
 
 from mcp.server.mcpserver import MCPServer
 
+from admin_agent.bridge.mcp_server import register_tools as register_admin
 from common.bridge import BridgeSession, build_http_app
 from common.bridge.prompts import TRIGGER_INSTRUCTIONS, test_prompt
 from knowledge_gathering.bridge.mcp_server import register_tools as register_kga
@@ -16,6 +17,7 @@ TOKEN = os.environ.get("A2A_BEARER_TOKEN")
 KGA_URL = os.environ.get("KGA_A2A_URL", "http://localhost:8081/")
 TPD_URL = os.environ.get("TPD_A2A_URL", "http://localhost:8082/")
 TEV_URL = os.environ.get("TEV_A2A_URL", "http://localhost:8083/")
+ADMIN_URL = os.environ.get("ADMIN_A2A_URL", "http://localhost:8084/")
 
 INSTRUCTIONS = (
     "Single MCP gateway for the Testing Agent — ONE endpoint fronting three A2A agents "
@@ -24,12 +26,17 @@ INSTRUCTIONS = (
     "get_scenarios -> [evaluate_plan]. Reuse the one context_id gather_knowledge returns for every "
     "later call. YOU (the client) own the confirm gates: before starting refine, approve, "
     "define_plan, approve_plan, and implement_plan, ask the user Yes/No yourself and call the tool "
-    "only on yes. evaluate_pack / evaluate_plan are read-only quality gates and never block."
+    "only on yes. evaluate_pack / evaluate_plan are read-only quality gates and never block. "
+    "ADMIN / utility group (list_runs, get_run, view_memory, backup_memory, list_backups, wipe_all) "
+    "is an operator surface, NOT part of gather -> ... -> implement — never call it as a pipeline "
+    "step. wipe_all is DESTRUCTIVE and needs a confirm token (the GCS bucket name, or 'WIPE' when "
+    "unset); ask the user Yes/No first, same client-owned-gate convention as the pipeline."
 )
 
 kga_session = BridgeSession(KGA_URL, TOKEN)
 tpd_session = BridgeSession(TPD_URL, TOKEN)
 tev_session = BridgeSession(TEV_URL, TOKEN)
+admin_session = BridgeSession(ADMIN_URL, TOKEN)
 
 mcp = MCPServer(
     "testing-agent-gateway", version="0.1.0",
@@ -40,11 +47,12 @@ _tools = {
     **register_kga(mcp, kga_session),
     **register_tpd(mcp, tpd_session),
     **register_tev(mcp, tev_session),
+    **register_admin(mcp, admin_session),
 }
 globals().update(_tools)
 
 _CARDS = (("knowledge-gathering", kga_session), ("test-plan-definition", tpd_session),
-          ("test-evaluation", tev_session))
+          ("test-evaluation", tev_session), ("admin_agent", admin_session))
 
 
 @mcp.tool()

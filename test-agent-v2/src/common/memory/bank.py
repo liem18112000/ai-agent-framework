@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections.abc import Callable
@@ -41,8 +42,19 @@ INDEX_JSON = f"{ROOT}/index/knowledge-index.json"
 INDEX_MD = f"{ROOT}/index/knowledge-index.md"
 
 
+# Keep object keys well under GCS's 1024-char object-name limit. Long note ids (external-web
+# URLs) would otherwise blow past it and 400 the whole gather. Truncate + append a hash of the
+# full input so distinct long ids stay distinct and the slug is still deterministic (read/write
+# and the .json/.md pair map to the same key).
+_SLUG_MAX = 200
+
+
 def _slug(s: str) -> str:
-    return re.sub(r"[^A-Za-z0-9._-]+", "_", s).strip("_")
+    out = re.sub(r"[^A-Za-z0-9._-]+", "_", s).strip("_")
+    if len(out) <= _SLUG_MAX:
+        return out
+    digest = hashlib.sha1(s.encode("utf-8")).hexdigest()[:12]
+    return f"{out[: _SLUG_MAX - 13]}-{digest}"
 
 
 class MemoryBank:
@@ -201,3 +213,10 @@ class MemoryBank:
     def resolve_session(self, a2a_context_id: str) -> str | None:
         d = self._read_json(f"{ROOT}/refine/_sessions/{_slug(a2a_context_id)}.json", None)
         return d.get("pack_context_id") if d else None
+
+    def delete_prefix(self, prefix: str) -> int:
+        """Delete every blob under `prefix`; return the count removed (admin wipe/backup — F3/F4).
+
+        `delete_prefix("memory/")` clears the live bank yet leaves `memory-backups/**` untouched
+        (that key does not start with the trailing-slash prefix)."""
+        return sum(self._bucket.delete(blob.name) for blob in list(self._bucket.iter_blobs(prefix)))

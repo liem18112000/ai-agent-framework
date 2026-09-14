@@ -231,6 +231,66 @@ module "tev" {
 }
 
 # ---------------------------------------------------------------------------
+# admin_agent — A2A-only memory & history operator utility (ingress :8080). NOT part of the testing
+# pipeline. Deterministic router, no LLM → no Vertex, no Atlassian. Needs GCS (the bank) + Cloud SQL
+# (pgvector + the A2A task / ADK session tables it introspects and, on wipe_all, TRUNCATEs).
+# ---------------------------------------------------------------------------
+module "admin" {
+  source = "./modules/cloud_run_service"
+
+  create                = var.deploy_admin
+  name                  = var.admin_service_name
+  location              = var.region
+  ingress               = var.ingress
+  service_account_email = google_service_account.kga.email
+  timeout               = "600s"
+  session_affinity      = true
+  min_instances         = 1
+  max_instances         = 1
+  cloudsql_instance     = local.cloudsql_connection_name
+  allow_unauthenticated = var.bridge_allow_unauthenticated
+
+  containers = [
+    {
+      name                     = "agent"
+      image                    = var.image
+      command                  = ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port 8080"]
+      ingress_port             = 8080
+      cpu                      = var.cpu
+      memory                   = var.memory
+      cpu_idle                 = false
+      startup_cpu_boost        = true
+      mount_cloudsql           = true
+      probe_port               = 8080
+      startup_probe_http_path  = "/livez"
+      liveness_probe_http_path = "/livez"
+      env = concat(
+        local.memory_env,
+        var.deploy_cloudsql ? [
+          { name = "DB_INSTANCE_CONNECTION_NAME", value = local.cloudsql_connection_name },
+          { name = "DB_NAME", value = var.db_name },
+          { name = "DB_USER", value = var.db_user },
+          { name = "DB_PASSWORD", secret = google_secret_manager_secret.db_password[0].secret_id },
+        ] : [],
+        [
+          { name = "AGENT", value = "admin_agent" },
+          { name = "GCS_BUCKET", value = google_storage_bucket.memory.name },
+          { name = "A2A_BEARER_TOKEN", secret = google_secret_manager_secret.a2a_bearer.secret_id },
+        ]
+      )
+    },
+  ]
+
+  depends_on = [
+    google_project_service.apis,
+    google_secret_manager_secret_iam_member.a2a_access,
+    google_secret_manager_secret_version.db_password,
+    google_secret_manager_secret_iam_member.db_password_access,
+    google_project_iam_member.cloudsql_client,
+  ]
+}
+
+# ---------------------------------------------------------------------------
 # mcp-gateway-v2 — the single MCP endpoint. One container running `python -m gateway`
 # (GATEWAY_TRANSPORT=http). An A2A client of the three agents (their service URLs + the shared
 # A2A bearer); gated inbound by GATEWAY_BEARER_TOKEN. Holds per-agent task maps in memory →
@@ -267,6 +327,7 @@ module "gateway" {
         { name = "KGA_A2A_URL", value = var.deploy_bridge ? "${module.kga.uri}/" : "" },
         { name = "TPD_A2A_URL", value = var.deploy_test_plan ? "${module.tpd.uri}/" : "" },
         { name = "TEV_A2A_URL", value = var.deploy_test_evaluation ? "${module.tev.uri}/" : "" },
+        { name = "ADMIN_A2A_URL", value = var.deploy_admin ? "${module.admin.uri}/" : "" },
         { name = "A2A_BEARER_TOKEN", secret = google_secret_manager_secret.a2a_bearer.secret_id },
         { name = "GATEWAY_BEARER_TOKEN", secret = google_secret_manager_secret.gateway_bearer[0].secret_id },
       ]

@@ -217,6 +217,22 @@ variable "tpd_llm_detail" {
 }
 
 # ---------------------------------------------------------------------------
+# admin_agent (see services.tf → module.admin) — the memory & history operator utility (NOT pipeline).
+# Deterministic router, no LLM; needs GCS + DB, no Atlassian, no Vertex. wipe_all is destructive.
+# ---------------------------------------------------------------------------
+variable "deploy_admin" {
+  type        = bool
+  description = "Create the admin_agent Cloud Run service (memory & history operator utility)."
+  default     = true
+}
+
+variable "admin_service_name" {
+  type        = string
+  description = "admin_agent Cloud Run service name (A2A-only utility agent, ingress :8080)."
+  default     = "admin-agent-v2"
+}
+
+# ---------------------------------------------------------------------------
 # Single MCP gateway (G2) — the one endpoint Claude connects to; fronts the 3 A2A agents.
 # ---------------------------------------------------------------------------
 variable "deploy_gateway" {

@@ -70,6 +70,23 @@ def test_note_roundtrip_and_md():
     assert "## Links" in md and "49662787598" in md
 
 
+def test_long_url_note_id_stays_under_gcs_key_limit():
+    # Regression: an external-web note whose id is a very long URL used to build a GCS object
+    # key over the 1024-char limit → 400 → the whole gather aborted. _slug now caps + hashes.
+    from common.memory.bank import _SLUG_MAX, _slug
+
+    long_id = "https://sequencediagram.org/index.html?initialData=" + "C4" * 700
+    assert len(_slug(long_id)) <= _SLUG_MAX
+    assert _slug(long_id) == _slug(long_id)  # deterministic (json/md pair + read must match)
+    assert _slug(long_id) != _slug(long_id + "x")  # distinct long ids stay distinct
+    assert _slug("jira:LUZ-158390") == "jira_LUZ-158390"  # short ids unchanged
+
+    bank = MemoryBank(FakeBucket())
+    path = bank.upsert_note(_note(canon=long_id))
+    assert len(path) < 1024
+    assert bank.read_note(long_id, "jira-issue") is not None  # round-trips through the capped key
+
+
 def test_note_upsert_merges_links():
     bank = MemoryBank(FakeBucket())
     bank.upsert_note(_note())

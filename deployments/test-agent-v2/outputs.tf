@@ -20,6 +20,11 @@ output "tev_a2a_url" {
   value       = var.deploy_test_evaluation ? module.tev.uri : null
 }
 
+output "admin_a2a_url" {
+  description = "admin_agent A2A base URL (the gateway's ADMIN_A2A_URL) — memory & history utility."
+  value       = var.deploy_admin ? module.admin.uri : null
+}
+
 output "memory_bucket" {
   description = "GCS memory-bank bucket."
   value       = google_storage_bucket.memory.name

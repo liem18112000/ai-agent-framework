@@ -6,6 +6,7 @@ Importing this module pulls in nothing but stdlib, so the port is safe to refere
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Protocol, runtime_checkable
 
 
@@ -22,6 +23,7 @@ class Blob(Protocol):
     """A single stored object. `generation` is a token that bumps on every successful write."""
 
     generation: int
+    name: str
 
     def download_as_text(self) -> str: ...
 
@@ -40,4 +42,12 @@ class ObjectStore(Protocol):
 
     def get_blob(self, path: str) -> Blob | None:
         """The blob at `path`, or None if it does not exist."""
+        ...
+
+    def iter_blobs(self, prefix: str) -> Iterable[Blob]:
+        """Yield every blob whose path starts with `prefix` (empty prefix = all). Each has `.name`."""
+        ...
+
+    def delete(self, path: str) -> bool:
+        """Delete the blob at `path`. Return True if it existed. Idempotent (missing → False)."""
         ...

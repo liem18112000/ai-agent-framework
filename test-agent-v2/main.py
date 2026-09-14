@@ -20,7 +20,8 @@ from common.adk.services import build_runner, build_task_store
 
 _AGENT = os.environ.get("AGENT", "knowledge_gathering")
 _ATLASSIAN = ("ATLASSIAN_BASE_URL", "ATLASSIAN_EMAIL", "ATLASSIAN_API_TOKEN", "GCS_BUCKET")
-_REQUIRED_ENV = {"knowledge_gathering": _ATLASSIAN, "testing_agent": _ATLASSIAN}
+_REQUIRED_ENV = {"knowledge_gathering": _ATLASSIAN, "testing_agent": _ATLASSIAN,
+                 "admin_agent": ("GCS_BUCKET",)}
 
 
 def _health_routes(name: str, required: tuple[str, ...]) -> list[Route]:

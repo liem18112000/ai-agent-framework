@@ -152,6 +152,20 @@ All tools below are exposed by the gateway as `mcp__testing-agent__<tool>` and t
 | `send_raw_kga` / `send_raw_tpd` / `send_raw_tev` | `(text, context_id?, task_id?)` | Escape hatch: send an arbitrary A2A message to one agent; returns reply + ids + state. |
 | `test` (prompt) | `(jira_key, depth=2)` | `/mcp__testing-agent__test` — the full interactive pipeline for one ticket. |
 
+### 2e. `[ADMIN — non-pipeline]` — memory & history operator utility
+
+Served by the separate **`admin_agent`** service; **not** part of `gather → … → implement`. Read /
+reset / snapshot the Memory Bank; never call these as a pipeline step.
+
+| Tool | Signature | What it does |
+|------|-----------|--------------|
+| `list_runs` | `(limit=50)` | List every past run (one per `context_id`), newest first — seed, refine status, Q&A/pack/lesson counts. |
+| `get_run` | `(context_id)` | Full structured detail for one run: understanding, Q&A, pack, plan/scenarios/coverage, run logs, lessons. |
+| `view_memory` | `(tier="all", context_id?)` | View the four memory tiers `all\|working\|episodic\|semantic\|procedural`. `working` needs a `context_id`. |
+| `backup_memory` | `(summary)` | Snapshot the bank to `memory-backups/<version>/` + a manifest (pgvector is rebuildable, not copied). |
+| `list_backups` | `()` | List backup versions, newest first. |
+| `wipe_all` | `(confirm)` | **DESTRUCTIVE** — clears the bank, pgvector, and the A2A task + ADK session tables in one call. `confirm` MUST equal the **GCS bucket name** (or the literal `"WIPE"` when unset); it refuses and echoes the exact token otherwise. `memory-backups/**` always survives. Ask the user **Yes/No** first. |
+
 ---
 
 ## 3. The confirm gates are YOURS (client-owned)

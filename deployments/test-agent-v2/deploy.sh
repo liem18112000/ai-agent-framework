@@ -123,5 +123,6 @@ echo "  gateway (MCP):  $(terraform output -raw gateway_url 2>/dev/null || echo 
 echo "  agents (A2A):   kga=$(terraform output -raw kga_a2a_url 2>/dev/null || echo n/a)"
 echo "                  tpd=$(terraform output -raw tpd_a2a_url 2>/dev/null || echo n/a)"
 echo "                  tev=$(terraform output -raw tev_a2a_url 2>/dev/null || echo n/a)"
+echo "                  admin=$(terraform output -raw admin_a2a_url 2>/dev/null || echo n/a)  [ADMIN — non-pipeline]"
 echo ""
 echo "Register the gateway with Claude Code:  ./install-mcp.sh   (Windows: install-mcp.cmd)"

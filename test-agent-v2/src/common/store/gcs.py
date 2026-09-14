@@ -18,6 +18,10 @@ class _GcsBlob:
         self._blob = blob
 
     @property
+    def name(self) -> str:
+        return self._blob.name
+
+    @property
     def generation(self) -> int:
         return self._blob.generation
 
@@ -54,3 +58,15 @@ class GcsObjectStore:
     def get_blob(self, path: str) -> Blob | None:
         blob = self._bucket.get_blob(path)
         return _GcsBlob(blob) if blob is not None else None
+
+    def iter_blobs(self, prefix: str) -> list[Blob]:
+        return [_GcsBlob(b) for b in self._bucket.list_blobs(prefix=prefix)]
+
+    def delete(self, path: str) -> bool:
+        from google.api_core.exceptions import NotFound
+
+        try:
+            self._bucket.blob(path).delete()
+            return True
+        except NotFound:
+            return False

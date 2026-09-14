@@ -38,3 +38,12 @@ class InMemoryObjectStore:
 
     def get_blob(self, path: str) -> Blob | None:
         return _InMemoryBlob(self, path) if path in self.store else None
+
+    def iter_blobs(self, prefix: str) -> list[Blob]:
+        return [_InMemoryBlob(self, k) for k in list(self.store) if k.startswith(prefix)]
+
+    def delete(self, path: str) -> bool:
+        existed = path in self.store
+        self.store.pop(path, None)
+        self.gens.pop(path, None)
+        return existed

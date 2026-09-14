@@ -61,3 +61,10 @@ class LocalObjectStore:
 
     def get_blob(self, path: str) -> Blob | None:
         return _LocalBlob(self, path) if self._file(path).exists() else None
+
+    def iter_blobs(self, prefix: str):
+        # ponytail: deferred — no caller selects STORE_BACKEND=local today (admin runs on gcs/memory).
+        raise NotImplementedError("LocalObjectStore.iter_blobs — no caller yet (admin uses gcs/memory)")
+
+    def delete(self, path: str) -> bool:
+        raise NotImplementedError("LocalObjectStore.delete — no caller yet (admin uses gcs/memory)")
