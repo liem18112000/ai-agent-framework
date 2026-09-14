@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from google.adk.agents import BaseAgent
-
-from common.adk.events import incoming_text, text_event
+from common.adk.router import Agent, RouterAgent
 from common.interrogate import present
 from common.memory.factory import build_bank
 from common.testplan import memory as store
@@ -14,18 +12,18 @@ from common.testplan.models import CONFIRMED
 from test_plan_definition.define.agent import wants_define
 
 
-class TpdRouter(BaseAgent):
-    define: BaseAgent
-    implement: BaseAgent
+class TpdRouter(RouterAgent):
+    define: Agent
+    implement: Agent
 
     async def _run_async_impl(self, ctx):
-        text = incoming_text(ctx).strip()
+        text = self.read(ctx).strip()
         low = text.lower()
         if low.startswith(("get-test-plan", "get-scenarios", "get-coverage")):
-            yield text_event(self.name, await asyncio.to_thread(self._read_helper, text))
+            yield self.reply(await asyncio.to_thread(self._read_helper, text))
             return
         if low.startswith("approve"):
-            yield text_event(self.name, await asyncio.to_thread(self._approve, ctx, text))
+            yield self.reply(await asyncio.to_thread(self._approve, ctx, text))
             return
         impl_st, plan_st = await asyncio.to_thread(self._states, ctx.session.id)
         if impl_st and not impl_st.get("done"):  # interactive implement interrogation is live
@@ -38,8 +36,8 @@ class TpdRouter(BaseAgent):
             async for ev in self.implement.run_async(ctx):
                 yield ev
         else:
-            yield text_event(self.name, "Provide: define <ctx> | approve <ctx> | implement <ctx> | "
-                                        "get-test-plan <ctx> | get-scenarios <ctx>.")
+            yield self.reply("Provide: define <ctx> | approve <ctx> | implement <ctx> | "
+                             "get-test-plan <ctx> | get-scenarios <ctx>.")
 
     def _states(self, ctx_id: str) -> tuple[dict, dict]:
         """Implement + plan state (sync GCS) — run off the loop; degrade to empty so a transient

@@ -1,0 +1,176 @@
+"""F1 — run history: enumerate past runs and render one run's full test detail (read-only)."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from common.admin._shared import (
+    _REFINE_PREFIX,
+    _RUNS_PREFIX,
+    _kinds_str,
+    _run_contexts,
+    _slug,
+    _store,
+)
+from common.interrogate.pack import load_pack
+from common.learn.store import iter_lessons
+from common.models import INSIGHT
+
+
+@dataclass
+class RunSummary:
+    context_id: str
+    seed: str = ""
+    started: str = ""
+    ended: str = ""
+    refine_done: bool = False
+    questions: int = 0
+    answered: int = 0
+    pack_nodes: int = 0
+    understanding: bool = False
+    lessons: int = 0
+
+    def row(self) -> str:
+        return (f"| {self.context_id} | {self.seed or '-'} | {self.started or '-'} | "
+                f"{'yes' if self.refine_done else 'no'} | {self.answered}/{self.questions} | "
+                f"{self.pack_nodes} | {'yes' if self.understanding else 'no'} | {self.lessons} |")
+
+
+@dataclass
+class RunDetail:
+    context_id: str
+    seed: str = ""
+    started: str = ""
+    refine_done: bool = False
+    understanding: str = ""
+    questions: list = None  # list[Question]
+    answers: list = None  # list[Answer]
+    pack_kinds: dict = None  # {type: count}
+    pack_nodes: int = 0
+    plan_brief: str = ""
+    scenarios_md: str = ""
+    coverage_md: str = ""
+    run_logs: list = None  # list[str]
+    lessons: list = None  # list[dict]
+
+    def md(self) -> str:
+        qs, ans = self.questions or [], self.answers or []
+        out = [f"# Run {self.context_id}", ""]
+        out.append(f"- seed: {self.seed or '-'}")
+        out.append(f"- started: {self.started or '-'}")
+        out.append(f"- refine done: {'yes' if self.refine_done else 'no'}")
+        out.append(f"- pack: {self.pack_nodes} nodes ({_kinds_str(self.pack_kinds or {})})")
+        out.append("")
+        out.append("## Understanding brief")
+        out.append(self.understanding.strip() if self.understanding else "_none yet_")
+        out.append("")
+        by_ans = {a.question_id: a for a in ans}
+        out.append(f"## Q&A ({len([q for q in qs if q.id in by_ans])}/{len(qs)} answered)")
+        for q in qs:
+            a = by_ans.get(q.id)
+            out.append(f"- [{q.status}] ({q.round}) {q.question}")
+            if a:
+                out.append(f"    → {a.chosen_option or ''} {a.text}".rstrip())
+        if not qs:
+            out.append("_no questions_")
+        out.append("")
+        out.append("## Test plan")
+        out.append(self.plan_brief.strip() if self.plan_brief else "_no plan yet_")
+        out.append("")
+        out.append("## Scenarios")
+        out.append(self.scenarios_md.strip() if self.scenarios_md else "_no scenarios yet_")
+        out.append("")
+        out.append("## Coverage matrix")
+        out.append(self.coverage_md.strip() if self.coverage_md else "_no coverage yet_")
+        out.append("")
+        out.append("## Run logs")
+        out.extend(f"- {r}" for r in (self.run_logs or ["_none_"]))
+        out.append("")
+        out.append(f"## Lessons captured ({len(self.lessons or [])})")
+        out.extend(f"- [{lsn['kind']}] {lsn['statement']}" for lsn in (self.lessons or []))
+        if not self.lessons:
+            out.append("_none_")
+        out.append("")
+        out.append("_Eval scores are computed on demand via evaluate_pack / evaluate_plan; not stored._")
+        return "\n".join(out)
+
+
+def _pack_counts(bank) -> tuple[dict[str, int], dict[str, dict]]:
+    """One index pass → {run_id: node_count}, {run_id: {type: count}} across all gathered notes.
+
+    ponytail: reads every note sidecar once per call — fine for a rarely-run operator tool; add a
+    projection only if list_runs gets slow."""
+    graph, _ = bank.load_index()
+    counts: dict[str, int] = {}
+    kinds: dict[str, dict] = {}
+    for node in graph.nodes.values():
+        if node.get("type") == INSIGHT:
+            continue
+        note = bank.read_note(node["id"], node["type"])
+        if note is None:
+            continue
+        counts[note.run_id] = counts.get(note.run_id, 0) + 1
+        kinds.setdefault(note.run_id, {})[note.type] = kinds.setdefault(note.run_id, {}).get(note.type, 0) + 1
+    return counts, kinds
+
+
+def _lesson_counts(bank) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for ins in iter_lessons(bank):
+        counts[ins.context_id] = counts.get(ins.context_id, 0) + 1
+    return counts
+
+
+def list_runs(bank, limit: int = 50) -> str:
+    """Every past pipeline run, newest first (F1) — enumerated from memory/refine/*/ (no sidecar)."""
+    packs, _ = _pack_counts(bank)
+    lessons = _lesson_counts(bank)
+    summaries: list[RunSummary] = []
+    for ctx in _run_contexts(bank):
+        state = bank.read_refine_state(ctx)
+        qs = bank.read_questions(ctx)
+        answers = bank.read_answers(ctx)
+        summaries.append(RunSummary(
+            context_id=ctx, seed=state.get("seed", ""), started=state.get("now", ""),
+            refine_done=bool(state.get("done")), questions=len(qs), answered=len(answers),
+            pack_nodes=packs.get(ctx, 0), understanding=bank.read_understanding(ctx) is not None,
+            lessons=lessons.get(ctx, 0),
+        ))
+    summaries.sort(key=lambda s: s.started, reverse=True)
+    summaries = summaries[:limit]
+    if not summaries:
+        return "No runs found (memory/refine/ is empty)."
+    head = ("| context_id | seed | started | refine? | answered/asked | pack | brief? | lessons |\n"
+            "|---|---|---|---|---|---|---|---|")
+    return f"# Runs ({len(summaries)})\n\n{head}\n" + "\n".join(s.row() for s in summaries)
+
+
+def get_run(bank, context_id: str) -> str:
+    """Full structured detail for one run (F1) — a composition of the existing read paths."""
+    from common.testplan import memory as tpd_store
+
+    state = bank.read_refine_state(context_id)
+    understanding = bank.read_understanding(context_id)
+    questions = bank.read_questions(context_id)
+    answers = bank.read_answers(context_id)
+    pack = load_pack(bank, context_id)
+    kinds: dict[str, int] = {}
+    for n in pack.notes:
+        kinds[n.type] = kinds.get(n.type, 0) + 1
+    known = bool(state) or understanding is not None or questions or answers or pack.notes
+    if not known:
+        return (f"No such run: {context_id!r}. Nothing under {_REFINE_PREFIX}{_slug(context_id)}/ "
+                f"— check `list-runs` for known ids.")
+    run_logs = [b.name for b in _store(bank).iter_blobs(_RUNS_PREFIX) if context_id in b.name]
+    lessons = [{"kind": i.kind, "statement": i.statement}
+               for i in iter_lessons(bank) if i.context_id == context_id]
+    detail = RunDetail(
+        context_id=context_id, seed=state.get("seed", ""), started=state.get("now", ""),
+        refine_done=bool(state.get("done")), understanding=understanding or "",
+        questions=questions, answers=answers, pack_kinds=kinds, pack_nodes=len(pack.notes),
+        plan_brief=tpd_store.read_plan_brief(bank, context_id) or "",
+        scenarios_md=tpd_store.read_scenarios_md(bank, context_id) or "",
+        coverage_md=tpd_store.read_coverage_md(bank, context_id) or "",
+        run_logs=sorted(run_logs), lessons=lessons,
+    )
+    return detail.md()

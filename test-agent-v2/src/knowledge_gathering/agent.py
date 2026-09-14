@@ -5,10 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 
-from google.adk.agents import BaseAgent
-
 from common.adk import tools
-from common.adk.events import incoming_text, text_event
+from common.adk.router import Agent, RouterAgent
 from common.interrogate import present
 from common.memory.factory import build_bank
 from knowledge_gathering.gather import build_gather_agent
@@ -21,18 +19,18 @@ _READ_TOOLS = {"search-memory": tools.search_memory, "get-note": tools.get_note,
                "search-lessons": tools.search_lessons, "veto-lesson": tools.veto_lesson}
 
 
-class KgaRouter(BaseAgent):
-    gather: BaseAgent
-    refine: BaseAgent
+class KgaRouter(RouterAgent):
+    gather: Agent
+    refine: Agent
 
     async def _run_async_impl(self, ctx):
-        text = incoming_text(ctx).strip()
+        text = self.read(ctx).strip()
         low = text.lower()
         if low.startswith(("get-questions", "get-understanding")):
-            yield text_event(self.name, self._read_helper(text))
+            yield self.reply(self._read_helper(text))
             return
         if low.startswith(tuple(_READ_TOOLS)):
-            yield text_event(self.name, await self._read_tool(text))
+            yield self.reply(await self._read_tool(text))
             return
         state = await self._refine_state(ctx.session.id)
         target = self.refine if (state and not state.get("done")) or wants_refine(text) else self.gather
