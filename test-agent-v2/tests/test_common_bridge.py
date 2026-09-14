@@ -71,6 +71,29 @@ async def test_client_fetch_card():
         assert any(s["id"] == "gather-knowledge" for s in card["skills"])
 
 
+async def test_turn_sends_answer_after_completed_state():
+    """Regression: `to_a2a` interrogation agents finish their invocation each round, so A2A reports
+    state='completed' every turn and the task_id is dropped. `turn` must still SEND THE ANSWER on the
+    next call (route by answer is not None), not silently re-send start_text and discard the answer —
+    which left refine/define_plan advancing rounds while persisting nothing."""
+    from common.bridge import BridgeSession
+    from common.models import A2AResult
+
+    class _RecordingClient:
+        def __init__(self) -> None:
+            self.sent: list[str] = []
+
+        async def send(self, text, *, context_id=None, task_id=None, **kw) -> A2AResult:
+            self.sent.append(text)
+            return A2AResult(text="ok", context_id=context_id, task_id="t-1", state="completed", kind="task")
+
+    session = BridgeSession("http://agent.test/", None)
+    session.set_client(_RecordingClient())
+    await session.turn("run-x", None, "refine run-x")            # start
+    await session.turn("run-x", "Q-bus-1: yes", "refine run-x")  # human answers
+    assert session.get_client().sent == ["refine run-x", "Q-bus-1: yes"]
+
+
 async def _ok_app(scope, receive, send):
     await send({"type": "http.response.start", "status": 200, "headers": []})
     await send({"type": "http.response.body", "body": b"ok"})

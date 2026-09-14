@@ -35,12 +35,15 @@ class BridgeSession:
             raise RuntimeError(f"Cannot reach the A2A agent at {self.base_url}: {exc}") from exc
 
     async def turn(self, context_id: str, answer: str | None, start_text: str) -> A2AResult:
-        """One multi-turn interrogation step: continue the live task if answering, else (re)start."""
-        task_id = self.tasks.get(context_id)
-        if answer is not None and task_id:
-            res = await self.ask(answer, context_id=context_id, task_id=task_id)
-        else:
-            res = await self.ask(start_text, context_id=context_id)
+        """One multi-turn interrogation step: send the answer when answering, else (re)start.
+
+        Routing is by `answer is not None`, NOT by a live A2A task_id: our interrogation agents finish
+        their invocation every round (so `to_a2a` reports state="completed" each turn and the task_id
+        would be dropped), yet they rehydrate their own per-round state from the bank keyed on
+        `context_id`. Gating on task_id here silently re-sent `start_text` and DISCARDED the human's
+        answer — the round advanced but nothing was ingested. The context_id is the durable thread."""
+        text = answer if answer is not None else start_text
+        res = await self.ask(text, context_id=context_id, task_id=self.tasks.get(context_id))
         if res.task_id:
             self.tasks[context_id] = res.task_id
         if res.state == "completed":

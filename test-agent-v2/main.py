@@ -16,7 +16,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from common.adk.auth import BearerAuthMiddleware
-from common.adk.services import build_runner
+from common.adk.services import build_runner, build_task_store
 
 _AGENT = os.environ.get("AGENT", "knowledge_gathering")
 _ATLASSIAN = ("ATLASSIAN_BASE_URL", "ATLASSIAN_EMAIL", "ATLASSIAN_API_TOKEN", "GCS_BUCKET")
@@ -38,7 +38,7 @@ def _health_routes(name: str, required: tuple[str, ...]) -> list[Route]:
 
 def build_app(module: str = _AGENT):
     root = importlib.import_module(f"{module}.agent").root_agent
-    app = to_a2a(root, runner=build_runner(root, app_name=root.name))
+    app = to_a2a(root, runner=build_runner(root, app_name=root.name), task_store=build_task_store())
     app.router.routes.extend(_health_routes(root.name, _REQUIRED_ENV.get(module, ("GCS_BUCKET",))))
     app.add_middleware(BearerAuthMiddleware)
     return app

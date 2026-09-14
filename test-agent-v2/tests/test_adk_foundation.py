@@ -18,6 +18,21 @@ def test_session_service_in_memory_without_db(monkeypatch):
     assert type(build_session_service()).__name__ == "InMemorySessionService"
 
 
+def test_task_store_none_without_db(monkeypatch):
+    """No DB → None so to_a2a uses its in-memory default. With an engine it returns a Postgres-backed
+    DatabaseTaskStore (so the A2A task lifecycle persists to Cloud SQL, not just the session state)."""
+    from common.adk.services import build_task_store
+
+    monkeypatch.setattr("common.adk.services.get_engine", lambda: None)
+    assert build_task_store() is None
+
+    class _FakeEngine:
+        pass
+
+    monkeypatch.setattr("common.adk.services.get_engine", lambda: _FakeEngine())
+    assert type(build_task_store()).__name__ == "DatabaseTaskStore"
+
+
 def test_plugins_construct_with_callbacks():
     assert hasattr(LearnDrainPlugin(), "before_run_callback")
     assert hasattr(LessonRecallPlugin(), "before_model_callback")
