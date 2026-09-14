@@ -5,11 +5,21 @@ critique so the interrogation round is never blocked or slowed past the server c
 
 from __future__ import annotations
 
+import os
+
 from pydantic import BaseModel, Field
 
 from common.monitoring import get_logger
 
 log = get_logger("interrogate.critique")
+
+_OFF = {"0", "false", "no", "off"}
+
+
+def critique_enabled() -> bool:
+    """Per-round interrogation critique gate (env ``INTERROGATION_CRITIQUE``, default ON). Off lets a
+    deployment drop the extra per-round Vertex call when its latency/cost isn't wanted."""
+    return os.environ.get("INTERROGATION_CRITIQUE", "1").strip().lower() not in _OFF
 
 
 class RoundCritique(BaseModel):
@@ -28,6 +38,8 @@ async def critique_round(pack, kind: str, questions_text: str, *, model=None) ->
 
     Uses the same bounded ``run_json_agent`` path as the generators, so a slow or unconfigured model
     degrades to no critique instead of hanging the interrogation turn."""
+    if not critique_enabled():
+        return ""
     try:
         from common.adk import agent_model
         from common.testplan.llm.adk import build_generator_agent, run_json_agent

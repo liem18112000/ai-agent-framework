@@ -237,6 +237,22 @@ async def test_interrogation_round_critique_renders_with_model():
     assert "focus next: confirm partial-import" in text
 
 
+async def test_interrogation_critique_disabled_by_env(monkeypatch):
+    """INTERROGATION_CRITIQUE=0 skips the per-round critic even with a model — the prod off-switch."""
+    from common.interrogate.critique import critique_round
+    from tests.tpd_fakes import FakeGeneratorModel
+
+    monkeypatch.setenv("INTERROGATION_CRITIQUE", "0")
+    fake = FakeGeneratorModel(model="fake",
+                              default_json='{"confidence": 0.9, "weaknesses": [], "focus_next": []}')
+
+    class _Pack:
+        def summary_text(self):
+            return "x"
+
+    assert await critique_round(_Pack(), "refine", "Qs", model=fake) == ""
+
+
 async def test_interrogation_round_critique_empty_without_model():
     """No model configured (the offline default) → no critique, so the round is never blocked/slowed."""
     from common.interrogate.critique import critique_round
