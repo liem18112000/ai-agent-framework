@@ -42,7 +42,7 @@ class LinkRecord:
 class Scope:
     """What counts as *follow* (pushed to the frontier) vs *record-only*."""
 
-    follow_types: tuple[str, ...] = (JIRA_ISSUE, CONFLUENCE_PAGE)
+    follow_types: tuple[str, ...] = (JIRA_ISSUE, CONFLUENCE_PAGE, ATTACHMENT)  # attachments are on-topic + authed
     follow_web: bool = False
     max_web: int = 8
     explore_cloud: bool = False

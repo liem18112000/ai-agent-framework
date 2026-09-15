@@ -16,6 +16,10 @@ dependencies = [
   "anthropic[vertex]>=1,<2",    # Claude on Vertex AI (claude-sonnet-5) — the Distill step
   "google-cloud-aiplatform>=1.60",  # vertexai TextEmbeddingModel — pgvector recall embeddings (M3); imported lazily
   "beautifulsoup4>=4.12",
+  "pypdf>=4",                       # attachment fetcher: extract text from PDF attachments (the spec PDFs)
+  "python-docx>=1",                # attachment fetcher: MS Word (.docx) text
+  "openpyxl>=3",                   # attachment fetcher: MS Excel (.xlsx) cell text
+  "pillow>=10",                    # attachment fetcher: normalize/downscale images before vision OCR
   "uvicorn[standard]>=0.30",
   "graphifyy>=0.9,<1",              # local tree-sitter code-graph CLI (`graphify`) — the codegraph fetcher
   "google-adk[db]>=2",              # ADK runtime (v2 rebuild) — [db] = SQLAlchemy for DatabaseSessionService

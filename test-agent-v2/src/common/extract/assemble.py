@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from common.extract.adf import adf_links, adf_text
+from common.extract.attachment import is_extractable_attachment
 from common.extract.classify import classify_url
 from common.extract.regex_urls import regex_links
 from common.extract.storage_html import storage_links
@@ -66,7 +67,8 @@ def extract_issue_links(
         if linked and (lk := linked.get("key")):
             raw.append((f"{base_url}/browse/{lk}", lk, "issuelink", JIRA_ISSUE, f"jira:{lk}"))
     for att in fields.get("attachment", []):
-        if content := att.get("content"):
+        content = att.get("content")
+        if content and is_extractable_attachment(att.get("mimeType"), att.get("filename")):
             raw.append((content, att.get("filename", ""), "attachment", None, None))
     for rl in remote_links or []:
         obj = rl.get("object", {})

@@ -49,6 +49,9 @@ def test_classify_url():
 
 def test_every_link_found_none_dropped():
     canon = {r.canonical_url for r in _issue_records()}
+    # The fixture's only attachment is transfer.zip — a non-extractable archive, so it is intentionally
+    # NOT promoted to a link (we can't read a zip as a document). Extractable attachments (PDF/Office/
+    # image/text) DO appear, canonicalized as `attachment:<url>` — covered in test_attachment.py.
     assert canon == {
         "confluence:49662787598",
         "https://example.com/spec.pdf",
@@ -56,9 +59,9 @@ def test_every_link_found_none_dropped():
         "https://www.figma.com/file/abc/eArchive",
         "jira:LUZ-159670",
         "jira:LUZ-159671",
-        "https://axonivy.atlassian.net/rest/api/3/attachment/content/10001",
         "https://confluence.example.com/display/LUZ/eArchive-Spec",
     }
+    assert not any(c.startswith("attachment:") for c in canon)  # the .zip archive was filtered out
 
 
 def test_follow_vs_record_only():
@@ -70,7 +73,6 @@ def test_follow_vs_record_only():
         "bitbucket:acme/luz-docs/src/main/FileUtil.java",
         "https://www.figma.com/file/abc/eArchive",
         "https://example.com/spec.pdf",
-        "https://axonivy.atlassian.net/rest/api/3/attachment/content/10001",
     ):
         assert by_canon[canon].in_scope is False
 
@@ -88,8 +90,8 @@ def test_confluence_smart_link_type():
         r for r in _issue_records() if r.canonical_url.startswith("bitbucket:")
     )
     assert bit.type == BITBUCKET and bit.origin == "description"
-    att = next(r for r in _issue_records() if r.type == ATTACHMENT)
-    assert att.anchor_text == "transfer.zip"
+    # transfer.zip is a non-extractable archive → no ATTACHMENT record for this fixture
+    assert not any(r.type == ATTACHMENT for r in _issue_records())
 
 
 def test_parent_subtask_and_dev_panel_links():

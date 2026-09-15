@@ -25,12 +25,29 @@ _W_TERM, _W_LIVE, _W_ENV = 0.6, 0.2, 0.2
 _providers = cloud_providers
 
 
+def _haystack(ref: ServiceRef) -> str:
+    """Match text for a service — name + resource path + labels, lowercased."""
+    return " ".join([ref.name, ref.resource_path, *(getattr(ref, "labels", None) or [])]).lower()
+
+
 def _term_match(ref: ServiceRef, tokens: list[str]) -> float:
-    """Fraction of ticket tokens appearing in the service name/labels (0..1). No tokens → neutral 0.5."""
+    """Fraction of ticket tokens appearing in the service haystack (0..1). No tokens → neutral 0.5."""
     if not tokens:
         return 0.5
-    hay = ref.name.lower()
+    hay = _haystack(ref)
     return sum(t in hay for t in tokens) / len(tokens)
+
+
+def _relevant(ref: ServiceRef, tokens: list[str], hints: list[str]) -> bool:
+    """A service is promotable ONLY if it actually matches the ticket — at least one salient ticket
+    token in its haystack, or an LLM priority hint on its name. Without this gate, a ticket whose terms
+    match NO service name collapses the ranking to liveness+env-weight and the cap fills with arbitrary
+    live services (the cloud-discover noise). No relevance signal → promote nothing."""
+    hay = _haystack(ref)
+    if any(tok in hay for tok in tokens):
+        return True
+    name = ref.name.lower()
+    return any(h and (h in name or name in h) for h in hints)
 
 
 def _score(ref: ServiceRef, tokens: list[str]) -> float:
@@ -101,7 +118,17 @@ async def cloud_service_seeds(
         refs = await asyncio.to_thread(_discover_all)
         if not refs:
             return [], ""
-        ranked = _rank(refs, terms)
+        # RELEVANCE GATE: keep only services that actually match the ticket (or an LLM hint) BEFORE
+        # ranking/capping — so the cap promotes useful services instead of filling with arbitrary live
+        # ones when the ticket terms match nothing (the cloud-discover noise the user hit).
+        tokens = salient_tokens(terms)
+        hints = plan.hints() if plan is not None else []
+        relevant = [r for r in refs if _relevant(r, tokens, hints)]
+        if not relevant:
+            log.info("cloud discover: %d live service(s), none matched the ticket — promoting none", len(refs))
+            return [], (f"Cloud discover — scanned {len(refs)} live service(s); none matched the ticket "
+                        "(no cloud service promoted — refine the ticket terms to surface relevant ones).")
+        ranked = _rank(relevant, terms)
         if plan is not None:
             ranked = rerank_with_plan(plan, ranked)
         exclude = exclude or set()

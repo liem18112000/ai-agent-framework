@@ -57,3 +57,28 @@ async def agenerate(prompt: str, *, project: str, location: str, model: str, max
     """Non-blocking `complete()` — run the blocking Vertex call in a worker thread."""
     return await asyncio.to_thread(complete, prompt, project=project, location=location, model=model,
                                    max_tokens=max_tokens, cache_prefix=cache_prefix, stream=stream)
+
+
+_OCR_PROMPT = (
+    "Transcribe ALL text in this image verbatim. If it is a diagram, screenshot, chart or table, also "
+    "briefly describe its structure, labels and relationships. Output plain text only — no preamble."
+)
+
+
+def describe_image(data: bytes, *, media_type: str, project: str, location: str, model: str,
+                   max_tokens: int = 1500, prompt: str | None = None) -> str:
+    """Transcribe/describe an image via Claude-on-Vertex vision; returns its first text block. `data`
+    must already be a vision-accepted type (image/png|jpeg|gif|webp) — see extract._vision_payload."""
+    import base64
+
+    from anthropic import AnthropicVertex
+
+    client = AnthropicVertex(project_id=project, region=location)
+    b64 = base64.standard_b64encode(data).decode("ascii")
+    content = [
+        {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
+        {"type": "text", "text": prompt or _OCR_PROMPT},
+    ]
+    return first_text(client.messages.create(
+        model=model, max_tokens=max_tokens, thinking={"type": "disabled"},
+        messages=[{"role": "user", "content": content}]))

@@ -25,8 +25,8 @@ def classify_url(url: str) -> tuple[str, str]:
         return CONFLUENCE_PAGE, (f"confluence:{m.group(1)}" if (m := re.search(r"/pages/(\d+)", path)) else url)
     if "atlassian.net" in host and "/browse/" in path:
         return JIRA_ISSUE, f"jira:{path.split('/browse/')[1].split('/')[0]}"
-    if "/rest/api/3/attachment/" in path:
-        return ATTACHMENT, url
+    if "/rest/api/3/attachment/" in path or "/wiki/download/" in path or "/download/attachments/" in path:
+        return ATTACHMENT, f"attachment:{url}"  # route to the authed AttachmentFetcher, not the web fetcher
     if "bitbucket.org" in host:
         if m := re.match(r"/([^/]+)/([^/]+)/src/([^/]+)/(.+)$", path):
             return BITBUCKET, f"bitbucket:{m.group(1)}/{m.group(2)}/src/{m.group(3)}/{m.group(4)}"

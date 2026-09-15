@@ -34,6 +34,29 @@ async def test_discover_ranks_and_promotes(monkeypatch):
     assert "Cloud discover" in md
 
 
+async def test_irrelevant_services_are_not_promoted(monkeypatch):
+    """NOISE FIX: when no ticket token matches any service, promote NOTHING instead of filling the cap
+    with arbitrary live services. Surfaces a transparent 'scanned N, none matched' note."""
+    refs = [_ref("prod", "dev-luz-salary-calculation"), _ref("prod", "admin-agent"),
+            _ref("dev", "message-broker")]
+    _inject(monkeypatch, FakeCloudProvider(envs=("dev", "prod"), discover_fn=lambda e: refs))
+    seeds, md = await cloud_service_seeds("zip import metadata health document", cloud_max_services=8)
+
+    assert seeds == []                                   # nothing on-topic → nothing promoted (no noise)
+    assert "none matched the ticket" in md               # transparent, not silent
+
+
+async def test_relevant_subset_promoted_amid_noise(monkeypatch):
+    """Only the ticket-relevant service is promoted out of a noisy estate (services sharing no ticket
+    token are dropped)."""
+    refs = [_ref("prod", "salary-calculation"), _ref("prod", "luz-docs-import"),
+            _ref("prod", "antivirus-scanner")]
+    _inject(monkeypatch, FakeCloudProvider(envs=("prod",), discover_fn=lambda e: refs))
+    seeds, _md = await cloud_service_seeds("docs import zip", cloud_max_services=8)
+
+    assert seeds == ["cloudsvc:fake/prod/serverless/luz-docs-import"]  # salary/antivirus dropped as noise
+
+
 async def test_cap_respected_and_surfaced(monkeypatch):
     refs = [_ref("dev", f"svc-{i}") for i in range(10)]
     _inject(monkeypatch, FakeCloudProvider(envs=("dev",), discover_fn=lambda e: refs))
