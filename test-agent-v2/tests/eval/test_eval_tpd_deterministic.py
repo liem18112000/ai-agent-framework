@@ -43,6 +43,8 @@ def test_coverage(trace):
     assert c.ac_recall >= case.min_ac_recall, \
         f"{case.seed}: AC-recall {c.ac_recall:.2f} < {case.min_ac_recall} (uncovered {c.uncovered})"
     assert c.matrix_completeness >= 0.8, f"{case.seed}: matrix completeness {c.matrix_completeness:.2f}"
+    assert c.traceability >= case.min_traceability, \
+        f"{case.seed}: traceability {c.traceability:.2f} < {case.min_traceability} (untraceable {c.untraceable})"
 
 
 def test_placeholders(trace):

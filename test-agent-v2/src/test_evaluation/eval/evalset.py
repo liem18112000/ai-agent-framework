@@ -9,9 +9,10 @@ from google.adk.evaluation.eval_case import EvalCase, Invocation
 from google.adk.evaluation.eval_set import EvalSet
 from google.genai import types
 
+from test_evaluation.config.adk import (
+    TEST_CONFIG,
+)
 from test_evaluation.golden import load_golden, load_golden_plans
-
-TEST_CONFIG = {"criteria": {"tool_trajectory_avg_score": 1.0, "response_match_score": 0.35}}
 
 
 def _invocation(seed: str) -> Invocation:

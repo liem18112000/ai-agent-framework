@@ -6,10 +6,9 @@ import asyncio
 
 from common.adk.router import RouterAgent
 from common.memory.factory import build_bank
-from test_evaluation.engine import evaluate_pack
+from test_evaluation.engine import evaluate_pack, evaluate_plan
 from test_evaluation.golden import golden_for, golden_plan_for
 from test_evaluation.ops import _is_plan, extract_ctx, render, render_plan
-from test_evaluation.plan_engine import evaluate_plan
 
 
 class EvaluatorAgent(RouterAgent):

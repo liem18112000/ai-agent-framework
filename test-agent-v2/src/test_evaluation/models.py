@@ -22,6 +22,10 @@ class EvalCase:
     min_recall: float = 0.8
     min_precision: float = 0.7
     reference_understanding: str = ""
+    # Canary tier (calibration): a deliberately-bad case whose score MUST stay under `max_score`.
+    # A canary scoring high = the metric is broken, not the agent. Lives under golden/canary/.
+    canary: bool = False
+    max_score: float = 0.5
 
     @classmethod
     def from_dict(cls, d: dict) -> EvalCase:
@@ -158,7 +162,11 @@ class PlanEvalCase:
     pass_criteria: list[str] = field(default_factory=list)
     min_ac_recall: float = 0.8
     min_scope_precision: float = 0.8
+    min_traceability: float = 1.0
     reference_brief: str = ""
+    # Canary tier (calibration) — see EvalCase.canary. Lives under golden_plans/canary/.
+    canary: bool = False
+    max_score: float = 0.5
 
     @classmethod
     def from_dict(cls, d: dict) -> PlanEvalCase:

@@ -10,7 +10,7 @@ from test_evaluation.metrics.gherkin_lint import gherkin_lint
 from test_evaluation.metrics.mutation import fault_class_coverage
 from test_evaluation.metrics.oracle import oracle_strength
 from test_evaluation.models import PlanEvalCase
-from test_evaluation.plan_engine import evaluate_plan
+from test_evaluation.engine import evaluate_plan
 from tests.eval.harness_tpd import run_plan_offline
 
 _CASES = load_golden_plans()

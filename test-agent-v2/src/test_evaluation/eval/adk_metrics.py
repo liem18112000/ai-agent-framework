@@ -6,9 +6,8 @@ from google.adk.evaluation.eval_metrics import EvalMetric, EvalStatus
 from google.adk.evaluation.evaluator import EvaluationResult, PerInvocationResult
 
 from common.memory.factory import build_bank
-from test_evaluation.engine import evaluate_pack
+from test_evaluation.engine import evaluate_pack, evaluate_plan
 from test_evaluation.golden import golden_for, golden_plan_for
-from test_evaluation.plan_engine import evaluate_plan
 
 _BANK = None
 

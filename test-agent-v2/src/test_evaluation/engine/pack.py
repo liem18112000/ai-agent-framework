@@ -1,8 +1,8 @@
-"""The evaluation engine — score a persisted pack into a Pack Quality Score."""
+"""Pack evaluation — score a persisted KGA pack into a Pack Quality Score (PQS)."""
 
 from __future__ import annotations
 
-from common.interrogate.pack import load_pack
+from test_evaluation.engine.loaders import pack_view
 from test_evaluation.metrics.entities import entities_recall
 from test_evaluation.metrics.node_overlap import retrieval_scores
 from test_evaluation.metrics.pqs import pqs
@@ -10,20 +10,13 @@ from test_evaluation.metrics.rubrics import cites_only_real_ids, no_invented_url
 from test_evaluation.models import EvalCase, EvalReport, PQSComponents, RubricsReport
 from test_evaluation.monitoring import get_logger
 
-log = get_logger("engine")
-
-
-def _pack_view(bank, context_id: str):
-    """The loaded pack + run-scoped node ids + per-node text (title + id) for this context."""
-    pack = load_pack(bank, context_id)
-    ids = {n.id for n in pack.notes}
-    texts = [f"{n.title} {n.id}" for n in pack.notes]
-    return pack, ids, texts
+log = get_logger("engine.pack")
 
 
 def evaluate_pack(bank, context_id: str, case: EvalCase | None = None) -> EvalReport:
-    """Score the pack `context_id` gathered. `case` supplies the golden ground truth (relevant/"""
-    pack, node_ids, node_texts = _pack_view(bank, context_id)
+    """Score the pack `context_id` gathered. `case` supplies the golden ground truth (relevant /
+    must-not-retrieve node ids, key entities, reference understanding)."""
+    pack, node_ids, node_texts = pack_view(bank, context_id)
     understanding = bank.read_understanding(context_id) or ""
 
     retr = retrieval_scores(

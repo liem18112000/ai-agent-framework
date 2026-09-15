@@ -2,14 +2,33 @@
   "seed": "LUZ-601",
   "fixture": "eval_thin",
   "depth": 1,
-  "shape": "thin container (title only) — the 0-links false-negative; tests B1 parent climb",
-  "expected_trajectory": ["gather", "refine", "approve"],
-  "expected_tiers": ["B1_climb"],
-  "expected_fetch_kinds": ["jira"],
-  "relevant_node_ids": ["jira:LUZ-601", "jira:LUZ-600"],
-  "must_not_retrieve_ids": [],
-  "key_entities": ["enrichmentstatus", "jsonstore", "document type"],
-  "min_recall": 1.0,
-  "min_precision": 1.0,
-  "reference_understanding": "LUZ-601 is a thin umbrella for triggering the enricher by document type; its parent epic LUZ-600 carries the real spec — enrichment writes enrichmentstatus to the jsonstore. A thin seed must climb to the parent (B1) to recover the acceptance criteria instead of drifting into the memory well."
+  "pack": {
+    "shape": "thin container (title only) — the 0-links false-negative; tests B1 parent climb",
+    "expected_trajectory": ["gather", "refine", "approve"],
+    "expected_tiers": ["B1_climb"],
+    "expected_fetch_kinds": ["jira"],
+    "relevant_node_ids": ["jira:LUZ-601", "jira:LUZ-600"],
+    "must_not_retrieve_ids": [],
+    "key_entities": ["enrichmentstatus", "jsonstore", "document type"],
+    "min_recall": 1.0,
+    "min_precision": 1.0,
+    "reference_understanding": "LUZ-601 is a thin umbrella for triggering the enricher by document type; its parent epic LUZ-600 carries the real spec — enrichment writes enrichmentstatus to the jsonstore. A thin seed must climb to the parent (B1) to recover the acceptance criteria instead of drifting into the memory well."
+  },
+  "plan": {
+    "shape": "thin container (title only) — tests Interrogation Yield + that the plan recovers the parent epic",
+    "expected_trajectory": ["define_plan", "approve_plan", "implement_plan"],
+    "expected_rounds": ["methodology", "scope", "metrics"],
+    "in_scope_ids": ["jira:LUZ-601", "jira:LUZ-600"],
+    "must_not_scope_ids": [],
+    "behaviours": [
+      {"id": "jira:LUZ-601", "expected_partitions": ["happy", "negative"],
+       "fault_classes": ["enricher triggered for the wrong document type"]},
+      {"id": "jira:LUZ-600", "expected_partitions": ["happy"],
+       "fault_classes": ["enrichmentstatus not written to the jsonstore"]}
+    ],
+    "pass_criteria": ["enrichment writes enrichmentstatus to the jsonstore for the document type"],
+    "min_ac_recall": 0.5,
+    "min_scope_precision": 0.8,
+    "reference_brief": "Test the enricher trigger by document type (LUZ-601); the parent epic LUZ-600 carries the real spec — enrichment writes enrichmentstatus to the jsonstore. Passing means the status is written for the right document type."
+  }
 }

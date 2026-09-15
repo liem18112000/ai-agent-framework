@@ -1,0 +1,24 @@
+{
+  "seed": "LUZ-701",
+  "fixture": "eval_bleed",
+  "canary": true,
+  "max_score": 0.5,
+  "pack": {
+    "shape": "CANARY — inverted expectation over the eval_bleed pack; PQS must stay LOW",
+    "relevant_node_ids": ["jira:LUZ-404"],
+    "must_not_retrieve_ids": ["jira:LUZ-701"],
+    "key_entities": ["zzz_absent_entity"],
+    "reference_understanding": "Canary: the ground truth is deliberately wrong (a node the pack contains is declared a hard-negative, the 'relevant' node is absent, the entity never appears). A correct metric scores this LOW and fires the leak gate; a high score means the metric is broken."
+  },
+  "plan": {
+    "shape": "CANARY — inverted expectation over the eval_bleed plan; TPS must stay LOW",
+    "in_scope_ids": ["jira:LUZ-404"],
+    "must_not_scope_ids": ["jira:LUZ-701"],
+    "behaviours": [
+      {"id": "jira:LUZ-404", "expected_partitions": ["happy", "negative", "boundary", "error"],
+       "fault_classes": ["a fault class no scenario aims at"]}
+    ],
+    "pass_criteria": ["an end-state no step asserts"],
+    "reference_brief": "Canary: the scope excludes what the plan actually scopes and includes an absent node; no scenario covers the declared behaviour. A correct metric scores this LOW and fires the scope-leak gate."
+  }
+}

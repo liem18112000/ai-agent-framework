@@ -1,10 +1,12 @@
-"""The plan-evaluation engine — score a persisted TestPlan + suite into a Test-Plan Score."""
+"""Plan evaluation — score a persisted TestPlan + suite into a Test-Plan Score (TPS)."""
 
 from __future__ import annotations
 
-from common.interrogate.pack import load_pack
-from common.memory.bank import ROOT, _slug
+from common.testplan.memory.writers import read_feature
+from test_evaluation.config.partitions import FULL_MATRIX
+from test_evaluation.engine.loaders import plan_artifacts
 from test_evaluation.metrics.coverage import coverage_scores
+from test_evaluation.metrics.gherkin_lint import gherkin_lint
 from test_evaluation.metrics.mutation import fault_class_coverage
 from test_evaluation.metrics.node_overlap import retrieval_scores
 from test_evaluation.metrics.oracle import oracle_strength
@@ -14,25 +16,18 @@ from test_evaluation.metrics.tps import tps
 from test_evaluation.models import PlanEvalCase, PlanReport, RubricsReport, TPSComponents
 from test_evaluation.monitoring import get_logger
 
-log = get_logger("plan_engine")
-
-_FULL_MATRIX = ["happy", "negative", "boundary", "error"]
+log = get_logger("engine.plan")
 
 
 def evaluate_plan(bank, context_id: str, case: PlanEvalCase | None = None,
                   *, detail: bool = False) -> PlanReport:
-    """Score the plan+suite `context_id` produced. `case` supplies the golden ground truth"""
-    d = f"{ROOT}/test-plan/{_slug(context_id)}"
-    plan = bank.get_json(f"{d}/plan.json", None) or {}
-    brief = bank.get_text(f"{d}/plan-brief.md") or ""
-    scenarios = bank.get_json(f"{d}/scenarios.json", [])
-    steps = bank.get_json(f"{d}/steps.json", [])
-    test_data = bank.get_json(f"{d}/test-data.json", [])
-    pack = load_pack(bank, context_id)
+    """Score the plan+suite `context_id` produced. `case` supplies the golden ground truth (in-scope /
+    must-not-scope ids, per-behaviour partitions + fault classes, pass criteria, reference brief)."""
+    plan, brief, scenarios, steps, test_data, pack = plan_artifacts(bank, context_id)
     pack_ids = {n.id for n in pack.notes}
 
     behaviours = (case.behaviours if case and case.behaviours else
-                  [{"id": n.id, "expected_partitions": list(_FULL_MATRIX)} for n in pack.grounded])
+                  [{"id": n.id, "expected_partitions": list(FULL_MATRIX)} for n in pack.grounded])
 
     scope = retrieval_scores(
         set(plan.get("scope", [])),
@@ -44,6 +39,8 @@ def evaluate_plan(bank, context_id: str, case: PlanEvalCase | None = None,
     orc = oracle_strength(steps, pass_criteria)
     fault = fault_class_coverage(scenarios, behaviours)
     phold = placeholder_scan(scenarios, steps, test_data, detail=detail)
+    feature = read_feature(bank, context_id, context_id) or ""
+    gher = gherkin_lint(feature) if feature else None
 
     rub_ids = cites_only_real_ids(brief, pack_ids)
     rub_urls = no_invented_urls(brief, pack.summary_text())
@@ -61,6 +58,6 @@ def evaluate_plan(bank, context_id: str, case: PlanEvalCase | None = None,
     return PlanReport(
         context_id=context_id, seed=case.seed if case else "",
         tps=out.tps, components=out.components, scope=scope, coverage=cov, oracle=orc,
-        placeholders=phold, fault=fault,
+        placeholders=phold, fault=fault, gherkin=gher,
         rubrics=RubricsReport(cites_only_real_ids=rub_ids, no_invented_urls=rub_urls),
     )

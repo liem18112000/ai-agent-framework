@@ -2,17 +2,18 @@
 
 **Big idea: NOW only ONE guarded door for whole tribe. Human bang that ONE
 door (the gateway), gateway run inside and poke the right robot with A2A rope.
-Three robot lost their own door-guard — they just work now. Four house, one
-skin, one cloud land.** 🦣☁️🚪🤖
+Worker robot lost their own door-guard — they just work now. FIVE house
+(one gateway + FOUR robot), one skin, one cloud land.** 🦣☁️🚪🤖
 
-*(This the **v2** rock. v1 had three door — v2 squish them into one gateway.)*
+*(This the **v2** rock. v1 had many door — v2 squish them into one gateway.
+And v2 grow a fourth robot: the keeper ④ that tend the memory cave.)*
 
 ---
 
 ## Where robot live 🗺️
 
 - **Cloud land** = GCP, tribe `klara-nonprod`, region `europe-west6` (cold mountain).
-- **Robot skin (image)** = `test-agent-v2:latest` — ONE image `kga-v2`, worn by ALL FOUR house.
+- **Robot skin (image)** = `test-agent-v2:latest` — ONE image `kga-v2`, worn by ALL FIVE house.
 - **ADK-native** = new robot bones. Robot served by ADK `to_a2a(root_agent)`.
 
 ---
@@ -37,20 +38,27 @@ robot in the house. 📦→🏠 Same runtime spirit `kga-v2-runtime` for all.
 ## Part 3 — The gateway boss 🚪 (big blue box in the middle)
 
 **`mcp-gateway-v2`** = the ONLY MCP door the whole tribe show the world.
-- Hold **3 upstream session**, one per robot.
+- Hold **4 upstream session**, one per robot (KGA · TPD · TEV · admin).
 - Every tool human ask → gateway **route it → A2A** to the right robot.
 - Gateway whisper to robot with **A2A rope**, locked by **A2A_BEARER_TOKEN**. 🔒
 
 ---
 
-## Part 4 — The three worker robot 🏠🏠🏠 (purple dashed pens, `4 services`)
+## Part 4 — The four worker robot 🏠🏠🏠🏠 (purple dashed pens; `5 services` = gateway + 4)
 
 No more door-guard + hidden-worker two-part hut. Each robot now **ONE box,
 A2A-only**, run `uvicorn main:app`, listen **:8080**, gated by A2A_BEARER.
 
+**Three do the pipeline work (gather → plan → judge):**
 - **① knowledge-gathering-agent-v2** → the ONLY robot walk OUTSIDE, **read-only crawl**. 🔍
 - **② test-plan-definition-agent-v2** → slow thinker, get **600s** long-nap. ⏳
 - **③ test-evaluation-agent-v2** → **no Atlassian**, never leave house, just judge. ⚖️
+
+**One is the keeper — NOT pipeline:**
+- **④ admin-agent-v2** → the **keeper robot**. Tend the memory cave: read run
+  history, back-up, and **`wipe_all`** (that TRUNCATE the SQL store — scary rock! 🧹).
+  No brain (**no Vertex**), never walk outside (**no Atlassian**); touch only the
+  GCS book + Cloud SQL store. Human poke it for chores, NOT for gather→plan→judge. 🗄️
 
 ---
 
@@ -91,8 +99,10 @@ All robot walk DOWN, share four rock:
 
 **v2 = ONE door, not three. Human bring GATEWAY_BEARER, bang `mcp-gateway-v2`
 (:8080 /mcp). Gateway run inside, poke right robot over A2A (A2A_BEARER).**
-Robot now naked worker — no own door-guard. Four house, one `kga-v2` skin.
-Everybody share the cave (kga-v2-memory book + kga-v2-taskstore + secret + Vertex brain).
+Robot now naked worker — no own door-guard. FIVE house (gateway + 4 robot),
+one `kga-v2` skin. Three robot do gather→plan→judge; the fourth ④ is the keeper
+that tend the memory cave. Everybody share the cave (kga-v2-memory book +
+kga-v2-taskstore + secret + Vertex brain).
 **One password door for whole tribe. 🔒🚪**
 
 *(Sibling rock: `full-flow.excalidraw` = what robot DO; this rock = where robot LIVE.)*

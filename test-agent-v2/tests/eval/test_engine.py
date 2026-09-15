@@ -65,13 +65,13 @@ def test_extract_ctx_handles_three_token_plan_command():
 
 def test_evaluate_pack_url_check_uses_pack_summary_not_titles(monkeypatch):
     """M2: a URL that lives in a note synopsis (not its title) is grounded, not 'invented'."""
-    import test_evaluation.engine as eng
+    import test_evaluation.engine.loaders as loaders
     from common.models import Note, Pack
 
     url = "https://axonivy.atlassian.net/browse/LUZ-501"
     pack = Pack(context_id="LUZ-501",
                 notes=[Note(id="jira:LUZ-501", type="jira-issue", title="Dunning", synopsis=f"see {url}")])
-    monkeypatch.setattr(eng, "load_pack", lambda bank, ctx: pack)
+    monkeypatch.setattr(loaders, "load_pack", lambda bank, ctx: pack)  # pack_view() reads it here now
     bank = type("_B", (), {"read_understanding": lambda self, ctx: f"Grounded per {url}"})()
-    r = eng.evaluate_pack(bank, "LUZ-501")
+    r = evaluate_pack(bank, "LUZ-501")
     assert r.rubrics.no_invented_urls.passed and r.rubrics.no_invented_urls.invented == []

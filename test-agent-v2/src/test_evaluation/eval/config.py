@@ -4,6 +4,13 @@ from __future__ import annotations
 
 from google.adk.evaluation.eval_metrics import EvalMetric
 
+# Re-exported from the config package (the raw criteria/threshold constants live there now).
+from test_evaluation.config.adk import (  # noqa: F401  (re-export for callers of eval.config.*)
+    JUDGED_METRICS,
+    JUDGED_THRESHOLD,
+    NATIVE_TRAJECTORY_METRIC,
+)
+
 _CFP = "test_evaluation.eval.adk_metrics"
 
 PACK_METRICS = [
@@ -18,10 +25,6 @@ PLAN_METRICS = [
                custom_function_path=f"{_CFP}.must_not_scope_leak"),
 ]
 
-NATIVE_TRAJECTORY_METRIC = "tool_trajectory_avg_score"
-JUDGED_METRICS = ("hallucinations_v1", "rubric_based_final_response_quality_v1", "final_response_match_v2")
-
-JUDGED_THRESHOLD = 0.70
 
 
 def judged_criteria() -> dict:
