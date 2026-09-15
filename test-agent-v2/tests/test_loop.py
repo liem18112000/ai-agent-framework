@@ -153,12 +153,22 @@ async def test_extra_seeds_are_crawled_at_depth_zero():
 
 def test_parse_input_extracts_seed_depth_repo_and_exclude():
     from knowledge_gathering.gather import parse_input
-    assert parse_input('{"seed": "LUZ-1", "depth": 3, "repo": "ws/r"}') == ("LUZ-1", 3, "ws/r", None)
+    assert parse_input('{"seed": "LUZ-1", "depth": 3, "repo": "ws/r"}') == ("LUZ-1", 3, "ws/r", None, False)
     assert parse_input("gather LUZ-1 depth 2 repo axonivy-prod/luz_docs_import") == \
-        ("LUZ-1", 2, "axonivy-prod/luz_docs_import", None)
-    assert parse_input("gather LUZ-1") == ("LUZ-1", 2, None, None)
-    assert parse_input('{"seed": "LUZ-1", "exclude": "zip import"}') == ("LUZ-1", 2, None, "zip import")
-    assert parse_input("gather LUZ-1 exclude zip import") == ("LUZ-1", 2, None, "zip import")
+        ("LUZ-1", 2, "axonivy-prod/luz_docs_import", None, False)
+    assert parse_input("gather LUZ-1") == ("LUZ-1", 2, None, None, False)
+    assert parse_input('{"seed": "LUZ-1", "exclude": "zip import"}') == ("LUZ-1", 2, None, "zip import", False)
+    assert parse_input("gather LUZ-1 exclude zip import") == ("LUZ-1", 2, None, "zip import", False)
+
+
+def test_parse_input_explore_flag_opts_into_noisy_tiers():
+    """`explore` (default False) is the opt-in for the cloud/web/LLM discovery tiers — set by the
+    client only after the user says Yes. Accepted via the JSON body and a plain `explore`/`deep` token."""
+    from knowledge_gathering.gather import parse_input
+    assert parse_input('{"seed": "LUZ-1", "explore": true}') == ("LUZ-1", 2, None, None, True)
+    assert parse_input("gather LUZ-1 explore") == ("LUZ-1", 2, None, None, True)
+    assert parse_input("gather LUZ-1 deep") == ("LUZ-1", 2, None, None, True)
+    assert parse_input("gather LUZ-1") == ("LUZ-1", 2, None, None, False)  # default stays quiet
 
 
 async def test_crawl_persists_index_and_runlog():
@@ -174,8 +184,8 @@ def test_parse_input_malformed_json_yields_no_seed():
     """H2/M5: a truncated or ill-typed `{...}` body no longer raises out of the handler; it degrades to
     'no seed' (→ the friendly prompt) instead of a 500."""
     from knowledge_gathering.gather import parse_input
-    assert parse_input('{"seed": "LUZ-1"') == (None, 2, None, None)          # truncated JSON
-    assert parse_input('{"seed": "X", "depth": "two"}') == (None, 2, None, None)  # depth not an int
+    assert parse_input('{"seed": "LUZ-1"') == (None, 2, None, None, False)          # truncated JSON
+    assert parse_input('{"seed": "X", "depth": "two"}') == (None, 2, None, None, False)  # depth not an int
 
 
 def test_exclude_ids_normalizes_keys_ids_and_urls():

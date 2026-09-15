@@ -74,19 +74,22 @@ def exclude_ids(raw: str | None) -> set[str]:
     return {normalize_seed(tok) for tok in re.split(r"[,\s]+", raw.strip()) if tok}
 
 
-def parse_input(text: str) -> tuple[str | None, int, str | None, str | None]:
-    """Return (seed, depth, repo, exclude). `repo` is an optional "<ws>/<repo>" whose graphify code"""
+def parse_input(text: str) -> tuple[str | None, int, str | None, str | None, bool]:
+    """Return (seed, depth, repo, exclude, explore). `repo` is an optional "<ws>/<repo>" whose graphify
+    code graph grounds the pack. `explore` (default False) opts INTO the noisy discovery tiers —
+    cloud/system-service discovery, external web-follow, and the LLM planners (hypothesize/leads); the
+    client only sets it after the user says Yes, so a plain gather stays quiet + high-precision."""
     text = text.strip()
     if text.startswith("{"):
         try:
             d = json.loads(text)
             depth = int(d.get("depth", 2))
         except (json.JSONDecodeError, ValueError, TypeError):  # malformed body → no seed → friendly reply
-            return None, 2, None, None
+            return None, 2, None, None, False
         exclude = d.get("exclude")
         if isinstance(exclude, list):
             exclude = " ".join(exclude)
-        return d.get("seed"), depth, d.get("repo") or None, (exclude or None)
+        return d.get("seed"), depth, d.get("repo") or None, (exclude or None), bool(d.get("explore"))
     seed = re.search(r"[A-Z][A-Z0-9]+-\d+|\d{6,}|https?://\S+", text)
     depth = re.search(r"depth\s+(\d+)", text)
     repo = re.search(r"repo\s+([\w.-]+/[\w.-]+)", text)
@@ -94,7 +97,8 @@ def parse_input(text: str) -> tuple[str | None, int, str | None, str | None]:
     return ((seed.group(0) if seed else None),
             (int(depth.group(1)) if depth else 2),
             (repo.group(1) if repo else None),
-            (exclude.group(1) if exclude else None))
+            (exclude.group(1) if exclude else None),
+            bool(re.search(r"\b(?:explore|deep)\b", text, re.IGNORECASE)))
 
 
 def summarize_gather(result: CrawlResult) -> str:

@@ -161,6 +161,52 @@ async def test_assured_below_bar_surfaces_for_human_review(pack_bucket, monkeypa
     assert res.scenarios  # still emits the best-effort best set (never empty)
 
 
+async def test_implement_plan_smoke_returns_under_ceiling_with_slow_rounds(pack_bucket, monkeypatch):
+    """SMOKE (implement_plan timeout is gone): with slow rounds AND a high MAX_ITERS, implement_plan
+    must still RETURN promptly — the predictive budget guard prevents the pre-fix runaway that blew the
+    900s MCP ceiling with nothing persisted. Asserts bounded wall-clock, an early stop, and a persisted
+    non-empty scenario set (so get_scenarios / evaluate_plan have input)."""
+    import time as _time
+
+    monkeypatch.delenv("TPD_LLM_DETAIL", raising=False)
+    monkeypatch.setenv("TPD_ASSURED_MAX_ITERS", "10")   # would be 10 rounds if the guard were absent
+    monkeypatch.setenv("TPD_ASSURED_BUDGET_S", "1")     # 1s wall-clock budget stands in for the 900s ceiling
+    bank = MemoryBank(pack_bucket)
+    await _confirmed(bank)
+    fake = full_fake_model()
+    fake.judge_json = judge_verdict(0.3)  # always below bar → never early-accepts; only the guard can stop it
+    fake.delay_s = 0.4                     # each model call ~0.4s → a generate+judge round ~0.8s
+
+    started = _time.monotonic()
+    res = await implement_plan(bank, "run-6f2a", model=fake)
+    elapsed = _time.monotonic() - started
+
+    assert elapsed < 5.0                                  # nowhere near a 10-round (~8s) runaway
+    assert res.quality is not None and res.quality.rounds < 10  # guard stopped well before MAX_ITERS
+    assert res.scenarios and store.read_scenarios(bank, "run-6f2a")  # best-effort set persisted
+
+
+async def test_assured_predictive_budget_stops_before_overrunning(pack_bucket, monkeypatch):
+    """The predictive budget guard stops BEFORE starting a round that can't finish under the ceiling —
+    the fix for implement_plan overrunning the 900s server limit on a slow 2nd round. With a 1s budget
+    and ~1.2s rounds, round 1 runs, then the guard stops round 2 even though the below-bar judge and
+    MAX_ITERS=3 would otherwise keep going."""
+    monkeypatch.delenv("TPD_LLM_DETAIL", raising=False)
+    monkeypatch.setenv("TPD_ASSURED_MAX_ITERS", "3")
+    monkeypatch.setenv("TPD_ASSURED_BUDGET_S", "1")
+    bank = MemoryBank(pack_bucket)
+    await _confirmed(bank)
+    fake = full_fake_model()
+    fake.judge_json = judge_verdict(0.3)  # never clears the bar → would run all 3 rounds if unbounded
+    fake.delay_s = 0.6  # each model turn sleeps → one round (generate+judge) ~1.2s > the 1s budget
+
+    res = await implement_plan(bank, "run-6f2a", model=fake)
+    assert res.quality is not None and not res.quality.accepted
+    assert res.quality.rounds == 1  # predictive guard stopped round 2 despite MAX_ITERS=3
+    assert "budget" in res.quality.note
+    assert res.scenarios  # best-effort set still returned + persisted (get_scenarios/evaluate_plan need it)
+
+
 async def test_assured_generation_timeout_degrades_to_heuristic(pack_bucket, monkeypatch):
     """A generator slower than TPD_GEN_TIMEOUT_S must be cancelled and degrade to the heuristic,
     STILL returning + persisting a non-empty scenario set. Regression guard: the deployed

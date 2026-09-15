@@ -16,11 +16,17 @@ def register_tools(mcp: MCPServer, session: BridgeSession) -> dict:
     @mcp.tool()
     async def gather_knowledge(
         seed: str, depth: int = 2, repo: str | None = None, context_id: str | None = None,
-        exclude: str | None = None,
+        exclude: str | None = None, explore: bool = False,
     ) -> str:
-        """Crawl a Jira issue / Confluence page / URL read-only and distill it to the memory bank."""
+        """Crawl a Jira issue / Confluence page / URL read-only and distill it to the memory bank.
+
+        Default gather is QUIET + high-precision: core sources only (Jira/Confluence/codegraph + memory
+        recall). Set explore=True — ONLY after asking the user Yes — to also run the noisy discovery
+        tiers: cloud/system-service discovery, external web-follow, and the LLM planners (hypothesize /
+        leads). These are what drive down retrieval precision, so they stay opt-in per the user gate."""
         ctx = context_id or f"run-{uuid.uuid4().hex[:8]}"
-        msg: dict = {"seed": seed, "depth": depth, **({"repo": repo} if repo else {}), **({"exclude": exclude} if exclude else {})}
+        msg: dict = {"seed": seed, "depth": depth, **({"repo": repo} if repo else {}),
+                     **({"exclude": exclude} if exclude else {}), **({"explore": True} if explore else {})}
         return f"context_id: {ctx}\n\n{(await session.ask(json.dumps(msg), context_id=ctx)).text}"
 
     @mcp.tool()

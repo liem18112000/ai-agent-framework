@@ -99,7 +99,9 @@ async def test_flag_on_junk_reply_degrades_and_gathers(monkeypatch):
     assert "Gather complete" in reply
     assert len(model.calls) == 1
     assert "Hypothesized focus" not in reply
-    # degraded path persists the SAME nodes as the default (flag-off) gather for this seed
-    baseline = run_gather_offline("LUZ-501", client=recorded_client("eval_rich"))
+    # degraded path persists the SAME nodes as an explore gather whose hypothesize simply no-ops
+    # (both reduce to probe.terms) — compare at the same `explore` setting so web-follow parity holds
+    baseline = run_gather_offline("LUZ-501", client=recorded_client("eval_rich"),
+                                  text="gather LUZ-501 explore")
     graph, _ = bank.load_index()
     assert set(graph.nodes.keys()) == baseline.node_ids

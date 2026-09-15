@@ -167,7 +167,9 @@ def fake_model(canned: str = "{}") -> FakeStructuredModel:
 async def drive_gather_agent(seed, monkeypatch, *, client, hyp_model=None, leads_model=None):
     """Drive the D15 GatherAgent as root with INJECTED planner models (fakes) over a recorded client.
 
-    Returns (reply_text, bank). The planners always run (D15); inject hyp_model/leads_model fakes.
+    Returns (reply_text, bank). The planners are opt-in now (the `explore` gate), so this helper — which
+    exists to exercise the planner-on path — drives with `explore` set; inject hyp_model/leads_model
+    fakes.
     """
     from google.adk.runners import Runner
     from google.adk.sessions import InMemorySessionService
@@ -194,7 +196,7 @@ async def drive_gather_agent(seed, monkeypatch, *, client, hyp_model=None, leads
     out: list[str] = []
     async for ev in runner.run_async(
         user_id="u", session_id=ctx_id,
-        new_message=types.Content(role="user", parts=[types.Part(text=f"gather {seed}")])):
+        new_message=types.Content(role="user", parts=[types.Part(text=f"gather {seed} explore")])):
         c = getattr(ev, "content", None)
         for p in getattr(c, "parts", None) or []:
             if getattr(p, "text", None) and getattr(c, "role", None) != "user":

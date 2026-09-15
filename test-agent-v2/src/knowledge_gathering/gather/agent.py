@@ -84,7 +84,7 @@ class GatherAgent(BaseAgent):
         return terms, leads, planner_md, cloud_plan
 
     async def _run_async_impl(self, ctx):
-        seed, depth, repo, exclude = parse_input(incoming_text(ctx).strip())
+        seed, depth, repo, exclude, explore = parse_input(incoming_text(ctx).strip())
         if not seed:
             yield text_event(self.name, "Provide a seed, e.g. 'gather LUZ-158390 depth 2'.")
             return
@@ -98,8 +98,15 @@ class GatherAgent(BaseAgent):
             excluded = exclude_ids(exclude)
             extra_seeds = [repo] if repo else []
             probe = await seed_probe(client, seed)
-            cloud_on = cloud_configured()  # tiers 5/6/7 on iff a provider env map is configured
-            terms, leads, planner_md, cloud_plan = await self._plan(ctx, probe, cloud_on)
+            # NOISY discovery tiers are opt-in (`explore`; the client sets it only after a user Yes):
+            # the LLM planners (hypothesize/leads), cloud/system-service discovery, and external
+            # web-follow. A plain gather stays quiet + high-precision — Jira/Confluence/codegraph +
+            # memory/atlassian-search self-seeding only (the precision=0.00 noise came from these tiers).
+            cloud_on = explore and cloud_configured()  # tiers 5/6/7: opt-in AND a provider env map set
+            if explore:
+                terms, leads, planner_md, cloud_plan = await self._plan(ctx, probe, cloud_on)
+            else:
+                terms, leads, planner_md, cloud_plan = probe.terms, None, [], None
             new_seeds, md_blocks = await expansion_round(
                 bank, client, seed=seed, terms=terms, thin=probe.thin, project=probe.project,
                 parent=probe.parent, exclude=excluded | set(extra_seeds), leads=leads,
@@ -116,6 +123,10 @@ class GatherAgent(BaseAgent):
                 yield text_event(self.name, f"Gather could not complete: {exc}")
                 return
             summary = summarize_gather(result) + "".join(f"\n\n{md}" for md in planner_md + md_blocks)
+            if not explore:
+                summary += ("\n\nQuiet gather — core sources only (Jira/Confluence/codegraph + memory). "
+                            "Re-run with explore=true, after confirming with the user, to add the "
+                            "cloud/system-discovery, web-follow, and LLM-planner tiers.")
             capture_gather(bank, context_id=ctx.session.id or seed, seed=seed, result=result)
             yield text_event(self.name, summary)
         finally:

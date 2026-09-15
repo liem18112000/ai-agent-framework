@@ -84,11 +84,22 @@ async def run_assured_scenarios(
     judge_model = model or agent_model(max_tokens=1500)
 
     scenarios: list[TestScenario] = []
+    round_durations: list[float] = []  # cost of each round completed IN THIS run (empty on resume)
+    stopped_on_budget = False
     for _ in range(len(history), cap):
-        if history and time.monotonic() - start > budget_s:  # keep the whole call under the ceiling
-            log.warning("assured: wall-clock budget %.0fs spent after %d round(s); stopping early",
-                        budget_s, len(history))
+        # PREDICTIVE budget guard: don't START a round we can't finish under the server ceiling. The
+        # old post-hoc check (elapsed > budget) let round 2 begin after a ~500s round 1 (500 < 540) and
+        # then overshoot the 900s MCP ceiling — the implement_plan timeout. Reserve the longest round
+        # seen so far (rounds are ~uniform). The first round in a run is always allowed — its own
+        # per-call TPD_GEN_TIMEOUT_S bounds it.
+        elapsed = time.monotonic() - start
+        if round_durations and elapsed + max(round_durations) > budget_s:
+            stopped_on_budget = True
+            log.warning("assured: %.0fs elapsed; another round (~%.0fs) would exceed the %.0fs budget "
+                        "— stopping after %d round(s)", elapsed, max(round_durations), budget_s,
+                        len(history))
             break
+        round_start = time.monotonic()
         scenarios = await claude_scenarios(plan, plan_pack, test_data, now=now, model=model,
                                            reflections=reflections)
         if not scenarios:  # unconfigured/invalid/TIMED-OUT → degrade to heuristic, best-effort (never raise)
@@ -144,8 +155,9 @@ async def run_assured_scenarios(
 
         # REFLECT — carry the judge's imperative fixes into the next generation (dedup, ordered).
         reflections = list(dict.fromkeys(reflections + verdict.reflections))
+        round_durations.append(time.monotonic() - round_start)  # feeds the predictive guard above
 
-    reason = ("stopped early on the time budget" if history and time.monotonic() - start > budget_s
+    reason = ("stopped early on the time budget" if stopped_on_budget
               else f"best {best_score:.2f} < {threshold:.2f} after {len(history)} round(s)")
     note = (f"{reason} — surfaced for human review: re-run implement to retry, or send guidance to "
             f"steer the next round.{_DEGRADED_NOTE if degraded else ''}")
