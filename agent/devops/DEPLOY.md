@@ -39,9 +39,17 @@ uv pip install `
 ## 2. One-time GCP setup
 
 ```powershell
-# Staging bucket for Agent Engine build artifacts (skip if it already exists)
-gcloud storage buckets create gs://klara-nonprod-agent-engine-staging-us-central1 `
-  --project=klara-nonprod --location=us-central1 --uniform-bucket-level-access
+# Shared staging/knowledge bucket for LUZ agentic workloads (skip if it
+# already exists) -- europe-west6 for EU/Swiss data residency, STANDARD
+# storage class (the fastest class actually offered in that region --
+# RAPID, GCS's zonal low-latency class, isn't available there), uniform
+# access with public access blocked, soft-deleted objects retained 90
+# days. See agent/devops/RAG.md for the agent_engine/ + agent_knowledge/
+# directory layout inside it.
+gcloud storage buckets create gs://luz-agentic-storage-<uuid> `
+  --project=klara-nonprod --location=europe-west6 `
+  --default-storage-class=STANDARD --uniform-bucket-level-access `
+  --public-access-prevention --soft-delete-duration=90d
 ```
 
 **Custom runtime service account.** devops-3f9a deploys with a

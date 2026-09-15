@@ -30,7 +30,12 @@ from vertexai.preview import reasoning_engines
 from devops_3f9a.agent import root_agent
 from mcp_bridge.config import LOCATION, PROJECT_ID
 
-STAGING_BUCKET = "gs://klara-nonprod-agent-engine-staging-us-central1"
+# Bucket root only -- Agent Engine's staging_bucket must be a bare bucket
+# name, not bucket/prefix (a "bucket/agent_engine" value makes the SDK try
+# to literally create a bucket with a slash in its name and fail with
+# "Invalid bucket name"). The SDK itself writes build artifacts under an
+# "agent_engine/" prefix inside this bucket automatically.
+STAGING_BUCKET = "gs://luz-agentic-storage-3808ce15-44f3-447c-a037-5d5ff87df2e0"
 SERVICE_ACCOUNT = "devops-agent-runtime-sa@klara-nonprod.iam.gserviceaccount.com"
 
 _PYPROJECT = tomllib.loads((Path(__file__).parent.parent / "pyproject.toml").read_text())

@@ -29,22 +29,58 @@ works directly with no workaround needed. The corpus was migrated
 (re-created + re-imported) from `us-west1` to `europe-west6`; the old
 `us-west1` corpus was deleted.
 
-**Residency caveat -- this only fixes the corpus, not the whole agent.**
-Two other pieces of this agent are still `us-central1`:
-- The GCS staging bucket (`klara-nonprod-agent-engine-staging-us-central1`)
-  the source docs are uploaded to before `rag.import_files` reads them --
-  transient build/staging data, not a long-term store, but it does
-  physically transit `us-central1`.
-- The Agent Engine deployment itself (the reasoning engine resource,
-  `projects/335505349498/locations/us-central1/reasoningEngines/...`) --
-  the actual compute that runs this agent's model calls and tool code.
+**Residency caveat -- this only fixes the corpus and the storage layer,
+not the whole agent.** The GCS staging bucket is now `europe-west6` too
+(see "Storage bucket" below), but the Agent Engine deployment itself
+(the reasoning engine resource,
+`projects/335505349498/locations/us-central1/reasoningEngines/...`) --
+the actual compute that runs this agent's model calls and tool code --
+is still `us-central1`.
 
-Cross-region reference from the agent (`us-central1`) to the corpus
-(`europe-west6`) works fine within the same project -- but if EU/Swiss
-residency needs to hold for this agent end-to-end, not just the RAG
-corpus, moving the deployment region and staging bucket is a separate,
-larger change (would need a new Agent Engine resource, since reasoning
-engines aren't region-migratable in place).
+Cross-region reference from the agent (`us-central1`) to both the corpus
+and the staging bucket (`europe-west6`) works fine within the same
+project -- confirmed by redeploying after the bucket migration. But if
+EU/Swiss residency needs to hold for this agent end-to-end, moving the
+deployment region itself is a separate, larger change (would need a new
+Agent Engine resource, since reasoning engines aren't region-migratable
+in place).
+
+## Storage bucket
+
+Both the RAG source docs and this agent's Agent Engine build artifacts
+live in one shared bucket:
+
+```
+gs://luz-agentic-storage-3808ce15-44f3-447c-a037-5d5ff87df2e0
+```
+
+- `europe-west6`, `STANDARD` storage class (`RAPID` -- GCS's newer
+  zonal, lower-latency class -- isn't offered in `europe-west6` for
+  this project; tested directly, rejected for both a zonal
+  `europe-west6-a` location and a plain regional one. `STANDARD` is the
+  fastest class actually available there).
+- Uniform bucket-level access, public access prevention enforced (never
+  reachable from the public internet).
+- Soft-delete enabled, 90-day retention.
+- Layout:
+  - `agent_engine/` -- Agent Engine build artifacts (`agent_engine.pkl`,
+    `requirements.txt`, `dependencies.tar.gz`), written automatically by
+    the SDK. **`deployment/deploy.py`'s `STAGING_BUCKET` must be the
+    bare bucket root** (`gs://luz-agentic-storage-...`), not
+    `gs://luz-agentic-storage-.../agent_engine` -- the `agent_engines`
+    SDK parses `staging_bucket` as a literal bucket *name* and tries to
+    `create_bucket()` it if given a path with a slash in it, which fails
+    with `Invalid bucket name`. The SDK adds the `agent_engine/` prefix
+    inside the bucket itself.
+  - `agent_knowledge/<agent-name>/` -- per-agent knowledge/RAG source
+    docs, one subfolder per agent that uses this bucket. This agent's
+    docs are under `agent_knowledge/devops-3f9a/rag-docs/`.
+
+This bucket replaced the old per-purpose
+`klara-nonprod-agent-engine-staging-us-central1` bucket (`us-central1`,
+default settings) for devops-3f9a. That old bucket was left alone, not
+deleted -- `sba-us-central1` (the other reference agent in this repo)
+may still use it.
 
 ## What's indexed
 
@@ -71,7 +107,7 @@ someone re-runs the import. To refresh:
 # 1. Re-stage the curated doc set (same file list as above) to a local dir,
 #    then upload it, replacing what's there:
 gcloud storage rsync -r <local-staging-dir> `
-  gs://klara-nonprod-agent-engine-staging-us-central1/devops-3f9a-rag-docs
+  gs://luz-agentic-storage-3808ce15-44f3-447c-a037-5d5ff87df2e0/agent_knowledge/devops-3f9a/rag-docs
 
 # 2. Re-import (skips files already indexed; delete + re-add a RagFile via
 #    rag.delete_file if you need to force a specific file to refresh):
@@ -81,7 +117,7 @@ from vertexai import rag
 vertexai.init(project='klara-nonprod', location='europe-west6')
 rag.import_files(
     'projects/335505349498/locations/europe-west6/ragCorpora/2227030015734710272',
-    paths=['gs://klara-nonprod-agent-engine-staging-us-central1/devops-3f9a-rag-docs'],
+    paths=['gs://luz-agentic-storage-3808ce15-44f3-447c-a037-5d5ff87df2e0/agent_knowledge/devops-3f9a/rag-docs'],
 )
 "
 ```
