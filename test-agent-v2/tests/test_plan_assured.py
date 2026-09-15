@@ -326,3 +326,43 @@ async def test_assured_persists_and_resumes_rather_than_restarts(pack_bucket, mo
     assert fake.judge_calls == 1  # only ONE new round ran — the completed round was not redone
     assert any("Cover the negative path" in t for t in fake.seen)  # carried reflection re-used
     assert store.read_assured_state(bank, "run-6f2a")["accepted"] is True
+
+
+# --- chunked, resumable stepping (max_rounds) — the implement_plan idle-timeout fix ----------------
+
+async def test_implement_max_rounds_chunks_into_resumable_steps(pack_bucket, monkeypatch):
+    """max_rounds=1 runs ONE assured round per call, returning done=False while rounds remain; the
+    client re-invokes until done. Each call stays short so it never blows the client's MCP idle timeout
+    (the root cause of implement_plan erroring). Finalize (steps/feature) runs only on the last call."""
+    monkeypatch.delenv("TPD_LLM_DETAIL", raising=False)
+    monkeypatch.setenv("TPD_ASSURED_MAX_ITERS", "3")
+    bank = MemoryBank(pack_bucket)
+    await _confirmed(bank)
+    fake = full_fake_model()
+    fake.judge_json = judge_verdict(0.3)  # never clears the bar → all 3 rounds run, one per call
+
+    r1 = await implement_plan(bank, "run-6f2a", model=fake, max_rounds=1)
+    assert not r1.done and r1.quality.rounds == 1 and r1.scenarios
+    assert store.read_scenarios(bank, "run-6f2a")  # partial persisted → get_scenarios works mid-flight
+    assert fake.judge_calls == 1 and not r1.steps    # exactly one round; finalize deferred
+
+    r2 = await implement_plan(bank, "run-6f2a", model=fake, max_rounds=1)
+    assert not r2.done and r2.quality.rounds == 2
+    assert fake.judge_calls == 2  # one more round — the first was NOT redone
+
+    r3 = await implement_plan(bank, "run-6f2a", model=fake, max_rounds=1)
+    assert r3.done and r3.quality.rounds == 3  # last round → finalize
+    assert r3.steps and r3.feature and fake.judge_calls == 3
+
+
+async def test_implement_max_rounds_finalizes_immediately_when_accepted(pack_bucket, monkeypatch):
+    """A round that clears the bar finalizes on the same call (done=True) even under max_rounds=1 —
+    no needless in-progress round-trip when quality is already good."""
+    monkeypatch.delenv("TPD_LLM_DETAIL", raising=False)
+    monkeypatch.setenv("TPD_ASSURED_MAX_ITERS", "3")
+    bank = MemoryBank(pack_bucket)
+    await _confirmed(bank)
+    fake = full_fake_model()  # judge 0.9 accepts round 1
+
+    res = await implement_plan(bank, "run-6f2a", model=fake, max_rounds=1)
+    assert res.done and res.quality.accepted and res.quality.rounds == 1 and res.steps

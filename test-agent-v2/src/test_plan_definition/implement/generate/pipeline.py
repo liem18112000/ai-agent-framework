@@ -23,7 +23,8 @@ log = get_logger("implement.generate")
 
 
 async def implement_plan(bank, context_id: str, *, run_id: str = "implement", now: str = "",
-                         detail: bool = False, model=None, guidance: str = "") -> ImplementResult:
+                         detail: bool = False, model=None, guidance: str = "",
+                         max_rounds: int | None = None) -> ImplementResult:
     plan = store.read_plan(bank, context_id)
     if plan is None:
         return ImplementResult(message=f"No test plan for {context_id}; run define first.")
@@ -32,16 +33,28 @@ async def implement_plan(bank, context_id: str, *, run_id: str = "implement", no
                               "approve it (resolve open gaps) before implementing.")
 
     plan_pack = load_plan_pack(bank, context_id)
-    # test-data/steps stay behind `detail` (heuristic by default — one LLM path unless opted in).
-    test_data = await generate_test_data(plan, plan_pack, now=now, detail=detail, model=model)
+    # test-data/steps stay behind `detail` (heuristic by default — one LLM path unless opted in). On a
+    # resume (an unfinished assured pass exists) reuse the persisted set so a `detail` LLM test-data call
+    # isn't repeated on every step; persist it up front so the next step can read it back.
+    saved = store.read_assured_state(bank, context_id)
+    resuming = bool(saved.get("iterations")) and not saved.get("accepted")
+    test_data = (store.read_test_data(bank, context_id) if resuming else []) \
+        or await generate_test_data(plan, plan_pack, now=now, detail=detail, model=model)
+    store.write_test_data(bank, context_id, test_data)
     # P4 (§3.4): the assured loop (generate→judge→gate→reflect→regenerate) is ALWAYS the scenario path
     # now — no opt-in. It trades away I3 (adds the judge call per round); TPD_ASSURED_MAX_ITERS bounds it.
-    scenarios, quality = await run_assured_scenarios(bank, context_id, plan, plan_pack,
-                                                     test_data, now=now, model=model, guidance=guidance)
+    # `max_rounds` chunks it: one MCP call runs that many rounds then returns in-progress (done=False) so
+    # a single call stays under the client's tool idle timeout — the fix for implement_plan erroring.
+    scenarios, quality, pending = await run_assured_scenarios(
+        bank, context_id, plan, plan_pack, test_data, now=now, model=model, guidance=guidance,
+        max_rounds=max_rounds)
+    if pending:  # loop paused with rounds remaining — persist the partial scenarios, defer the finalize
+        store.write_scenarios(bank, context_id, scenarios)
+        return ImplementResult(plan, test_data, scenarios, quality=quality, done=False,
+                               message="Assured loop in progress — re-run implement_plan to continue.")
     steps = await generate_all_steps(scenarios, plan, plan_pack, test_data,
                                      detail=detail, model=model)
 
-    store.write_test_data(bank, context_id, test_data)
     store.write_scenarios(bank, context_id, scenarios, steps)
     store.write_steps(bank, context_id, steps)
     feature = export_features(bank, context_id) or ""

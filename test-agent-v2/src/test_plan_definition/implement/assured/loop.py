@@ -39,13 +39,20 @@ _DEGRADED_NOTE = " · generation degraded to the heuristic fallback (LLM timed o
 
 async def run_assured_scenarios(
     bank, context_id: str, plan: TestPlan, plan_pack: PlanPack, test_data: list[TestData], *,
-    now: str = "", model=None, guidance: str = "",
-) -> tuple[list[TestScenario], AssuredReport]:
-    """Run the bounded assured loop and return the best scenario set + its quality report.
+    now: str = "", model=None, guidance: str = "", max_rounds: int | None = None,
+) -> tuple[list[TestScenario], AssuredReport, bool]:
+    """Run the bounded assured loop and return ``(best scenarios, quality report, pending)``.
 
     ``guidance`` is an optional human steer (from ``implement_plan(guidance=…)``): when the loop last
     reported below-bar, passing it resumes the stuck pass — seeding the steer as the top reflection and
-    granting ``max_iters`` more rounds — so the client can course-correct the AI critique interactively."""
+    granting ``max_iters`` more rounds — so the client can course-correct the AI critique interactively.
+
+    ``max_rounds`` caps how many NEW rounds run in THIS call (None = run to completion, the today
+    behavior). When it stops with rounds still remaining, ``pending`` is True — the caller returns an
+    in-progress result and the client re-invokes to run the next round. This keeps one MCP call under
+    the client's tool idle timeout, the root cause of ``implement_plan`` erroring (whole-loop wall-clock
+    > ~300s idle ceiling). Rounds resume from ``assured.json`` — the best scenarios are read back from
+    the bank so a lower-scoring later round never displaces a better pre-pause one."""
     from common.adk import agent_model
     from common.testplan.llm.adk import build_generator_agent, run_json_agent
     from common.testplan.llm.prompts import judge_scenarios_prompt, pack_block
@@ -74,7 +81,9 @@ async def run_assured_scenarios(
         reflections = list(dict.fromkeys([guidance, *reflections]))
     cap = len(history) + max_iters if guidance else max_iters  # guidance buys `max_iters` more rounds
 
-    best_scenarios: list[TestScenario] = []
+    # on resume, restore the best scenarios the prior (paused/crashed) call persisted, so a
+    # lower-scoring later round can't displace a better earlier one (final = best across all calls).
+    best_scenarios: list[TestScenario] = store.read_scenarios(bank, context_id) if resume else []
     # seed from the resumed rounds so final_score never under-reports a better pre-crash round
     best_score = max((it.get("score", -1.0) for it in history), default=-1.0)
     best_verdict = None
@@ -86,6 +95,8 @@ async def run_assured_scenarios(
     scenarios: list[TestScenario] = []
     round_durations: list[float] = []  # cost of each round completed IN THIS run (empty on resume)
     stopped_on_budget = False
+    start_rounds = len(history)  # rounds done on entry; NEW rounds this call = len(history) - this
+    pending = False              # stopped on the per-call round budget with rounds still remaining
     for _ in range(len(history), cap):
         # PREDICTIVE budget guard: don't START a round we can't finish under the server ceiling. The
         # old post-hoc check (elapsed > budget) let round 2 begin after a ~500s round 1 (500 < 540) and
@@ -131,7 +142,7 @@ async def run_assured_scenarios(
             report = AssuredReport(iterations=history, final_score=0.0, threshold=threshold,
                                    accepted=False, reflections=reflections, note=note)
             _persist(bank, context_id, report)
-            return best_scenarios, report
+            return best_scenarios, report, False
 
         score = verdict.score()
         accepted = score >= threshold
@@ -151,11 +162,21 @@ async def run_assured_scenarios(
         if accepted:
             report.note = f"accepted at round {len(history)} (score {score:.2f} ≥ {threshold:.2f})"
             _persist(bank, context_id, report)
-            return best_scenarios or scenarios, report
+            return best_scenarios or scenarios, report, False
 
         # REFLECT — carry the judge's imperative fixes into the next generation (dedup, ordered).
         reflections = list(dict.fromkeys(reflections + verdict.reflections))
         round_durations.append(time.monotonic() - round_start)  # feeds the predictive guard above
+        if max_rounds is not None and len(history) - start_rounds >= max_rounds and len(history) < cap:
+            pending = True  # more rounds remain — return in-progress; the client re-invokes to continue
+            break
+
+    if pending:  # paused on the per-call round budget — hand back the last per-round report as in-progress
+        report.note = (f"round {len(history)}/{cap} done (best {best_score:.2f} < {threshold:.2f}) "
+                       "— more rounds pending; re-run implement to continue")
+        _persist(bank, context_id, report)
+        log.info("assured: %s", report.note)
+        return best_scenarios or scenarios, report, True
 
     reason = ("stopped early on the time budget" if stopped_on_budget
               else f"best {best_score:.2f} < {threshold:.2f} after {len(history)} round(s)")
@@ -169,7 +190,7 @@ async def run_assured_scenarios(
         reflections=reflections, note=note)
     _persist(bank, context_id, report)
     log.info("assured: %s", note)
-    return final, report
+    return final, report, False
 
 
 def _persist(bank, context_id: str, report: AssuredReport) -> None:

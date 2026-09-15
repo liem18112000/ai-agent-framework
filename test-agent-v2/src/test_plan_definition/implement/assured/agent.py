@@ -38,7 +38,7 @@ class AssuredScenarioAgent(BaseAgent):
         # test-data is an input to the loop; reuse a persisted set or derive one heuristically (no LLM).
         test_data = store.read_test_data(bank, ctx_id) or await generate_test_data(
             plan, plan_pack, now=stamp)
-        scenarios, report = await run_assured_scenarios(
+        scenarios, report, _ = await run_assured_scenarios(  # observable face runs to completion
             bank, ctx_id, plan, plan_pack, test_data, now=stamp)
         store.write_scenarios(bank, ctx_id, scenarios, [])
         verdict = "PASS" if report.accepted else "BELOW BAR"

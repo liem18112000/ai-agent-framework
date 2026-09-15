@@ -92,3 +92,4 @@ class ImplementResult:
     message: str = ""
     quality: AssuredReport | None = None
     coverage_summary: str = ""  # Q5 one-line coverage-matrix summary (full matrix persisted)
+    done: bool = True  # False = the assured loop paused mid-way (more rounds pending); re-run to continue

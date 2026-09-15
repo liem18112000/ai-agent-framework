@@ -3,6 +3,8 @@ plus the lesson capture and reply summary. Also the autonomous SequentialAgent's
 
 from __future__ import annotations
 
+import contextlib
+import os
 from dataclasses import asdict
 
 from google.adk.agents import BaseAgent
@@ -28,6 +30,28 @@ def _capture_implement(bank, context_id: str, result: ImplementResult) -> None:
                 signals=[asdict(s) for s in sigs]))
     except Exception as exc:  # noqa: BLE001 — capture must not break implement
         log.warning("implement: lesson capture skipped (%s)", exc)
+
+
+_DEFAULT_STEP_ROUNDS = 1
+
+
+def _step_rounds() -> int:
+    """Assured rounds per ``implement_plan`` call (env ``TPD_IMPLEMENT_STEP_ROUNDS``, default 1). One
+    round ≈ one generate + one (cheap) judge, well under the client's ~300s MCP tool idle timeout — the
+    client re-invokes until '[state: done]'. Set high (≈ MAX_ITERS) to restore one-shot blocking."""
+    with contextlib.suppress(KeyError, ValueError, TypeError):
+        return max(1, int(os.environ["TPD_IMPLEMENT_STEP_ROUNDS"]))
+    return _DEFAULT_STEP_ROUNDS
+
+
+def summarize_progress(result: ImplementResult) -> str:
+    """The in-progress reply when the assured loop paused with rounds remaining (``done=False``)."""
+    q = result.quality
+    rounds, score = (q.rounds, f"{q.final_score:.2f}") if q else (0, "n/a")
+    bar = f"{q.threshold:.2f}" if q else "n/a"
+    return (f"Assured loop in progress: {len(result.scenarios)} scenario(s) so far, {rounds} round(s) "
+            f"done (best score {score} vs bar {bar}). Re-run implement_plan(context_id) to continue, "
+            'or implement_plan(guidance="…") to steer the next round.')
 
 
 def summarize_implement(result: ImplementResult) -> str:
@@ -63,9 +87,13 @@ class ImplementAgent(BaseAgent):
         head, _, tail = incoming_text(ctx).partition("guidance:")  # optional steer for the next round
         bank = build_bank()
         result = await implement_plan(bank, ctx_id, run_id=f"impl-{ctx_id[:8]}", now=now(),
-                                      detail="detail" in head.lower().split(), guidance=tail.strip())
-        _capture_implement(bank, ctx_id, result)
+                                      detail="detail" in head.lower().split(), guidance=tail.strip(),
+                                      max_rounds=_step_rounds())
         if not result.scenarios:
             yield text_event(self.name, result.message or f"Nothing generated for {ctx_id}.")
             return
-        yield text_event(self.name, summarize_implement(result))
+        if not result.done:  # assured loop paused — client re-invokes to continue (multi-turn, like define)
+            yield text_event(self.name, "[state: in_progress]\n" + summarize_progress(result))
+            return
+        _capture_implement(bank, ctx_id, result)  # harvest lessons once, on the finished pass
+        yield text_event(self.name, "[state: done]\n" + summarize_implement(result))

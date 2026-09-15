@@ -35,7 +35,11 @@ def register_tools(mcp: MCPServer, session: BridgeSession) -> dict:
         Scenarios always run through the P4 assured loop (generate→judge→gate→reflect→regenerate); the
         reply carries a quality score AND the judge's per-round evaluation + criticism (the reference
         view). If it comes back BELOW BAR, re-invoke with `guidance="<your steer>"` to run another
-        round seeded by that steer. `detail=True` also puts test-data + steps on the LLM."""
+        round seeded by that steer. `detail=True` also puts test-data + steps on the LLM.
+
+        MULTI-TURN: the loop is chunked so one call stays under the MCP idle timeout. If the reply
+        starts `[state: in_progress]`, call implement_plan(context_id) again (no new args) to run the
+        next round — repeat until `[state: done]`, then get_scenarios."""
         msg = f"implement {context_id}" + (" detail" if detail else "")
         if guidance:
             msg += f"\nguidance: {guidance}"
