@@ -47,7 +47,7 @@ async def classify_in_scope(plan: TestPlan, plan_pack, *, model=None) -> set[str
 # BATCH the pack's units and generate a bounded slice per call (concurrently), then merge. Each batch's
 # output fits well under the ceiling and its own TPD_GEN_TIMEOUT_S — robust to both size and time.
 _SCEN_MAX_TOKENS = 16000
-_BATCH_UNITS = 6        # grounded units per generation call — keeps one batch's array well under the ceiling
+_BATCH_UNITS = 3        # grounded units per generation call — small so verbose real scenarios never truncate
 # ponytail: sequential (1) not concurrent. Deployed logs showed ALL 5-6 concurrent batches returning
 # empty structured-output SIMULTANEOUSLY (no exception, no timeout) → heuristic fallback → ~0.1 score;
 # concurrent in-process ADK Runners are the prime suspect. 1 = one batch at a time. Raise if proven safe.

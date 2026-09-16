@@ -132,14 +132,17 @@ def scope_classify_prompt(plan: TestPlan, summary: str, grounded) -> str:
     return (
         "You are a SCOPE CLASSIFIER for a QA test plan. From the pack nodes below, return ONLY the ids "
         "that are IN SCOPE for testing THIS ticket — the ticket's own feature and the requirements / "
-        "code / specs that directly implement it.\n"
-        "EXCLUDE (leave out): sibling or unrelated tickets, framework/meta/agent-infrastructure pages, "
-        "cross-project documentation, and anything not needed to verify THIS ticket's behaviour.\n"
+        "code / specs that DIRECTLY implement or specify it.\n"
+        "EXCLUDE by DEFAULT (leave out): OTHER Jira tickets/issues (sibling issues in the same epic — a "
+        "node about a DIFFERENT feature or ticket is out of scope even when it looks related), "
+        "framework/meta/agent-infrastructure pages, cross-project documentation, and anything not needed "
+        "to verify THIS ticket's own behaviour. Keep a node ONLY if you can name how it implements or "
+        "specifies the ticket under test; when a node is about a different ticket/feature, leave it OUT.\n"
         f"Ticket / understanding: {plan.context_id}. In-scope hints: {', '.join(plan.scope) or '(none)'}. "
         f"Out-of-scope hints: {', '.join(plan.out_of_scope) or '(none)'}.\n\n"
-        "Return ONLY a JSON object {in_scope_ids: [pack ids, verbatim]} — a SUBSET of the ids below; if "
-        "genuinely unsure about a node, keep it (better in than out). Never return an empty list if any "
-        f"node plausibly implements the ticket.\n\nPack nodes:\n{listing}\n\n{pack_block(summary)}"
+        "Return ONLY a JSON object {in_scope_ids: [pack ids, verbatim]} — a SUBSET of the ids below. Be "
+        "selective: a smaller, on-target set is better than sweeping in siblings. Never return an empty "
+        f"list — if unsure keep only the node(s) MOST specific to the ticket.\n\nPack nodes:\n{listing}\n\n{pack_block(summary)}"
     )
 
 

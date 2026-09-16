@@ -129,32 +129,32 @@ def _multi_pack(n: int) -> PlanPack:
 
 
 async def test_claude_scenarios_batches_units_and_dedups():
-    """13 grounded units → ceil(13/6)=3 generation calls (one per batch); merged output dedups by id."""
+    """13 grounded units → ceil(13/_BATCH_UNITS) generation calls (one per batch); merge dedups by id."""
     from test_plan_definition.implement.generate.llm import _BATCH_UNITS, claude_scenarios
     from tests.tpd_fakes import FakeGeneratorModel, scenarios_json
 
-    assert _BATCH_UNITS == 6
+    n_batches = -(-13 // _BATCH_UNITS)                      # ceil-div: batches for 13 units
     pack = _multi_pack(13)
-    # every batch returns the SAME two ids → 3 calls, but the merge collapses to 2 unique scenarios.
+    # every batch returns the SAME two ids → n_batches calls, but the merge collapses to 2 unique scenarios.
     fake = FakeGeneratorModel(model="fake", scenarios_json=scenarios_json(
         [{"id": "scenario:run-x:a", "title": "A", "kind": "happy", "source_refs": ["jira:U0"]},
          {"id": "scenario:run-x:b", "title": "B", "kind": "negative", "source_refs": ["jira:U1"]}]))
     scs = await claude_scenarios(_plan(), pack, [TestData(id="td", kind="mock-data")], model=fake)
-    assert fake.calls == 3                                  # 6 + 6 + 1 units → 3 batched calls
+    assert fake.calls == n_batches                          # one batched call per _BATCH_UNITS-sized slice
     assert [s.id for s in scs] == ["scenario:run-x:a", "scenario:run-x:b"]   # deduped across batches
 
 
 async def test_claude_scenarios_total_degrade_returns_none_and_wrapper_uses_full_heuristic():
     """When EVERY batch's output is invalid, claude_scenarios returns None (so the assured loop flags
     'degraded'); generate_scenarios then falls back to the whole-suite heuristic — nothing lost."""
-    from test_plan_definition.implement.generate.llm import claude_scenarios
+    from test_plan_definition.implement.generate.llm import _BATCH_UNITS, claude_scenarios
     from tests.tpd_fakes import FakeGeneratorModel
 
     pack = _multi_pack(13)
     td = [TestData(id="td", kind="mock-data")]
     bad = FakeGeneratorModel(model="fake", scenarios_json="not json")   # every batch fails schema
     assert await claude_scenarios(_plan(), pack, td, model=bad) is None
-    assert bad.calls == 3                                              # all 3 batches were attempted
+    assert bad.calls == -(-13 // _BATCH_UNITS)                         # all batches were attempted
     bad2 = FakeGeneratorModel(model="fake", scenarios_json="not json")
     scs = await generate_scenarios(_plan(), pack, td, model=bad2)
     assert scs == heuristic_scenarios(_plan(), pack, td)              # wrapper degrades to full heuristic
@@ -228,6 +228,14 @@ def test_loads_obj_tolerates_fence_and_prose():
     assert loads_obj('Here you go:\n{"a": 1}\nhope that helps') == {"a": 1}
     assert loads_obj("no json here") is None
     assert loads_obj('[1, 2, 3]') is None  # an array is not an object
+    # prose + a tiny {example} + the real payload: pick the LARGEST valid object, not the first brace span.
+    assert loads_obj('Format like {"x": 1}. Result:\n{"items": [{"id": "a"}, {"id": "b"}]}') \
+        == {"items": [{"id": "a"}, {"id": "b"}]}
+    # a } inside a string value must not truncate the object (string-aware scan)
+    assert loads_obj('{"note": "close } brace", "ok": true}') == {"note": "close } brace", "ok": True}
+    # two top-level fenced objects: the bigger one wins
+    assert loads_obj('```json\n{"a": 1}\n```\n```json\n{"a": 1, "b": 2, "c": 3}\n```') \
+        == {"a": 1, "b": 2, "c": 3}
 
 
 async def test_claude_scenarios_recovers_when_model_fences_its_json():
