@@ -5,6 +5,8 @@ inlined at their sole call sites: the P4 judge in ``assured.py``, steps in ``ste
 
 from __future__ import annotations
 
+import asyncio
+
 from common.adk import agent_model
 from common.testplan.llm.adk import build_generator_agent, run_json_agent
 from common.testplan.llm.prompts import pack_block, scenarios_prompt
@@ -14,26 +16,56 @@ from test_plan_definition.monitoring import get_logger
 
 log = get_logger("llm.implement")
 
-# The prompt asks for full behaviour×kind coverage ("no cap, aim for 100%"), so the JSON array is large.
-# At 6000 the output truncated on rich packs → schema-invalid → silent heuristic fallback (empty-step,
-# per-node scenarios scoring ~0.08). Keep it ONE call (I3 / call-count contract) but give it real head-room.
+# The prompt asks for full behaviour×kind coverage ("no cap, aim for 100%"), so a single call's JSON
+# array overruns the model's max output on a rich pack (41 units × 7 kinds ≈ 43k tokens ≫ 16k) → the
+# array truncates → schema-invalid → silent heuristic fallback (per-node stubs scoring ~0.09). So we
+# BATCH the pack's units and generate a bounded slice per call (concurrently), then merge. Each batch's
+# output fits well under the ceiling and its own TPD_GEN_TIMEOUT_S — robust to both size and time.
 _SCEN_MAX_TOKENS = 16000
+_BATCH_UNITS = 6        # grounded units per generation call — keeps one batch's array well under the ceiling
+_BATCH_CONCURRENCY = 5  # max in-flight Vertex calls (single Cloud Run instance; bounds fan-out + quota)
 
 
 async def claude_scenarios(plan: TestPlan, plan_pack, test_data: list[TestData], *,
                            now: str = "", model=None,
                            reflections: list[str] | None = None) -> list[TestScenario] | None:
+    """Generate the scenario suite via Claude-on-Vertex, batched over the pack's grounded units so no
+    single call's array can truncate. Returns None only when unconfigured; a batch whose model output
+    is empty/invalid degrades to the heuristic for THAT batch's units alone (never the whole suite)."""
+    from test_plan_definition.implement.generate.scenarios import heuristic_scenarios
+
     model = model or agent_model(max_tokens=_SCEN_MAX_TOKENS)
     if model is None:
         return None
     summary = plan_pack.summary_text()
-    agent = build_generator_agent(
-        name="tpd_scenario_gen", system=pack_block(summary),
-        output_schema=Scenarios, output_key="tpd_scenarios", model=model)
-    data = await run_json_agent(agent, output_key="tpd_scenarios",
-                                user=scenarios_prompt(plan, summary, test_data, reflections,
-                                                      include_context=False))
-    if not data:
-        log.warning("no scenarios from generator; falling back to heuristic")
-        return None
-    return Scenarios(**data).to_scenarios(plan, now) or None
+    units = [n.id for n in plan_pack.pack.grounded]
+    # No grounded units (thin/empty pack) → one whole-pack call, unchanged behaviour (batch id list None).
+    batches: list[list[str] | None] = [units[i:i + _BATCH_UNITS]
+                                       for i in range(0, len(units), _BATCH_UNITS)] or [None]
+    sem = asyncio.Semaphore(_BATCH_CONCURRENCY)
+
+    async def _batch(ids: list[str] | None) -> tuple[list[TestScenario], bool]:
+        async with sem:
+            agent = build_generator_agent(
+                name="tpd_scenario_gen", system=pack_block(summary),
+                output_schema=Scenarios, output_key="tpd_scenarios", model=model)
+            data = await run_json_agent(agent, output_key="tpd_scenarios",
+                                        user=scenarios_prompt(plan, summary, test_data, reflections,
+                                                              include_context=False, focus_units=ids))
+        if data and (scs := Scenarios(**data).to_scenarios(plan, now)):
+            return scs, True
+        log.warning("scenarios batch %s empty/invalid; heuristic fallback for this batch", ids or "(whole)")
+        return heuristic_scenarios(plan, plan_pack, test_data, now=now,
+                                   only_ids=set(ids) if ids else None), False
+
+    results = await asyncio.gather(*(_batch(b) for b in batches))  # gather preserves batch order
+    if not any(ok for _, ok in results):
+        return None  # every batch degraded → let the caller flag 'degraded' + use its full heuristic
+    merged: list[TestScenario] = []
+    seen: set[str] = set()
+    for scs, _ok in results:  # partial degrade: keep the LLM batches, heuristic-fill the failed ones
+        for s in scs:
+            if s.id not in seen:
+                seen.add(s.id)
+                merged.append(s)
+    return merged or None

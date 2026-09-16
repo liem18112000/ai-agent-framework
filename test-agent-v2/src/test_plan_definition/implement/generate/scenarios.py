@@ -51,7 +51,8 @@ async def generate_scenarios(
 
 
 def heuristic_scenarios(
-    plan: TestPlan, plan_pack: PlanPack, test_data: list[TestData], *, now: str = ""
+    plan: TestPlan, plan_pack: PlanPack, test_data: list[TestData], *, now: str = "",
+    only_ids: set[str] | None = None,
 ) -> list[TestScenario]:
     ctx = plan.context_id
     method = plan.methodology[0] if plan.methodology else "api"
@@ -59,8 +60,12 @@ def heuristic_scenarios(
     kinds = _coverage_kinds(plan)
 
     # Q2: no cap — enumerate EVERY grounded note (fall back to scope only when the pack is empty).
+    # `only_ids` narrows to one generation batch's units — the per-batch degrade path in the LLM
+    # generator, so a single failed batch falls back for its units alone, not the whole suite.
     targets = ([(n.id, n.title) for n in plan_pack.pack.grounded]
               or [(s, s) for s in plan.scope])
+    if only_ids is not None:
+        targets = [t for t in targets if t[0] in only_ids]
 
     return [
         TestScenario(

@@ -120,6 +120,46 @@ async def test_generate_scenarios_uses_llm_agent_then_falls_back():
     assert scs2 == heuristic_scenarios(_plan(), _plan_pack(), [TestData(id="td", kind="mock-data")])
 
 
+def _multi_pack(n: int) -> PlanPack:
+    """A pack with ``n`` grounded notes — enough to force the generator to batch (>_BATCH_UNITS)."""
+    from common.models.graph import Note
+    notes = [Note(id=f"jira:U{i}", type="jira", title=f"Unit {i}", synopsis=f"unit {i} does a thing")
+             for i in range(n)]
+    return PlanPack(pack=Pack(context_id="run-x", seed="LUZ-1", notes=notes), understanding="X.")
+
+
+async def test_claude_scenarios_batches_units_and_dedups():
+    """13 grounded units → ceil(13/6)=3 generation calls (one per batch); merged output dedups by id."""
+    from test_plan_definition.implement.generate.llm import _BATCH_UNITS, claude_scenarios
+    from tests.tpd_fakes import FakeGeneratorModel, scenarios_json
+
+    assert _BATCH_UNITS == 6
+    pack = _multi_pack(13)
+    # every batch returns the SAME two ids → 3 calls, but the merge collapses to 2 unique scenarios.
+    fake = FakeGeneratorModel(model="fake", scenarios_json=scenarios_json(
+        [{"id": "scenario:run-x:a", "title": "A", "kind": "happy", "source_refs": ["jira:U0"]},
+         {"id": "scenario:run-x:b", "title": "B", "kind": "negative", "source_refs": ["jira:U1"]}]))
+    scs = await claude_scenarios(_plan(), pack, [TestData(id="td", kind="mock-data")], model=fake)
+    assert fake.calls == 3                                  # 6 + 6 + 1 units → 3 batched calls
+    assert [s.id for s in scs] == ["scenario:run-x:a", "scenario:run-x:b"]   # deduped across batches
+
+
+async def test_claude_scenarios_total_degrade_returns_none_and_wrapper_uses_full_heuristic():
+    """When EVERY batch's output is invalid, claude_scenarios returns None (so the assured loop flags
+    'degraded'); generate_scenarios then falls back to the whole-suite heuristic — nothing lost."""
+    from test_plan_definition.implement.generate.llm import claude_scenarios
+    from tests.tpd_fakes import FakeGeneratorModel
+
+    pack = _multi_pack(13)
+    td = [TestData(id="td", kind="mock-data")]
+    bad = FakeGeneratorModel(model="fake", scenarios_json="not json")   # every batch fails schema
+    assert await claude_scenarios(_plan(), pack, td, model=bad) is None
+    assert bad.calls == 3                                              # all 3 batches were attempted
+    bad2 = FakeGeneratorModel(model="fake", scenarios_json="not json")
+    scs = await generate_scenarios(_plan(), pack, td, model=bad2)
+    assert scs == heuristic_scenarios(_plan(), pack, td)              # wrapper degrades to full heuristic
+
+
 def test_pass_metric_prefers_the_non_coverage_metric():
     assert _pass_metric(_plan()) == "End-state verified"
 

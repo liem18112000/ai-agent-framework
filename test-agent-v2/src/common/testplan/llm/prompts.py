@@ -123,12 +123,22 @@ def brief_prompt(plan: TestPlan, summary: str, open_questions: list[str], *,
 
 
 def scenarios_prompt(plan: TestPlan, summary: str, test_data: list[TestData],
-                     reflections: list[str] | None = None, *, include_context: bool = True) -> str:
+                     reflections: list[str] | None = None, *, include_context: bool = True,
+                     focus_units: list[str] | None = None) -> str:
     # Q2: the base four ∪ the plan's elicited extras (additive, honours happy-only) — the single
     # resolver, so the LLM prompt can never be asked for a defaults-less kind set.
     kinds = effective_kinds(plan)
     data_ids = ", ".join(d.id for d in test_data) or "(none)"
     methods = ", ".join(plan.test_design) or "standard technique per behaviour"
+    # A "generate the whole uncapped suite in ONE call" ask overruns the model's max output on a rich
+    # pack → the JSON array truncates → schema-invalid → silent heuristic fallback. The caller batches
+    # the pack's units and passes one batch here per call; `focus_units` scopes THIS call's output to a
+    # handful of ids so the array always fits. The full pack still rides in the cached prefix (context).
+    focus = ""
+    if focus_units:
+        focus = ("\nGENERATE ONLY for these pack unit ids — one scenario per applicable kind for EACH, "
+                 "and NONE for any id not listed here (the rest of the pack is context to draw on, not "
+                 f"to cover in this call):\n{', '.join(focus_units)}\n")
     body = (
         "You are the QA Testing Agent generating TEST SCENARIOS from a confirmed plan.\n"
         f"Methodology: {', '.join(plan.methodology)}. Pass metric(s): {', '.join(plan.metrics)}.\n"
@@ -140,7 +150,8 @@ def scenarios_prompt(plan: TestPlan, summary: str, test_data: list[TestData],
         "- For EACH acceptance criterion / behaviour in the pack, generate a scenario for EACH listed "
         "kind that applies (skip a kind only when genuinely inapplicable to that behaviour). Emit as "
         "MANY cases per kind as the test-design method yields — there is NO cap; aim to cover 100%.\n"
-        "- Each scenario MUST cite the note/insight id it covers in source_refs.\n\n"
+        "- Each scenario MUST cite the note/insight id it covers in source_refs.\n"
+        + focus + "\n"
         "Return ONLY a JSON array; each item: {id, title, kind, "
         "methodology, description (one sentence: what it verifies), rationale (why it matters), "
         "preconditions:[], data_refs:[], source_refs:[]}. "
