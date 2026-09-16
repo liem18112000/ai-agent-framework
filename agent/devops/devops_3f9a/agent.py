@@ -29,11 +29,13 @@ from .tools.gke_tools import (
     scale_deployment,
 )
 
-# RAG corpus of LUZ ops repo docs (agent docs, gcp-* domain runbooks,
-# terraform/kustomize READMEs) -- see agent/devops/RAG.md for how this
+# Production RAG corpus of LUZ ops repo docs (agent docs, gcp-* domain
+# runbooks, terraform/kustomize READMEs) -- Scaled-tier backend, docs
+# parsed with an LLM parser (not naive text-splitting) for better
+# retrieval over tables/structure. See agent/devops/RAG.md for how this
 # corpus was built and how to refresh it.
 _RAG_CORPUS = (
-    "projects/335505349498/locations/europe-west6/ragCorpora/2227030015734710272"
+    "projects/335505349498/locations/europe-west6/ragCorpora/5148740273991319552"
 )
 
 _ops_docs_retrieval = VertexAiRagRetrieval(
@@ -47,6 +49,8 @@ _ops_docs_retrieval = VertexAiRagRetrieval(
         "cluster/service context instead of guessing."
     ),
     rag_corpora=[_RAG_CORPUS],
+    similarity_top_k=5,
+    vector_distance_threshold=0.5,
 )
 
 # Read-only tools -- no confirmation needed.

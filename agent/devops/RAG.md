@@ -8,10 +8,40 @@ instead of guessing.
 ## Corpus
 
 ```
-projects/335505349498/locations/europe-west6/ragCorpora/2227030015734710272
+projects/335505349498/locations/europe-west6/ragCorpora/5148740273991319552
 ```
 
-Referenced as `_RAG_CORPUS` in `devops_3f9a/agent.py`.
+Referenced as `_RAG_CORPUS` in `devops_3f9a/agent.py`. Display name
+`devops-3f9a-corpus`. Production config:
+
+- **Scaled tier** managed-DB backend (not `Basic`, the default/dev
+  tier) -- set at the region level via
+  `rag.update_rag_engine_config(..., rag_managed_db_config=RagManagedDbConfig(tier=Scaled()))`
+  for `europe-west6` before creating the corpus. Tier is a
+  region/project-wide setting, not a per-corpus one -- every corpus
+  created in `europe-west6` for this project now provisions on the
+  Scaled tier.
+- Embedding model pinned explicitly to `text-embedding-005` via
+  `backend_config=RagVectorDbConfig(rag_embedding_model_config=...)` on
+  `create_corpus` (this was already the default, pinning it just makes
+  it explicit and stable against future default changes).
+- Ingested with an **LLM parser** (`llm_parser=LlmParserConfig(model_name=".../gemini-2.5-flash")`
+  on `import_files`) instead of naive text-chunking -- a Gemini call
+  parses each document before chunking/embedding, which handles
+  markdown tables and structure (e.g. the CIDR and cluster-inventory
+  tables in the indexed docs) far better than a plain text splitter.
+  Slower to import (one LLM call per doc) but a real quality
+  improvement for docs with tabular/structured content.
+- `VertexAiRagRetrieval` in `agent.py` sets explicit
+  `similarity_top_k=5` and `vector_distance_threshold=0.5` rather than
+  leaving retrieval tuning at SDK defaults.
+
+**Superseded corpora, in order:** `us-west1` (workaround for a region
+restriction, migrated away) -> `europe-west6` display name
+`devops-3f9a-ops-docs` (Basic tier, plain chunking, `ragCorpora/2227030015734710272`,
+deleted) -> a first `devops-3f9a-corpus` attempt on Scaled tier
+(`ragCorpora/7454583283205013504`) whose import got permanently stuck,
+deleted and recreated -> the current corpus above.
 
 **Why `europe-west6` (Zurich):** LUZ's own workloads (the `klara-nonprod`
 GKE cluster itself, etc.) run in `europe-west6`, and EU/Swiss data
@@ -109,15 +139,19 @@ someone re-runs the import. To refresh:
 gcloud storage rsync -r <local-staging-dir> `
   gs://luz-agentic-storage-3808ce15-44f3-447c-a037-5d5ff87df2e0/agent_knowledge/devops-3f9a/rag-docs
 
-# 2. Re-import (skips files already indexed; delete + re-add a RagFile via
-#    rag.delete_file if you need to force a specific file to refresh):
+# 2. Re-import with the LLM parser (skips files already indexed; delete
+#    + re-add a RagFile via rag.delete_file if you need to force a
+#    specific file to refresh):
 python -c "
 import vertexai
 from vertexai import rag
 vertexai.init(project='klara-nonprod', location='europe-west6')
 rag.import_files(
-    'projects/335505349498/locations/europe-west6/ragCorpora/2227030015734710272',
+    'projects/335505349498/locations/europe-west6/ragCorpora/5148740273991319552',
     paths=['gs://luz-agentic-storage-3808ce15-44f3-447c-a037-5d5ff87df2e0/agent_knowledge/devops-3f9a/rag-docs'],
+    llm_parser=rag.LlmParserConfig(
+        model_name='projects/klara-nonprod/locations/europe-west6/publishers/google/models/gemini-2.5-flash',
+    ),
 )
 "
 ```
@@ -136,6 +170,33 @@ import completes server-side -- this happened importing 68 files into
 `len(list(rag.list_files(corpus_name)))` before retrying or falling back
 to per-file import, since a retry against files that already imported
 just wastes time re-embedding them.
+
+**A stuck import can permanently wedge a corpus.** While building the
+current corpus, a plain-chunking `import_files` call left an
+`ImportRagFilesOperationMetadata` LRO stuck at `done: False` indefinitely
+(polled directly via
+`aiplatform_v1.VertexRagDataServiceClient(...).transport.operations_client.get_operation(op_name)`
+-- confirmed via both the API and the Cloud Console corpus page, which
+showed the corpus as "Ready" with 0 files and *no* visible in-progress
+import at all). This happened even after deleting all the files that
+import had created (`rag.delete_file` on everything in
+`rag.list_files`) -- the underlying import operation itself doesn't
+clear, and the corpus refuses any new `import_files` call with `400
+FailedPrecondition: There are other operations running on the
+RagCorpus` for as long as that stale operation exists. Waited 60+
+minutes with zero change. There's no documented way to cancel or clear
+a stuck import operation directly.
+
+The only fix found: **delete the whole corpus and recreate it** (`rag.delete_corpus`
+then `rag.create_corpus` with the same config) -- cheap since a corpus
+with 0 files has nothing to lose, but means the corpus's resource name
+changes, so anything referencing the old ID (`agent.py`'s `_RAG_CORPUS`)
+needs updating. If a future import ever gets stuck again with real data
+already in the corpus, deleting files individually first (they're
+independent of the stuck operation) before deleting/recreating the
+corpus preserves nothing extra -- there's no known partial-recovery path,
+so treat "stuck operation" as corpus-destroying and plan the refresh
+accordingly.
 
 ## Vertex AI RAG Engine config note
 
