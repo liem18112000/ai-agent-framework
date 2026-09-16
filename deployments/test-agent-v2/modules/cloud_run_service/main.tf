@@ -124,9 +124,13 @@ resource "google_cloud_run_v2_service" "this" {
               path = containers.value.liveness_probe_http_path
               port = containers.value.probe_port
             }
+            # Grace = period × failure_threshold. The implement generation round (LLM generate + judge,
+            # each bounded by TPD_GEN_TIMEOUT_S=180s) can hold the request handler far longer than the
+            # old 90s grace, so a legitimately long generation tripped liveness and Cloud Run killed the
+            # instance mid-request (ERROR_TIMEOUT). 30s × 15 = 450s grace, still < the 600s request timeout.
             period_seconds    = 30
-            timeout_seconds   = 3
-            failure_threshold = 3
+            timeout_seconds   = 5
+            failure_threshold = 15
           }
         }
       }
