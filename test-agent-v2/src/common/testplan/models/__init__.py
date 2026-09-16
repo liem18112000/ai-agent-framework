@@ -16,6 +16,7 @@ from common.testplan.models.plan import (
 )
 from common.testplan.models.scenario import (
     BOUNDARY,
+    DEFAULT_KINDS,
     ERROR,
     FIXTURE,
     HAPPY,
@@ -28,6 +29,7 @@ from common.testplan.models.scenario import (
     TestData,
     TestScenario,
     TestStep,
+    effective_kinds,
 )
 
 __all__ = [
@@ -35,6 +37,7 @@ __all__ = [
     "BOUNDARY",
     "CONFIRMED",
     "DECISION",
+    "DEFAULT_KINDS",
     "DRAFT",
     "ERROR",
     "FIXTURE",
@@ -56,4 +59,5 @@ __all__ = [
     "TestPlanRun",
     "TestScenario",
     "TestStep",
+    "effective_kinds",
 ]

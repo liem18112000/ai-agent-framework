@@ -9,6 +9,7 @@ from __future__ import annotations
 import html as _html
 
 from common.testplan import memory as store
+from common.testplan.models import effective_kinds
 
 # kind -> css chip class (unknown kinds fall back to "other")
 _KIND_CLASS = {
@@ -201,7 +202,7 @@ def build_report_html(bank, context_id: str) -> str:
     scope = "".join(f"<li>{_e(x)}</li>" for x in (plan.scope if plan else []))
     oos = "".join(f"<li>{_e(x)}</li>" for x in (plan.out_of_scope if plan else []))
     method = _e(", ".join(plan.methodology) if plan else "")
-    kinds = _e(", ".join(plan.test_kinds) if plan and plan.test_kinds else "happy, negative, boundary, error")
+    kinds = _e(", ".join(effective_kinds(plan)) if plan else "happy, negative, boundary, error")
 
     return _SHELL.format(
         ctx=_e(context_id), n=len(scenarios), method=method or "&mdash;", kinds=kinds,

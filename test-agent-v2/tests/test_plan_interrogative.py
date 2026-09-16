@@ -10,7 +10,7 @@ from common.interrogate.round.test_design import recommend_methods
 from common.memory import MemoryBank
 from common.models import Note
 from common.testplan import memory as store
-from common.testplan.models import CONFIRMED, ROUNDS, TestData, TestPlan
+from common.testplan.models import CONFIRMED, ROUNDS, TestData, TestPlan, effective_kinds
 from common.testplan.pack import PlanPack
 from test_plan_definition.define import define
 from test_plan_definition.implement.generate.scenarios import heuristic_scenarios
@@ -56,11 +56,12 @@ async def test_define_populates_test_design_in_the_plan(pack_bucket):
 # --- Q2: open, uncapped kind taxonomy ---------------------------------------------------------
 
 def test_open_kind_taxonomy_flows_into_scenarios():
-    plan = _plan(test_kinds=["happy", "security", "performance"])
+    plan = _plan(test_kinds=["security", "performance"])
     pack = _pack_with("Login", "Checkout")
     scs = heuristic_scenarios(plan, pack, [TestData(id="td", kind="mock-data")])
     kinds = {s.kind for s in scs}
-    assert kinds == {"happy", "security", "performance"}  # user-added kinds, not the fixed four
+    assert {"security", "performance"} <= kinds  # user-added kinds flow through
+    assert {"happy", "negative", "boundary", "error"} <= kinds  # …ADDED to the base four, never replacing them
     assert any("security" in s.title for s in scs)
 
 
@@ -109,6 +110,29 @@ async def test_implement_session_updates_plan_test_kinds(pack_bucket):
     assert store.read_implement_state(bank, "run-6f2a").get("done") is True
     assert store.read_implement_decisions(bank, "run-6f2a")
     assert "Implement design brief" in (store.read_implement_brief(bank, "run-6f2a") or "")
+
+
+# --- regression: a mangled/collapsed test_kinds must never drop the base four ------------------
+# The LUZ-158230 failure: the implement guidance fold-in collapsed test_kinds to ["performance"]
+# (empty test_kinds + a steer mentioning "performance"), and `test_kinds or defaults` REPLACED the
+# four, so the whole suite was 41 all-"performance" stubs (0 happy / 0 negative). `effective_kinds`
+# makes the taxonomy ADDITIVE, so the base four survive any single-kind mangling.
+
+def test_effective_kinds_unions_defaults_never_replaces():
+    assert effective_kinds(_plan(test_kinds=["performance"])) == \
+        ["happy", "negative", "boundary", "error", "performance"]
+    # empty test_kinds → exactly the four
+    assert effective_kinds(_plan()) == ["happy", "negative", "boundary", "error"]
+    # happy-only (declared in metrics) is the one intentional collapse
+    happy_only = TestPlan(id="p", context_id="c", metrics=["happy only"], test_kinds=["performance"])
+    assert effective_kinds(happy_only) == ["happy"]
+
+
+def test_heuristic_keeps_defaults_when_test_kinds_collapsed():
+    plan = _plan(test_kinds=["performance"])  # the collapsed state that produced the garbage suite
+    scs = heuristic_scenarios(plan, _pack_with("Import ZIP"), [])
+    kinds = {s.kind for s in scs}
+    assert {"happy", "negative", "boundary", "error"} <= kinds and "performance" in kinds
 
 
 async def test_implement_session_refuses_without_confirmed_plan(pack_bucket):

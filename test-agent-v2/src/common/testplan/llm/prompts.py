@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from common.testplan.models import ROUND_PREFIX, TestData, TestPlan, TestScenario
+from common.testplan.models import ROUND_PREFIX, TestData, TestPlan, TestScenario, effective_kinds
 
 ROUND_FOCUS = {
     "methodology": (
@@ -124,10 +124,9 @@ def brief_prompt(plan: TestPlan, summary: str, open_questions: list[str], *,
 
 def scenarios_prompt(plan: TestPlan, summary: str, test_data: list[TestData],
                      reflections: list[str] | None = None, *, include_context: bool = True) -> str:
-    metrics = " ".join(plan.metrics).lower()
-    happy_only = "happy only" in metrics or "happy-only" in metrics
-    # Q2: the kinds come from the plan's elicited, OPEN taxonomy (test_kinds) when set — never a fixed 4.
-    kinds = plan.test_kinds or (["happy"] if happy_only else ["happy", "negative", "boundary", "error"])
+    # Q2: the base four ∪ the plan's elicited extras (additive, honours happy-only) — the single
+    # resolver, so the LLM prompt can never be asked for a defaults-less kind set.
+    kinds = effective_kinds(plan)
     data_ids = ", ".join(d.id for d in test_data) or "(none)"
     methods = ", ".join(plan.test_design) or "standard technique per behaviour"
     body = (

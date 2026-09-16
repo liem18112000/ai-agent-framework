@@ -13,6 +13,23 @@ NEGATIVE = "negative"
 BOUNDARY = "boundary"
 ERROR = "error"
 
+DEFAULT_KINDS = (HAPPY, NEGATIVE, BOUNDARY, ERROR)
+
+
+def effective_kinds(plan: TestPlan) -> list[str]:
+    """The kinds a plan must cover: the base four ∪ any elicited extras (``test_kinds``). ADDITIVE —
+    the four defaults are a seed the open taxonomy EXTENDS, never replaces. The old ``test_kinds or
+    defaults`` REPLACED them, so a single mangled kind (e.g. the implement fold-in collapsing
+    ``test_kinds`` to ``["performance"]`` when it was empty) silently dropped happy/negative/boundary/
+    error and produced a defaults-less garbage suite. ``metrics`` declaring happy-only is the one
+    intentional collapse. Single source of truth for the heuristic generator, the LLM prompt, the
+    coverage matrix, and the HTML report."""
+    metrics = " ".join(plan.metrics or []).lower()
+    if "happy only" in metrics or "happy-only" in metrics:
+        return [HAPPY]
+    return list(dict.fromkeys([*DEFAULT_KINDS, *(plan.test_kinds or [])]))
+
+
 MOCK_DATA = "mock-data"
 TEST_ACCOUNT = "test-account"
 FIXTURE = "fixture"

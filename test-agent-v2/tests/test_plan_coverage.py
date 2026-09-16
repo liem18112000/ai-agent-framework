@@ -29,6 +29,8 @@ def _sc(sid: str, kind: str, ref: str, title: str = "") -> TestScenario:
 
 
 def test_requirement_kind_coverage_traceability_and_gaps():
+    # test_kinds is ADDITIVE on the base four (effective_kinds), so the denominator is 2 units × 4
+    # kinds = 8 cells — the same kind set generation covers, so coverage can't under/over-count.
     plan = _plan(test_kinds=["happy", "negative"])
     pack = _pack(Note(id="jira:A", type="note", title="Login"),
                  Note(id="jira:B", type="note", title="Checkout"))
@@ -36,12 +38,12 @@ def test_requirement_kind_coverage_traceability_and_gaps():
                  _sc("s3", "happy", "jira:B")]
     m = build_coverage_matrix(None, "run-x", plan=plan, pack=pack, scenarios=scenarios)
 
-    assert m.requirement_cells == 4 and m.requirement_cells_covered == 3  # A:{h,n}, B:{h}
-    assert m.requirement_pct == 75.0
+    assert m.requirement_cells == 8 and m.requirement_cells_covered == 3  # A:{h,n}, B:{h} of {h,n,b,e}
+    assert m.requirement_pct == 37.5
     assert m.covered["jira:A"] == ["happy", "negative"]
-    # the one gap is B missing the negative kind
+    # B covered only happy → missing the other three kinds
     gap = next(g for g in m.gaps if g["id"] == "jira:B")
-    assert gap["missing"] == ["negative"]
+    assert gap["missing"] == ["negative", "boundary", "error"]
     assert not m.has_codegraph  # no codegraph note in the pack
 
 

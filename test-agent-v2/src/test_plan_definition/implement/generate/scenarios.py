@@ -11,13 +11,14 @@ from common.testplan.models import (
     TestData,
     TestPlan,
     TestScenario,
+    effective_kinds,
 )
 from common.testplan.pack import PlanPack
 
-# Q2: the four defaults are only a SEED — the kind taxonomy is open. `plan.test_kinds` (elicited in the
-# implement `case-design` round) overrides it, so user-added kinds (security, performance, concurrency, …)
-# flow straight through. There is NO cap on kinds, and NO cap on notes/cases (§ report Q2).
-_DEFAULT_KINDS = (HAPPY, NEGATIVE, BOUNDARY, ERROR)
+# Q2: the four defaults are only a SEED — the kind taxonomy is open and ADDITIVE. `effective_kinds`
+# unions the elicited `plan.test_kinds` (case-design round) on top of the four, so user-added kinds
+# (security, performance, concurrency, …) flow through WITHOUT ever dropping the base four. No cap on
+# kinds, no cap on notes/cases (§ report Q2).
 _KIND_SUFFIX = {
     HAPPY: "happy path",
     NEGATIVE: "negative — invalid/unauthorized input is rejected",
@@ -33,12 +34,9 @@ _KIND_RATIONALE = {
 
 
 def _coverage_kinds(plan: TestPlan) -> tuple[str, ...]:
-    """The kinds to cover: the plan's elicited `test_kinds` if any (open taxonomy), else the four
-    defaults — or just happy when the metrics call for happy-only. Never a closed set."""
-    if plan.test_kinds:
-        return tuple(plan.test_kinds)
-    metrics = " ".join(plan.metrics).lower()
-    return (HAPPY,) if "happy only" in metrics or "happy-only" in metrics else _DEFAULT_KINDS
+    """The kinds to cover: the base four ∪ the plan's elicited extras (additive, never a closed set),
+    or just happy when the metrics call for happy-only. See ``effective_kinds`` — the single resolver."""
+    return tuple(effective_kinds(plan))
 
 
 async def generate_scenarios(

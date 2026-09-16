@@ -20,8 +20,9 @@ from dataclasses import asdict, dataclass, field
 
 from common.codegraph.store import read_registry
 from common.models import CODEGRAPH
+from common.testplan.models import DEFAULT_KINDS as _DEFAULT_KINDS
+from common.testplan.models import effective_kinds
 
-_DEFAULT_KINDS = ("happy", "negative", "boundary", "error")
 _WORD = re.compile(r"[a-z0-9]+")
 
 
@@ -107,7 +108,7 @@ def build_coverage_matrix(bank, context_id: str, *, plan=None, pack=None,
     pack = pack if pack is not None else load_plan_pack(bank, context_id).pack
     scenarios = scenarios if scenarios is not None else store.read_scenarios(bank, context_id)
 
-    kinds = list(plan.test_kinds) if (plan and plan.test_kinds) else list(_DEFAULT_KINDS)
+    kinds = effective_kinds(plan) if plan else list(_DEFAULT_KINDS)
     req_units = _requirement_units(pack)
     code_units = _code_units(bank, pack)
     m = CoverageMatrix(context_id=context_id, kinds=kinds, units=req_units + code_units,
