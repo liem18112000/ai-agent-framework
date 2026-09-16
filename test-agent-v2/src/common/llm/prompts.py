@@ -83,15 +83,20 @@ def question_prompt(pack: Pack, round_name: str, *, include_context: bool = True
 
 
 def understanding_prompt(
-    pack: Pack, insights: list[Insight], open_questions: list[Question], confidence: str
+    pack: Pack, insights: list[Insight], open_questions: list[Question], confidence: str,
+    deferred: list[Question] | None = None,
 ) -> str:
     """Claude-on-Vertex prompt to restate the agent's understanding for a human to confirm."""
     decided = "\n".join(f"- {i.statement} ({i.answered_by})" for i in insights) or "(none)"
     opens = "\n".join(f"- {q.question}" for q in open_questions) or "(none)"
+    # The 'Out/deferred' heading needs the deferred questions behind it — the heuristic sibling renders
+    # them, so the LLM brief must too, else it silently hides gaps the agent chose not to resolve.
+    dfr = "\n".join(f"- {q.question}" for q in (deferred or [])) or "(none)"
     return (
         "Restate, in plain language for a human to confirm, what the QA Testing Agent now "
         f"understands. Overall confidence is '{confidence}'. Use these headings: Problem, "
         "In scope, Out/deferred, Settled decisions, Open gaps.\n\n"
         f"Context pack:\n{pack.summary_text()}\n\n"
-        f"Settled decisions:\n{decided}\n\nOpen gaps:\n{opens}\n"
+        f"Settled decisions:\n{decided}\n\nDeferred (out of scope for now):\n{dfr}\n\n"
+        f"Open gaps:\n{opens}\n"
     )

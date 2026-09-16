@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 import os
 from collections.abc import Awaitable, Callable
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 from common.interrogate.answers import ingest
 from common.interrogate.insight import assumption_from_self_answer, distill_answer
@@ -13,7 +13,16 @@ from common.interrogate.pack import load_pack
 from common.interrogate.questions import generate_round
 from common.interrogate.understanding import restate
 from common.memory.serialize import question_from_dict
-from common.models import ROUNDS, Insight, Question, RefinementRun, RefineResult
+from common.models import (
+    INSIGHT,
+    ROUNDS,
+    Insight,
+    Note,
+    Pack,
+    Question,
+    RefinementRun,
+    RefineResult,
+)
 from common.monitoring import get_logger
 
 log = get_logger("refine.loop")
@@ -70,7 +79,8 @@ class RefineSession:
             if not self._pending and not self._start_new_pass():
                 return None
             rnd = self._pending.pop(0)
-            qs = generate_round(self.pack, rnd, max_questions=self.max_questions, generator=self.generator)
+            qs = generate_round(self._pack_for_round(), rnd, max_questions=self.max_questions,
+                                generator=self.generator)
             for q in qs:
                 if q.status == "self-answered":
                     self._record_insight(assumption_from_self_answer(q, self.pack, run_id=self.run_id, now=self.now))
@@ -177,6 +187,19 @@ class RefineSession:
             log.info("starting refine pass %d", self._pass)
             return True
         return False
+
+    def _pack_for_round(self) -> Pack:
+        """The pack the round generator + critic see, overlaid with THIS session's committed insights
+        as INSIGHT notes. Later rounds are told to 'build on the committed business answers', but those
+        insights are only written to the graph at finalize and load_pack filters INSIGHT nodes out — so
+        without this overlay the technical/QA rounds reason from decisions they cannot see. Rendered by
+        summary_text's 'Already decided' section; a no-op (returns self.pack) when nothing's committed."""
+        if not self.insights:
+            return self.pack
+        have = {n.id for n in self.pack.notes}
+        extra = [Note(id=ins.id, type=INSIGHT, title=ins.statement[:200], synopsis=ins.rationale)
+                 for ins in self.insights if ins.id not in have]
+        return replace(self.pack, notes=[*self.pack.notes, *extra]) if extra else self.pack
 
     def _add_insights(self, graph) -> None:
         for ins in self.insights:

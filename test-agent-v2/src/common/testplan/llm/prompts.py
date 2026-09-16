@@ -114,12 +114,25 @@ def brief_prompt(plan: TestPlan, summary: str, open_questions: list[str], *,
         "Test-design method, In scope, Out of scope, Passed means, Open questions.\n\n"
         f"Methodology: {', '.join(plan.methodology)}\n"
         f"Test-design method: {', '.join(plan.test_design) or '(default per behaviour)'}\n"
+        f"Test kinds: {', '.join(effective_kinds(plan))}\n"
         f"In scope: {', '.join(plan.scope) or '(none)'}\n"
         f"Out of scope: {', '.join(plan.out_of_scope) or '(none)'}\n"
         f"Passed means: {', '.join(plan.metrics) or '(none)'}\n"
         f"Open questions:\n{opens}"
     )
     return f"{body}\n\n{pack_block(summary)}" if include_context else body
+
+
+def _scope_block(plan: TestPlan) -> str:
+    """The confirmed In/Out-of-scope boundary, injected into every generator AND the judge. The pack
+    often carries sibling/framework nodes the KGA crawl swept in but the plan ruled OUT; the pack alone
+    doesn't say what's out of bounds, so name it explicitly — else the model (and the judge) treat an
+    out-of-scope sibling scenario the same as an in-scope one, tanking faithfulness + scope precision."""
+    return (
+        f"In scope (cover ONLY these behaviours): {', '.join(plan.scope) or '(the pack)'}.\n"
+        f"Out of scope (do NOT cover these — sibling tickets, framework/meta pages): "
+        f"{', '.join(plan.out_of_scope) or '(none)'}.\n"
+    )
 
 
 def scenarios_prompt(plan: TestPlan, summary: str, test_data: list[TestData],
@@ -139,13 +152,7 @@ def scenarios_prompt(plan: TestPlan, summary: str, test_data: list[TestData],
         focus = ("\nGENERATE ONLY for these pack unit ids — one scenario per applicable kind for EACH, "
                  "and NONE for any id not listed here (the rest of the pack is context to draw on, not "
                  f"to cover in this call):\n{', '.join(focus_units)}\n")
-    # P2 scope boundary: the pack often carries sibling/framework nodes the KGA crawl swept in but the
-    # plan ruled OUT — generating for them tanks the judge's faithfulness + scope precision. The pack
-    # alone doesn't say what's out of bounds, so name the confirmed In/Out scope explicitly here.
-    scope_block = (
-        f"In scope (generate ONLY for these behaviours): {', '.join(plan.scope) or '(the pack)'}.\n"
-        f"Out of scope (do NOT generate any scenario for these): {', '.join(plan.out_of_scope) or '(none)'}.\n"
-    )
+    scope_block = _scope_block(plan)
     body = (
         "You are the QA Testing Agent generating TEST SCENARIOS from a confirmed plan.\n"
         f"Methodology: {', '.join(plan.methodology)}. Pass metric(s): {', '.join(plan.metrics)}.\n"
@@ -174,11 +181,17 @@ def scenarios_prompt(plan: TestPlan, summary: str, test_data: list[TestData],
 def testdata_prompt(plan: TestPlan, summary: str, *, include_context: bool = True) -> str:
     body = (
         "You are the QA Testing Agent generating TEST DATA for a confirmed plan.\n"
-        f"Methodology: {', '.join(plan.methodology)}.\n"
+        f"Methodology: {', '.join(plan.methodology)}. Pass metric(s): {', '.join(plan.metrics)}.\n"
+        f"Test-design method(s): {', '.join(plan.test_design) or 'standard per behaviour'}.\n"
+        f"Kinds the data must support (include negative/boundary/error variants): "
+        f"{', '.join(effective_kinds(plan))}.\n"
+        + _scope_block(plan) +
         "Produce the data the scenarios need: at least one test-account (authenticated caller, "
         "with role / tenant / permissions matched to the stories) and one mock-data record per "
-        "key entity / behaviour in the pack, each with CONCRETE realistic fields grounded in the "
-        "pack (not placeholders). Add a fixture for any input payload the API needs.\n\n"
+        "key IN-SCOPE entity / behaviour in the pack, each with CONCRETE realistic fields grounded in "
+        "the pack (not placeholders). Per the test-design method, include boundary/invalid values (e.g. "
+        "at/over each documented limit) so the negative/boundary/error scenarios have data. Add a "
+        "fixture for any input payload the API needs.\n\n"
         "Return ONLY a JSON array; each item: {id, kind (mock-data|test-account|fixture), "
         "spec (object of concrete fields), source_refs:[note ids]}. "
         f"Use id prefix 'test-data:{plan.context_id}:'."
@@ -196,14 +209,20 @@ def judge_scenarios_prompt(plan: TestPlan, summary: str, scenarios: list[TestSce
     body = (
         "You are a STRICT, INDEPENDENT QA CRITIC. SCORE THE SCENARIOS below against the approved "
         "plan + context pack. You did not write them — reward real coverage, punish invention.\n"
-        f"Methodology: {', '.join(plan.methodology)}. Pass metric(s): {', '.join(plan.metrics)}.\n\n"
+        f"Methodology: {', '.join(plan.methodology)}. Pass metric(s): {', '.join(plan.metrics)}.\n"
+        f"Test-design method(s): {', '.join(plan.test_design) or 'standard per behaviour'}.\n"
+        f"Kinds that should be covered (open set): {', '.join(effective_kinds(plan))}.\n"
+        + _scope_block(plan) + "\n"
         "Score EACH dimension 0.0–1.0 (1.0 = excellent):\n"
-        "- ac_coverage: every acceptance criterion / behaviour in the pack has a scenario.\n"
+        "- ac_coverage: every IN-SCOPE acceptance criterion / behaviour has a scenario (do NOT count "
+        "out-of-scope sibling nodes as missing coverage).\n"
         "- atomicity: one behaviour per scenario, independently runnable.\n"
         "- testability: a concrete, observable Then outcome (not 'it works').\n"
         "- traceability: each scenario cites a REAL note/insight id from the pack.\n"
-        "- faithfulness: NOTHING invented — no requirement/endpoint/field/limit the pack lacks.\n"
-        "- negative_edge_coverage: negative, boundary and error cases for the risky behaviours.\n"
+        "- faithfulness: NOTHING invented, AND nothing generated for an OUT-OF-SCOPE node — a scenario "
+        "covering a sibling/framework node the plan ruled out is an invention; penalise it here.\n"
+        "- negative_edge_coverage: the risky behaviours have the applicable kinds above (not just "
+        "negative/boundary/error — include any elicited extras like security/performance/concurrency).\n"
         "- non_duplication: 1.0 = no near-duplicate scenarios.\n\n"
         "List concrete 'issues' (what is wrong, citing scenario ids) and 'reflections' — imperative "
         "one-line fixes the generator should apply on its next attempt. Set 'overall' to your "
@@ -219,7 +238,14 @@ def judge_scenarios_prompt(plan: TestPlan, summary: str, scenarios: list[TestSce
 def steps_prompt(scenarios: list[TestScenario], plan: TestPlan, summary: str,
                  test_data: list[TestData], *, include_context: bool = True) -> str:
     data_ids = ", ".join(d.id for d in test_data) or "(none)"
-    listing = "\n".join(f"- {s.id} [{s.kind}] {s.title}" for s in scenarios)
+    # Give the step-writer each scenario's OWN description (the Then it must assert), preconditions
+    # (the Given to arrange) and data_refs (which data THIS scenario uses) — not just id/kind/title,
+    # else it writes generic steps unanchored to what the scenario actually verifies.
+    def _line(s: TestScenario) -> str:
+        pre = "; ".join(s.preconditions) or "—"
+        data = ", ".join(s.data_refs) or "—"
+        return f"- {s.id} [{s.kind}] {s.title} :: verifies: {s.description or '—'} | given: {pre} | data: {data}"
+    listing = "\n".join(_line(s) for s in scenarios)
     body = (
         "You are the QA Testing Agent writing STEP-BY-STEP steps for each scenario.\n"
         f"Methodology: {', '.join(plan.methodology)}. Pass metric(s): {', '.join(plan.metrics)}.\n"

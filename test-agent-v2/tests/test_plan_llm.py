@@ -188,8 +188,23 @@ def test_scenarios_prompt_injects_scope_boundary():
     plan.scope = ["docs-import zip upload"]
     plan.out_of_scope = ["Agentic-Framework self-check"]
     body = scenarios_prompt(plan, "pack", [], include_context=False)
-    assert "In scope (generate ONLY for these behaviours): docs-import zip upload" in body
-    assert "Out of scope (do NOT generate any scenario for these): Agentic-Framework self-check" in body
+    assert "In scope (cover ONLY these behaviours): docs-import zip upload" in body
+    assert "Agentic-Framework self-check" in body  # out-of-scope items named for the model to exclude
+
+
+def test_judge_prompt_is_scope_aware():
+    """The judge (the assured-loop gate) must see the scope boundary + elicited kinds, else it grades
+    an out-of-scope scenario the same as in-scope and its reflections steer regeneration wrong."""
+    from common.testplan.llm.prompts import judge_scenarios_prompt
+
+    plan = _plan()
+    plan.scope = ["docs-import upload"]
+    plan.out_of_scope = ["Agentic-Framework sibling"]
+    plan.test_kinds = ["security"]
+    body = judge_scenarios_prompt(plan, "pack", [], include_context=False)
+    assert "In scope (cover ONLY these behaviours): docs-import upload" in body
+    assert "Agentic-Framework sibling" in body            # judge told what to penalise as out-of-scope
+    assert "security" in body                              # elicited extra kind reaches the judge
 
 
 def test_pass_metric_prefers_the_non_coverage_metric():
