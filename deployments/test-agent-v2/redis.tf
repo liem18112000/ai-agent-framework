@@ -30,5 +30,9 @@ resource "google_vpc_access_connector" "redis" {
   region        = var.region
   network       = var.redis_network
   ip_cidr_range = var.vpc_connector_cidr
+  # The connector API requires instance sizing (else create fails: "must specify either
+  # max_throughput or max_instances"). 2/3 are the minimums for the default e2-micro machine type.
+  min_instances = 2
+  max_instances = 3
   depends_on    = [google_project_service.redis_apis]
 }
