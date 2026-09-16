@@ -48,7 +48,10 @@ async def classify_in_scope(plan: TestPlan, plan_pack, *, model=None) -> set[str
 # output fits well under the ceiling and its own TPD_GEN_TIMEOUT_S — robust to both size and time.
 _SCEN_MAX_TOKENS = 16000
 _BATCH_UNITS = 6        # grounded units per generation call — keeps one batch's array well under the ceiling
-_BATCH_CONCURRENCY = 5  # max in-flight Vertex calls (single Cloud Run instance; bounds fan-out + quota)
+# ponytail: sequential (1) not concurrent. Deployed logs showed ALL 5-6 concurrent batches returning
+# empty structured-output SIMULTANEOUSLY (no exception, no timeout) → heuristic fallback → ~0.1 score;
+# concurrent in-process ADK Runners are the prime suspect. 1 = one batch at a time. Raise if proven safe.
+_BATCH_CONCURRENCY = 1
 
 
 async def claude_scenarios(plan: TestPlan, plan_pack, test_data: list[TestData], *,
