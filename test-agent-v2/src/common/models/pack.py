@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from common.models.graph import Graph, Note
+from common.models.graph import ATTACHMENT, Graph, Note
 from common.models.refine import INSIGHT
 
 
@@ -38,11 +38,14 @@ class Pack:
                     seen.setdefault(lr.type, None)
         return list(seen)
 
-    def summary_text(self, limit: int = 6000) -> str:
+    # ponytail: fixed caps, not env knobs. Bump attach_cap if a spec runs longer than ~a dozen pages.
+    def summary_text(self, limit: int = 30000, attach_cap: int = 12000) -> str:
         lines = [f"# Context pack {self.context_id}" + (f" (seed {self.seed})" if self.seed else "")]
         for n in self.grounded:
             lines.append(f"\n## {n.type}: {n.id} — {n.title}")
-            if n.synopsis:
+            if n.type == ATTACHMENT and n.body:  # attachments (spec PDFs) go in VERBATIM, not distilled
+                lines.append(n.body[:attach_cap])
+            elif n.synopsis:
                 lines.append(n.synopsis)
             if followed := [lr for lr in n.links if lr.in_scope]:
                 lines.append("followed links: " + ", ".join(f"{lr.canonical_url}" for lr in followed))

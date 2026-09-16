@@ -84,3 +84,18 @@ def test_refine_per_round_cap_defaults_to_50_and_is_env_tunable(monkeypatch):
     assert _resolve_max_questions() == 120
     monkeypatch.setenv("REFINE_MAX_QUESTIONS", "not-a-number")
     assert _resolve_max_questions() == 50
+
+
+def test_attachment_body_persists_and_reaches_pack_and_get_note(fake_bucket):
+    """Regression: an attachment's verbatim body survives upsert → get_note md + pack (not just synopsis)."""
+    from common.models import ATTACHMENT, Note
+
+    bank = MemoryBank(fake_bucket)
+    spec = "SPEC 4.2: failCount = day-of-month. QR removal is individual-only. " * 40
+    bank.upsert_note(Note(id="attachment:https://x/spec.pdf", type=ATTACHMENT, title="spec.pdf",
+                          run_id="run-att", synopsis="spec.pdf (0 links)", body=spec))
+    bank.update_index(lambda g: g.add_note(bank.read_note("attachment:https://x/spec.pdf", ATTACHMENT)))
+
+    assert "failCount = day-of-month" in (bank.read_note_md("attachment:https://x/spec.pdf", ATTACHMENT) or "")
+    pack = load_pack(bank, "run-att")
+    assert "failCount = day-of-month" in pack.summary_text()  # verbatim, not the 1-line synopsis

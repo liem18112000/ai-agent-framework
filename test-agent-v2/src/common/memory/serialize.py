@@ -35,4 +35,5 @@ def merge_notes(old: Note, new: Note) -> Note:
     new.links = list(by_canon.values())
     new.backlinks = sorted(set(old.backlinks) | set(new.backlinks))
     new.depth = min(old.depth, new.depth)
+    new.body = new.body or old.body
     return new

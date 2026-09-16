@@ -63,6 +63,7 @@ async def crawl(
                 continue
             links, note, text = res
             note.run_id, note.depth = run_id, d
+            note.body = note.body or text  # retain verbatim body (spec PDFs etc.) — not just the synopsis
             if not note.synopsis:
                 note.synopsis = await asyncio.to_thread(distiller, note, text)
             result.notes.append(note)

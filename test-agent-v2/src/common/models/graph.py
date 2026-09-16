@@ -66,6 +66,7 @@ class Note:
     run_id: str = ""
     confidence: str = "high"
     synopsis: str = ""
+    body: str = ""  # full extracted text (verbatim); synopsis is the lossy 1-line distill
     links: list[LinkRecord] = field(default_factory=list)
     backlinks: list[str] = field(default_factory=list)
 

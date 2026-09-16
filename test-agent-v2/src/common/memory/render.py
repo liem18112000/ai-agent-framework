@@ -22,7 +22,8 @@ def render_note_md(note: Note) -> str:
                              fetched_at=note.fetched_at, depth=note.depth, run_id=note.run_id,
                              confidence=note.confidence, links_out=len(note.links),
                              heading=note.title or note.id, synopsis=note.synopsis, link_rows=link_rows)
-    return md + _section("## Backlinks", note.backlinks)
+    full = f"\n## Full content\n\n{note.body}\n" if note.body else ""
+    return md + full + _section("## Backlinks", note.backlinks)
 
 
 def render_index_md(graph: Graph) -> str:
