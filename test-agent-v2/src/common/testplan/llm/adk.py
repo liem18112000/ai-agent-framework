@@ -86,9 +86,14 @@ async def run_json_agent(agent: LlmAgent, *, output_key: str, user: str = "gener
 
     session = await svc.get_session(app_name="tpd-gen", user_id="tpd", session_id="gen")
     data = (session.state or {}).get(output_key) if session else None
-    if data:
+    # Return state only if it has real content. On the deployed Claude/LiteLlm path ADK populates the
+    # state with a DEFAULT-constructed schema (e.g. ``{"items": []}``) when it can't parse the model's
+    # fenced JSON — truthy but EMPTY — so ``if data`` alone returned that and skipped recovery.
+    if isinstance(data, dict) and any(data.values()):
         return data
-    recovered = loads_obj("\n".join(texts))  # state empty → parse the model's fenced/prefaced JSON
+    if data and not isinstance(data, dict):
+        return data
+    recovered = loads_obj("\n".join(texts))  # state empty/default → parse the model's fenced/prefaced JSON
     if recovered is None:
         log.warning("%s: no structured state and raw text unparseable (%d chars) → heuristic",
                     agent.name, len("\n".join(texts)))
