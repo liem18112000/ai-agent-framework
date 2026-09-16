@@ -54,14 +54,14 @@ async def run_assured_scenarios(
     > ~300s idle ceiling). Rounds resume from ``assured.json`` — the best scenarios are read back from
     the bank so a lower-scoring later round never displaces a better pre-pause one."""
     from common.adk import agent_model
-    from common.testplan.llm.adk import build_generator_agent, run_json_agent
-    from common.testplan.llm.prompts import judge_scenarios_prompt, pack_block
-    from common.testplan.llm.schemas import JudgeVerdict
-    from test_plan_definition.implement.generate.llm import claude_scenarios
-    from test_plan_definition.implement.generate.scenarios import heuristic_scenarios
 
     # env-configured bounds (fall back to the defaults on a malformed value)
     from common.adk.config import turbo_on
+    from common.testplan.llm.adk import build_generator_agent, run_json_agent
+    from common.testplan.llm.prompts import judge_scenarios_prompt, pack_block
+    from common.testplan.llm.schemas import JudgeVerdict
+    from test_plan_definition.implement.generate.llm import classify_in_scope, claude_scenarios
+    from test_plan_definition.implement.generate.scenarios import heuristic_scenarios
 
     # Turbo caps the reflect→regenerate loop at 1 round (the top latency lever); explicit env overrides.
     iters_default = 1 if turbo_on() else _DEFAULT_MAX_ITERS
@@ -96,6 +96,11 @@ async def run_assured_scenarios(
     # resolved once (the injected/configured model is stable across rounds). None → no judge signal.
     judge_model = model or agent_model(max_tokens=1500)
 
+    # One scope-classifier call per implement (not per round): which pack nodes are in scope for THIS
+    # ticket, so generation batches over the ticket's own behaviours instead of the whole crawled pack
+    # (sibling/framework nodes tank the judge's faithfulness + scope precision). None → don't filter.
+    in_scope_ids = await classify_in_scope(plan, plan_pack, model=model)
+
     scenarios: list[TestScenario] = []
     round_durations: list[float] = []  # cost of each round completed IN THIS run (empty on resume)
     stopped_on_budget = False
@@ -116,7 +121,7 @@ async def run_assured_scenarios(
             break
         round_start = time.monotonic()
         scenarios = await claude_scenarios(plan, plan_pack, test_data, now=now, model=model,
-                                           reflections=reflections)
+                                           reflections=reflections, in_scope_ids=in_scope_ids)
         if not scenarios:  # unconfigured/invalid/TIMED-OUT → degrade to heuristic, best-effort (never raise)
             scenarios = heuristic_scenarios(plan, plan_pack, test_data, now=now)
             degraded = True

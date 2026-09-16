@@ -192,6 +192,34 @@ def test_scenarios_prompt_injects_scope_boundary():
     assert "Agentic-Framework self-check" in body  # out-of-scope items named for the model to exclude
 
 
+async def test_classify_in_scope_returns_the_subset_the_model_picks():
+    """The scope classifier returns only the model-picked pack ids (intersected with real grounded ids);
+    None when unconfigured or <2 units (nothing to filter)."""
+    from test_plan_definition.implement.generate.llm import classify_in_scope
+    from tests.tpd_fakes import FakeGeneratorModel
+
+    pack = _multi_pack(13)
+    fake = FakeGeneratorModel(model="fake", default_json='{"in_scope_ids": ["jira:U0", "jira:U1", "nope"]}')
+    ids = await classify_in_scope(_plan(), pack, model=fake)
+    assert ids == {"jira:U0", "jira:U1"}          # 'nope' dropped (not a real grounded id)
+    assert await classify_in_scope(_plan(), _plan_pack(), model=fake) is None  # <2 units → no call/filter
+
+
+async def test_claude_scenarios_batches_only_in_scope_units():
+    """Given in_scope_ids, generation batches over just those units — the out-of-scope siblings are
+    dropped from generation (kept only as pack context)."""
+    from test_plan_definition.implement.generate.llm import claude_scenarios
+    from tests.tpd_fakes import FakeGeneratorModel, scenarios_json
+
+    pack = _multi_pack(13)  # 13 grounded; only 2 are in scope → 1 batch, not 3
+    fake = FakeGeneratorModel(model="fake", scenarios_json=scenarios_json(
+        [{"id": "scenario:run-x:a", "title": "A", "kind": "happy", "source_refs": ["jira:U0"]}]))
+    scs = await claude_scenarios(_plan(), pack, [TestData(id="td", kind="mock-data")], model=fake,
+                                 in_scope_ids={"jira:U0", "jira:U1"})
+    assert fake.calls == 1                          # 2 in-scope units → a single batch (was 3 over all 13)
+    assert [s.id for s in scs] == ["scenario:run-x:a"]
+
+
 def test_judge_prompt_is_scope_aware():
     """The judge (the assured-loop gate) must see the scope boundary + elicited kinds, else it grades
     an out-of-scope scenario the same as in-scope and its reflections steer regeneration wrong."""

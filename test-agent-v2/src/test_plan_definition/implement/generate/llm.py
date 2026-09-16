@@ -9,12 +9,37 @@ import asyncio
 
 from common.adk import agent_model
 from common.testplan.llm.adk import build_generator_agent, run_json_agent
-from common.testplan.llm.prompts import pack_block, scenarios_prompt
-from common.testplan.llm.schemas import Scenarios
+from common.testplan.llm.prompts import pack_block, scenarios_prompt, scope_classify_prompt
+from common.testplan.llm.schemas import InScope, Scenarios
 from common.testplan.models import TestData, TestPlan, TestScenario
 from test_plan_definition.monitoring import get_logger
 
 log = get_logger("llm.implement")
+
+
+async def classify_in_scope(plan: TestPlan, plan_pack, *, model=None) -> set[str] | None:
+    """One LLM call that returns the pack node ids IN scope for testing THIS ticket, so generation can
+    batch over the ticket's own behaviours instead of the whole crawled pack (sibling/framework nodes
+    the crawl swept in tank the judge's faithfulness + scope precision). Returns None — meaning 'don't
+    filter, keep all' — when unconfigured, on invalid output, or when there are <2 units to choose
+    between (nothing to filter). Conservative by design: the prompt says keep-if-unsure, never empty."""
+    grounded = plan_pack.pack.grounded
+    if len(grounded) < 2:
+        return None
+    model = model or agent_model(max_tokens=2000)
+    if model is None:
+        return None
+    summary = plan_pack.summary_text()
+    agent = build_generator_agent(name="tpd_scope_classifier", system=pack_block(summary),
+                                  output_schema=InScope, output_key="tpd_scope", model=model)
+    data = await run_json_agent(agent, output_key="tpd_scope",
+                                user=scope_classify_prompt(plan, summary, grounded))
+    if not data:
+        return None
+    ids = {i for i in InScope(**data).in_scope_ids if i in {n.id for n in grounded}}
+    if ids:
+        log.info("scope classifier: %d/%d units in scope", len(ids), len(grounded))
+    return ids or None
 
 # The prompt asks for full behaviour×kind coverage ("no cap, aim for 100%"), so a single call's JSON
 # array overruns the model's max output on a rich pack (41 units × 7 kinds ≈ 43k tokens ≫ 16k) → the
@@ -27,11 +52,12 @@ _BATCH_CONCURRENCY = 5  # max in-flight Vertex calls (single Cloud Run instance;
 
 
 async def claude_scenarios(plan: TestPlan, plan_pack, test_data: list[TestData], *,
-                           now: str = "", model=None,
-                           reflections: list[str] | None = None) -> list[TestScenario] | None:
+                           now: str = "", model=None, reflections: list[str] | None = None,
+                           in_scope_ids: set[str] | None = None) -> list[TestScenario] | None:
     """Generate the scenario suite via Claude-on-Vertex, batched over the pack's grounded units so no
     single call's array can truncate. Returns None only when unconfigured; a batch whose model output
-    is empty/invalid degrades to the heuristic for THAT batch's units alone (never the whole suite)."""
+    is empty/invalid degrades to the heuristic for THAT batch's units alone (never the whole suite).
+    ``in_scope_ids`` (from the scope classifier) narrows the batched units to the ticket's own nodes."""
     from test_plan_definition.implement.generate.scenarios import (
         heuristic_scenarios,
         refine_scenarios,
@@ -42,6 +68,8 @@ async def claude_scenarios(plan: TestPlan, plan_pack, test_data: list[TestData],
         return None
     summary = plan_pack.summary_text()
     units = [n.id for n in plan_pack.pack.grounded]
+    if in_scope_ids:  # drop out-of-scope sibling/framework nodes from generation (keep as pack context)
+        units = [u for u in units if u in in_scope_ids] or units
     # No grounded units (thin/empty pack) → one whole-pack call, unchanged behaviour (batch id list None).
     batches: list[list[str] | None] = [units[i:i + _BATCH_UNITS]
                                        for i in range(0, len(units), _BATCH_UNITS)] or [None]

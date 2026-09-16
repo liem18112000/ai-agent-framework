@@ -95,7 +95,8 @@ async def test_implement_via_graph_drives_scenario_llm_agent(monkeypatch, pack_b
             break
         impl = await turn("A")
     assert "Implement complete" in impl
-    # interrogation is heuristic (no model); only the ScenarioGen call hits the fake — still exactly 1
-    assert fake.calls == 1, f"scenario agent must fire exactly once via the graph, fired {fake.calls}"
+    # interrogation is heuristic (no model); judge model is unconfigured here (loop's agent_model isn't
+    # patched) so no judge call. The two fake calls: 1 scope-classify + the ScenarioGen exactly once (I3).
+    assert fake.calls == 2, f"scope-classify + ScenarioGen (once) must hit the fake twice, fired {fake.calls}"
     from common.testplan import memory as store
     assert "A happy" in (store.read_scenarios_md(bank, ctx_id) or "")

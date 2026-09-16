@@ -15,6 +15,13 @@ from pydantic import BaseModel, Field
 from common.testplan.models import HAPPY, TestData, TestPlan, TestScenario, TestStep
 
 
+class InScope(BaseModel):
+    """The scope classifier's output — the pack node ids that are IN scope for testing THIS ticket
+    (the rest are sibling/framework/cross-project nodes the crawl swept in, kept only as context)."""
+
+    in_scope_ids: list[str] = Field(default_factory=list)
+
+
 class ScenarioItem(BaseModel):
     id: str = ""
     title: str = ""

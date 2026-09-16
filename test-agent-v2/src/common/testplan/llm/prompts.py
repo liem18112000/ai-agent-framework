@@ -123,6 +123,26 @@ def brief_prompt(plan: TestPlan, summary: str, open_questions: list[str], *,
     return f"{body}\n\n{pack_block(summary)}" if include_context else body
 
 
+def scope_classify_prompt(plan: TestPlan, summary: str, grounded) -> str:
+    """One-call SCOPE CLASSIFIER: pick the pack node ids that are IN scope for testing THIS ticket.
+    The crawl sweeps in sibling tickets, framework/meta pages and cross-project docs; those are context,
+    not things to write scenarios for. Marker 'SCOPE CLASSIFIER' (not a generator router substring)."""
+    listing = "\n".join(
+        f"- {n.id} :: {n.title} :: {(n.synopsis or '')[:160]}" for n in grounded) or "(none)"
+    return (
+        "You are a SCOPE CLASSIFIER for a QA test plan. From the pack nodes below, return ONLY the ids "
+        "that are IN SCOPE for testing THIS ticket — the ticket's own feature and the requirements / "
+        "code / specs that directly implement it.\n"
+        "EXCLUDE (leave out): sibling or unrelated tickets, framework/meta/agent-infrastructure pages, "
+        "cross-project documentation, and anything not needed to verify THIS ticket's behaviour.\n"
+        f"Ticket / understanding: {plan.context_id}. In-scope hints: {', '.join(plan.scope) or '(none)'}. "
+        f"Out-of-scope hints: {', '.join(plan.out_of_scope) or '(none)'}.\n\n"
+        "Return ONLY a JSON object {in_scope_ids: [pack ids, verbatim]} — a SUBSET of the ids below; if "
+        "genuinely unsure about a node, keep it (better in than out). Never return an empty list if any "
+        f"node plausibly implements the ticket.\n\nPack nodes:\n{listing}\n\n{pack_block(summary)}"
+    )
+
+
 def _scope_block(plan: TestPlan) -> str:
     """The confirmed In/Out-of-scope boundary, injected into every generator AND the judge. The pack
     often carries sibling/framework nodes the KGA crawl swept in but the plan ruled OUT; the pack alone

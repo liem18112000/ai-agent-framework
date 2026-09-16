@@ -127,7 +127,7 @@ async def test_assured_accepts_on_first_round_when_score_clears_bar(pack_bucket,
     assert res.quality is not None
     assert res.quality.accepted and res.quality.rounds == 1
     assert abs(res.quality.final_score - 0.9) < 1e-6
-    assert fake.calls == 2 and fake.judge_calls == 1  # 1 generate + 1 judge; data/steps heuristic
+    assert fake.calls == 3 and fake.judge_calls == 1  # 1 scope-classify + 1 generate + 1 judge
     assert {s.id for s in res.scenarios} == {"scenario:run-6f2a:a", "scenario:run-6f2a:b"}
 
 
@@ -141,7 +141,7 @@ async def test_assured_reflects_then_regenerates_until_accepted(pack_bucket, mon
 
     res = await implement_plan(bank, "run-6f2a", model=fake)
     assert res.quality.accepted and res.quality.rounds == 2
-    assert fake.judge_calls == 2 and fake.calls == 4  # 2 generate + 2 judge
+    assert fake.judge_calls == 2 and fake.calls == 5  # 1 scope-classify + 2 generate + 2 judge
     # the reflexion feedback threaded into the SECOND generation prompt
     assert any("REVISION FEEDBACK" in t and "Add a boundary scenario for the max limit" in t
                for t in fake.seen)

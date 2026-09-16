@@ -80,7 +80,7 @@ async def test_implement_default_makes_two_llm_calls_generate_plus_judge(pack_bu
     fake = full_fake_model()
 
     res = await implement_plan(bank, "run-6f2a", model=fake)
-    assert fake.calls == 2 and fake.judge_calls == 1  # 1 generate + 1 judge; test-data/steps heuristic
+    assert fake.calls == 3 and fake.judge_calls == 1  # 1 scope-classify + 1 generate + 1 judge
     assert {s.id for s in res.scenarios} == {"scenario:run-6f2a:a", "scenario:run-6f2a:b"}
     assert res.quality is not None and res.quality.accepted  # judge 0.9 ≥ 0.7 → accepts round 1
 
@@ -93,7 +93,7 @@ async def test_implement_detail_makes_four_llm_calls(pack_bucket, monkeypatch):
     fake = full_fake_model()
 
     await implement_plan(bank, "run-6f2a", detail=True, model=fake)
-    assert fake.calls == 4, f"detail implement must make 4 LLM calls, made {fake.calls}"
+    assert fake.calls == 5, f"detail: 1 scope-classify + generate + judge + test-data + steps, made {fake.calls}"
 
 
 async def test_implement_falls_back_to_heuristic_on_invalid_llm_output(pack_bucket, monkeypatch):
@@ -105,7 +105,7 @@ async def test_implement_falls_back_to_heuristic_on_invalid_llm_output(pack_buck
     fake.scenarios_json = "not valid json at all"
 
     res = await implement_plan(bank, "run-6f2a", model=fake)
-    assert fake.calls == 2  # generate (invalid → heuristic fallback) + judge on the heuristic scenarios
+    assert fake.calls == 3  # scope-classify + generate (invalid → heuristic fallback) + judge on heuristic
     # heuristic scenarios carry the '— happy path' style titles and the full kind matrix
     kinds = {s.kind for s in res.scenarios}
     assert {HAPPY, NEGATIVE, BOUNDARY, ERROR} <= kinds
