@@ -25,6 +25,7 @@ dependencies = [
   "google-adk[db]>=2",              # ADK runtime (v2 rebuild) — [db] = SQLAlchemy for DatabaseSessionService
   "litellm>=1.0",                   # LiteLlm model routing: Claude Sonnet 5 on Vertex via ADK
   "aiosqlite>=0.19",               # async sqlite driver for local/dev DatabaseSessionService + tests
+  "redis>=5,<6",                    # common/cache RedisCache adapter (GCP Memorystore); lazy-imported
   "pydantic-settings>=2",           # common/adk/config.py — the model-backend switch (E2)
   "python-dotenv>=1",               # __init__ env bootstrap for local adk web/run (E1)
 ]

@@ -143,6 +143,11 @@ All tools below are exposed by the gateway as `mcp__testing-agent__<tool>` and t
 |------|-----------|--------------|
 | `evaluate_pack` | `(context_id)` | Score the gathered+refined pack into a **Pack Quality Score** (retrieval recall/precision with a hard-negative leak gate + groundedness rubrics). |
 | `evaluate_plan` | `(context_id)` | Score the test plan + suite into a **Test-Plan Score** (AC-coverage, matrix completeness, traceability). |
+| `benchmark_run` | `(context_id, recompute=False)` | A run's cached **benchmark scorecard** — PQS + TPS + components, computed & saved (`memory/benchmarks/<ctx>.json`) if missing. Also auto-computed when `implement_plan` finishes (success *or* fail). |
+| `compare_benchmarks` | `(context_ids)` | Two or more runs' benchmarks side by side (space/comma-separated ids) — per-metric table + delta. |
+| `summarize_benchmarks` | `(k=5)` | The **K latest runs** (K<10) as a table + PQS/TPS mean/min/max/best-worst. |
+
+Benchmarks read through an optional **cache** (`common/cache`): no-op by default, `CACHE_BACKEND=memory` locally, or GCP **Memorystore Redis** in prod (`deploy_redis=true`, wired to the test-evaluation service via a Serverless VPC connector). GCS stays the source of truth; a cache miss/outage just recomputes.
 
 ### 2d. Gateway meta / escape hatches
 

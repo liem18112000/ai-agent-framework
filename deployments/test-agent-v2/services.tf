@@ -186,6 +186,7 @@ module "tev" {
   max_instances         = 1
   cloudsql_instance     = local.cloudsql_connection_name
   allow_unauthenticated = var.bridge_allow_unauthenticated
+  vpc_connector         = var.deploy_redis ? google_vpc_access_connector.redis[0].id : ""
 
   containers = [
     {
@@ -208,6 +209,12 @@ module "tev" {
           { name = "DB_NAME", value = var.db_name },
           { name = "DB_USER", value = var.db_user },
           { name = "DB_PASSWORD", secret = google_secret_manager_secret.db_password[0].secret_id },
+        ] : [],
+        # Benchmark cache → Memorystore Redis (only when provisioned; else CACHE_BACKEND unset = NullCache).
+        var.deploy_redis ? [
+          { name = "CACHE_BACKEND", value = "redis" },
+          { name = "REDIS_HOST", value = google_redis_instance.cache[0].host },
+          { name = "REDIS_PORT", value = tostring(google_redis_instance.cache[0].port) },
         ] : [],
         [
           { name = "AGENT", value = "test_evaluation" },
@@ -330,6 +337,7 @@ module "gateway" {
         { name = "ADMIN_A2A_URL", value = var.deploy_admin ? "${module.admin.uri}/" : "" },
         { name = "A2A_BEARER_TOKEN", secret = google_secret_manager_secret.a2a_bearer.secret_id },
         { name = "GATEWAY_BEARER_TOKEN", secret = google_secret_manager_secret.gateway_bearer[0].secret_id },
+        { name = "BENCHMARK_ON_FINISH", value = "1" }, # eager-benchmark a run when implement_plan finishes
       ]
     },
   ]

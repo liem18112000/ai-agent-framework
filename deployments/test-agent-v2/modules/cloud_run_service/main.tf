@@ -26,6 +26,15 @@ resource "google_cloud_run_v2_service" "this" {
       max_instance_count = var.max_instances
     }
 
+    # Serverless VPC egress — required for Cloud Run to reach a Memorystore Redis private IP.
+    dynamic "vpc_access" {
+      for_each = var.vpc_connector == "" ? [] : [1]
+      content {
+        connector = var.vpc_connector
+        egress    = "PRIVATE_RANGES_ONLY"
+      }
+    }
+
     # Cloud SQL Auth proxy socket (durable A2A task store), mounted by containers that opt in.
     dynamic "volumes" {
       for_each = var.cloudsql_instance == "" ? [] : [1]

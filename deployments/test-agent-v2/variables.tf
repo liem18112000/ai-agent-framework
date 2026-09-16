@@ -232,6 +232,37 @@ variable "admin_service_name" {
   default     = "admin-agent-v2"
 }
 
+# --- Redis / Memorystore benchmark cache (default OFF — the cache is a no-op until enabled) ---
+variable "deploy_redis" {
+  type        = bool
+  description = "Provision Memorystore Redis + a Serverless VPC connector and point TEV's benchmark cache at it (CACHE_BACKEND=redis). Off = benchmark cache is a no-op (NullCache)."
+  default     = false
+}
+
+variable "redis_tier" {
+  type        = string
+  description = "Memorystore tier: BASIC (no HA) or STANDARD_HA."
+  default     = "BASIC"
+}
+
+variable "redis_memory_gb" {
+  type        = number
+  description = "Memorystore capacity in GB."
+  default     = 1
+}
+
+variable "redis_network" {
+  type        = string
+  description = "VPC network (name or self-link) for Memorystore + the Serverless VPC connector."
+  default     = "default"
+}
+
+variable "vpc_connector_cidr" {
+  type        = string
+  description = "An unused /28 range for the Serverless VPC Access connector."
+  default     = "10.8.0.0/28"
+}
+
 # ---------------------------------------------------------------------------
 # Single MCP gateway (G2) — the one endpoint Claude connects to; fronts the 3 A2A agents.
 # ---------------------------------------------------------------------------

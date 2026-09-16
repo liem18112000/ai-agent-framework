@@ -2,13 +2,23 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+
 from mcp.server.mcpserver import MCPServer
 
 from common.bridge import BridgeSession
+from common.monitoring import get_logger
+
+log = get_logger("bridge.tpd")
 
 
-def register_tools(mcp: MCPServer, session: BridgeSession) -> dict:
-    """Register the TPD domain tools on `mcp`, bound to `session`; return {name: fn}. Unique names."""
+def register_tools(mcp: MCPServer, session: BridgeSession,
+                   *, on_finish: Callable[[str], Awaitable[None]] | None = None) -> dict:
+    """Register the TPD domain tools on `mcp`, bound to `session`; return {name: fn}. Unique names.
+
+    `on_finish(context_id)` (optional) fires once a run is TERMINAL — implement_plan came back done or
+    errored, never on an in_progress chunk. The gateway uses it to eager-benchmark the finished run
+    (the bridge stays agent-agnostic — it just calls back)."""
 
     @mcp.tool()
     async def define_plan(context_id: str, answer: str | None = None) -> str:
@@ -43,7 +53,17 @@ def register_tools(mcp: MCPServer, session: BridgeSession) -> dict:
         msg = f"implement {context_id}" + (" detail" if detail else "")
         if guidance:
             msg += f"\nguidance: {guidance}"
-        return (await session.ask(msg, context_id=context_id)).text
+        reply = None
+        try:
+            reply = (await session.ask(msg, context_id=context_id)).text
+            return reply
+        finally:
+            # Run terminal (done or errored — reply is None on an exception), not a paused chunk.
+            if on_finish is not None and (reply is None or "[state: in_progress]" not in reply):
+                try:
+                    await on_finish(context_id)
+                except Exception as exc:  # noqa: BLE001 — the benchmark must never break implement's response
+                    log.warning("on_finish hook failed for %s: %s", context_id, exc)
 
     @mcp.tool()
     async def get_scenarios(context_id: str) -> str:

@@ -9,6 +9,7 @@ from mcp.server.mcpserver import MCPServer
 from admin_agent.bridge.mcp_server import register_tools as register_admin
 from common.bridge import BridgeSession, build_http_app
 from common.bridge.prompts import TRIGGER_INSTRUCTIONS, test_prompt
+from common.learn.config import _on
 from knowledge_gathering.bridge.mcp_server import register_tools as register_kga
 from test_evaluation.bridge.mcp_server import register_tools as register_tev
 from test_plan_definition.bridge.mcp_server import register_tools as register_tpd
@@ -23,7 +24,10 @@ INSTRUCTIONS = (
     "Single MCP gateway for the Testing Agent — ONE endpoint fronting three A2A agents "
     "(knowledge-gathering, test-plan-definition, test-evaluation). Pipeline: gather_knowledge -> "
     "refine -> approve -> [evaluate_pack] -> define_plan -> approve_plan -> implement_plan -> "
-    "get_scenarios -> [evaluate_plan]. Reuse the one context_id gather_knowledge returns for every "
+    "get_scenarios -> [evaluate_plan]. BENCHMARK group (read-only, over past runs): benchmark_run "
+    "(one run's cached PQS/TPS scorecard — computed & saved if missing; auto-computed when a run "
+    "finishes), compare_benchmarks (2+ runs side by side), summarize_benchmarks (the K<10 latest). "
+    "Reuse the one context_id gather_knowledge returns for every "
     "later call. YOU (the client) own the confirm gates: before starting refine, approve, "
     "define_plan, approve_plan, and implement_plan, ask the user Yes/No yourself and call the tool "
     "only on yes. evaluate_pack / evaluate_plan are read-only quality gates and never block. "
@@ -42,6 +46,12 @@ tpd_session = BridgeSession(TPD_URL, TOKEN)
 tev_session = BridgeSession(TEV_URL, TOKEN)
 admin_session = BridgeSession(ADMIN_URL, TOKEN)
 
+
+async def _benchmark_on_finish(context_id: str) -> None:
+    """Eager-benchmark a run once implement_plan is terminal. Flag default-off; tf sets =1 (services.tf)."""
+    if _on("BENCHMARK_ON_FINISH"):
+        await tev_session.ask(f"benchmark {context_id}", context_id=context_id)
+
 mcp = MCPServer(
     "testing-agent-gateway", version="0.1.0",
     instructions=INSTRUCTIONS + "\n\n" + TRIGGER_INSTRUCTIONS,
@@ -49,7 +59,7 @@ mcp = MCPServer(
 
 _tools = {
     **register_kga(mcp, kga_session),
-    **register_tpd(mcp, tpd_session),
+    **register_tpd(mcp, tpd_session, on_finish=_benchmark_on_finish),
     **register_tev(mcp, tev_session),
     **register_admin(mcp, admin_session),
 }

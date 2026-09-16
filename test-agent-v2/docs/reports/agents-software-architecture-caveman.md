@@ -25,7 +25,9 @@ One `common` engine hold them up. ONE image → FOUR Cloud Run service: 1 gatewa
 
 ## Middle floor: `common` — the shared engine 🧱 (one-way: never import an agent)
 
-Many small brick: `card` · `bridge` (a2a_client · asgi · session) · `interrogate` · `atlassian` · `extract` · 🆕 **`llm` (distill · ModelProvider (VertexClaude))** · `memory` (bank · pg store · retrieve) · 🆕 **`session` (ADK DatabaseSessionService · Cloud SQL)** · `monitoring` · `ops` · `executor` · 🆕 **`middlewares` (GATEWAY + A2A bearer)** · `models` · `codegraph`.
+Many small brick: `card` · `bridge` (a2a_client · asgi · session) · `interrogate` · `atlassian` · `extract` · 🆕 **`llm` (distill · ModelProvider (VertexClaude))** · `memory` (bank · pg store · retrieve) · 🆕 **`session` (ADK DatabaseSessionService · Cloud SQL)** · `monitoring` · `ops` · `executor` · 🆕 **`middlewares` (GATEWAY + A2A bearer)** · `models` · `codegraph` · 🆕 **`cache` (swap-brick: Null / InMemory / Redis-Memorystore)** · 🆕 **`benchmark` (score-card model + GCS store, cache-aside)**.
+
+New 🆕 twins for the **benchmark** thing: `benchmark` brick hold the score-card (PQS + TPS) and put it in the GCS book; `cache` brick is a **swap-rock** — same hole fit three different rock (no-cache · in-head · shared Redis), so tribe pick fast Redis in cloud but plain in-head at home. Judge robot ③ read score through cache first; miss → compute → save. Same swap-brick idea as the `store` port (GCS · local · in-mem).
 
 🆕 **What changed:** model access now go through **`ModelProvider`** — one impl only, **`VertexClaudeProvider`** (Gemini backend GONE). The old `taskstore` brick become **`session` = ADK `DatabaseSessionService`** on Cloud SQL (replace the a2a DatabaseTaskStore). Two bearer now: gateway bearer + A2A bearer.
 

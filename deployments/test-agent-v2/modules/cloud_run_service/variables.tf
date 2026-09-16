@@ -61,6 +61,12 @@ variable "allow_unauthenticated" {
   default     = false
 }
 
+variable "vpc_connector" {
+  type        = string
+  description = "Serverless VPC Access connector id for reaching private services (e.g. Memorystore Redis). \"\" = no VPC egress."
+  default     = ""
+}
+
 variable "containers" {
   description = <<-EOT
     One or more containers. Exactly one must set ingress_port (it receives external traffic and

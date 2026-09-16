@@ -79,6 +79,12 @@ All robot walk DOWN, share four rock:
 - 🟡 **Secret Manager** 🔑 gateway+a2a bearer · db · atlassian · bitbucket.
 - 🟣 **Vertex AI — `claude-sonnet-5`** 🧠 reached through **VertexClaudeProvider**
   (the one model plug; Gemini backend gone).
+- 🔴 **Memorystore Redis — `kga-v2-cache`** ⚡ FAST memory rock for the **benchmark
+  cache**. Only the **judge robot ③** touch it, and only through a **Serverless VPC
+  connector** rope (red dash) — Redis hide on a secret VPC path, robot need special
+  rope to reach. **Opt-in** (`deploy_redis`): rope OFF → judge use no-op cache, still
+  read the slow GCS book. Rope ON (`CACHE_BACKEND=redis`) → judge remember score fast,
+  no re-compute. Shared, so ALL judge-robot copy see same remembered score. 🧠⚡
 
 ---
 
@@ -92,6 +98,7 @@ All robot walk DOWN, share four rock:
 - 🟢 **green** = storage that HOLD stuff (GCS book, Cloud SQL store)
 - 🟡 **amber** = secret box
 - 🟣 **violet** = Vertex brain-oracle
+- 🔴 **red** = fast cache rock (Memorystore Redis) + red-dash rope = the VPC-connector path
 
 ---
 
