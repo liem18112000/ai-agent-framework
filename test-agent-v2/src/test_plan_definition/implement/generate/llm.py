@@ -14,11 +14,16 @@ from test_plan_definition.monitoring import get_logger
 
 log = get_logger("llm.implement")
 
+# The prompt asks for full behaviour×kind coverage ("no cap, aim for 100%"), so the JSON array is large.
+# At 6000 the output truncated on rich packs → schema-invalid → silent heuristic fallback (empty-step,
+# per-node scenarios scoring ~0.08). Keep it ONE call (I3 / call-count contract) but give it real head-room.
+_SCEN_MAX_TOKENS = 16000
+
 
 async def claude_scenarios(plan: TestPlan, plan_pack, test_data: list[TestData], *,
                            now: str = "", model=None,
                            reflections: list[str] | None = None) -> list[TestScenario] | None:
-    model = model or agent_model(max_tokens=6000)
+    model = model or agent_model(max_tokens=_SCEN_MAX_TOKENS)
     if model is None:
         return None
     summary = plan_pack.summary_text()
