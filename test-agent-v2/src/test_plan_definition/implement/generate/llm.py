@@ -32,7 +32,10 @@ async def claude_scenarios(plan: TestPlan, plan_pack, test_data: list[TestData],
     """Generate the scenario suite via Claude-on-Vertex, batched over the pack's grounded units so no
     single call's array can truncate. Returns None only when unconfigured; a batch whose model output
     is empty/invalid degrades to the heuristic for THAT batch's units alone (never the whole suite)."""
-    from test_plan_definition.implement.generate.scenarios import heuristic_scenarios
+    from test_plan_definition.implement.generate.scenarios import (
+        heuristic_scenarios,
+        refine_scenarios,
+    )
 
     model = model or agent_model(max_tokens=_SCEN_MAX_TOKENS)
     if model is None:
@@ -68,4 +71,7 @@ async def claude_scenarios(plan: TestPlan, plan_pack, test_data: list[TestData],
             if s.id not in seen:
                 seen.add(s.id)
                 merged.append(s)
-    return merged or None
+    # P2 post-gen cleanup: drop invented citations + near-duplicates against the real pack ids (lifts
+    # the judge's traceability + non_duplication). Fall back to the raw merge if a strict pass empties it.
+    valid_ids = {n.id for n in plan_pack.pack.notes} | set(plan.scope)
+    return refine_scenarios(merged, valid_ids) or merged or None

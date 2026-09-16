@@ -8,7 +8,7 @@ import pytest
 
 from common.interrogate.pack import Pack
 from common.llm.parse import loads_array
-from common.testplan.models import TestData, TestPlan
+from common.testplan.models import TestData, TestPlan, TestScenario
 from common.testplan.pack import PlanPack
 from test_plan_definition.define.plan import make_restater
 from test_plan_definition.define.questions import heuristic_questions, make_generator
@@ -158,6 +158,38 @@ async def test_claude_scenarios_total_degrade_returns_none_and_wrapper_uses_full
     bad2 = FakeGeneratorModel(model="fake", scenarios_json="not json")
     scs = await generate_scenarios(_plan(), pack, td, model=bad2)
     assert scs == heuristic_scenarios(_plan(), pack, td)              # wrapper degrades to full heuristic
+
+
+def test_refine_scenarios_drops_untraceable_and_near_duplicates():
+    """P2 cleanup: keep only scenarios citing a real pack id (lenient match), and collapse near-dupes
+    (same kind + folded title); order preserved."""
+    from test_plan_definition.implement.generate.scenarios import refine_scenarios
+
+    scs = [
+        TestScenario(id="s1", plan_id="p", title="Upload a valid zip", kind="happy",
+                     source_refs=["jira:LUZ-158230"]),                     # traceable (exact)
+        TestScenario(id="s2", plan_id="p", title="Upload  a  VALID zip!", kind="happy",
+                     source_refs=["LUZ-158230"]),                          # near-dup of s1 (lenient id ok)
+        TestScenario(id="s3", plan_id="p", title="Reject >2GB zip", kind="boundary",
+                     source_refs=["invented:node"]),                       # untraceable → dropped
+        TestScenario(id="s4", plan_id="p", title="Reject >2GB zip", kind="boundary",
+                     source_refs=["codegraph:luz_docs_import"]),           # traceable, distinct kind/title
+    ]
+    valid = {"jira:LUZ-158230", "codegraph:luz_docs_import"}
+    out = refine_scenarios(scs, valid)
+    assert [s.id for s in out] == ["s1", "s4"]   # s2 deduped, s3 dropped as untraceable
+
+
+def test_scenarios_prompt_injects_scope_boundary():
+    """The generator prompt now names the confirmed In/Out scope so the model doesn't cover siblings."""
+    from common.testplan.llm.prompts import scenarios_prompt
+
+    plan = _plan()
+    plan.scope = ["docs-import zip upload"]
+    plan.out_of_scope = ["Agentic-Framework self-check"]
+    body = scenarios_prompt(plan, "pack", [], include_context=False)
+    assert "In scope (generate ONLY for these behaviours): docs-import zip upload" in body
+    assert "Out of scope (do NOT generate any scenario for these): Agentic-Framework self-check" in body
 
 
 def test_pass_metric_prefers_the_non_coverage_metric():

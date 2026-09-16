@@ -139,18 +139,28 @@ def scenarios_prompt(plan: TestPlan, summary: str, test_data: list[TestData],
         focus = ("\nGENERATE ONLY for these pack unit ids — one scenario per applicable kind for EACH, "
                  "and NONE for any id not listed here (the rest of the pack is context to draw on, not "
                  f"to cover in this call):\n{', '.join(focus_units)}\n")
+    # P2 scope boundary: the pack often carries sibling/framework nodes the KGA crawl swept in but the
+    # plan ruled OUT — generating for them tanks the judge's faithfulness + scope precision. The pack
+    # alone doesn't say what's out of bounds, so name the confirmed In/Out scope explicitly here.
+    scope_block = (
+        f"In scope (generate ONLY for these behaviours): {', '.join(plan.scope) or '(the pack)'}.\n"
+        f"Out of scope (do NOT generate any scenario for these): {', '.join(plan.out_of_scope) or '(none)'}.\n"
+    )
     body = (
         "You are the QA Testing Agent generating TEST SCENARIOS from a confirmed plan.\n"
         f"Methodology: {', '.join(plan.methodology)}. Pass metric(s): {', '.join(plan.metrics)}.\n"
         f"Test-design method(s) to apply: {methods}.\n"
         f"Kinds to cover (open set — cover every one that applies): {', '.join(kinds)}.\n"
-        f"Available test-data ids (use in data_refs): {data_ids}.\n\n"
+        f"Available test-data ids (use in data_refs): {data_ids}.\n"
+        + scope_block + "\n"
         + GHERKIN_GUIDELINES + PACK_GROUNDING + "\n"
         "Rules:\n"
-        "- For EACH acceptance criterion / behaviour in the pack, generate a scenario for EACH listed "
-        "kind that applies (skip a kind only when genuinely inapplicable to that behaviour). Emit as "
-        "MANY cases per kind as the test-design method yields — there is NO cap; aim to cover 100%.\n"
-        "- Each scenario MUST cite the note/insight id it covers in source_refs.\n"
+        "- For EACH IN-SCOPE acceptance criterion / behaviour in the pack, generate a scenario for EACH "
+        "listed kind that applies (skip a kind only when genuinely inapplicable to that behaviour). Emit "
+        "as MANY cases per kind as the test-design method yields — there is NO cap; aim to cover 100%.\n"
+        "- Do NOT invent scenarios for pack nodes that are out-of-scope, sibling tickets, or framework/"
+        "meta pages — cover the ticket's own behaviours only.\n"
+        "- Each scenario MUST cite the REAL note/insight id it covers in source_refs (a pack id, verbatim).\n"
         + focus + "\n"
         "Return ONLY a JSON array; each item: {id, title, kind, "
         "methodology, description (one sentence: what it verifies), rationale (why it matters), "

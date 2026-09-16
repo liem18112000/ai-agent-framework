@@ -39,6 +39,33 @@ def _coverage_kinds(plan: TestPlan) -> tuple[str, ...]:
     return tuple(effective_kinds(plan))
 
 
+def _norm_title(s: str) -> str:
+    """Fold a title to a dedup key: lowercase, keep alnum, collapse the rest to single spaces."""
+    return " ".join("".join(c if c.isalnum() else " " for c in s.lower()).split())
+
+
+def refine_scenarios(scenarios: list[TestScenario], valid_ids: set[str]) -> list[TestScenario]:
+    """P2 deterministic post-gen cleanup that lifts the judge's traceability + non_duplication scores:
+    drop scenarios that cite no REAL pack id (invented/empty source_refs), then drop near-duplicates
+    (same kind + folded title). Lenient id match (substring either way) tolerates 'LUZ-1' vs 'jira:LUZ-1'
+    so real scenarios are never dropped on format drift. Order-preserving; a no-op on already-clean sets."""
+    def traceable(sc: TestScenario) -> bool:
+        return not valid_ids or any(
+            ref and any(ref in vid or vid in ref for vid in valid_ids) for ref in sc.source_refs)
+
+    out: list[TestScenario] = []
+    seen: set[tuple[str, str]] = set()
+    for sc in scenarios:
+        if not traceable(sc):
+            continue
+        key = (sc.kind, _norm_title(sc.title))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(sc)
+    return out
+
+
 async def generate_scenarios(
     plan: TestPlan, plan_pack: PlanPack, test_data: list[TestData], *, now: str = "", model=None,
 ) -> list[TestScenario]:
