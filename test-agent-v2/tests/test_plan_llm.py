@@ -220,6 +220,20 @@ async def test_claude_scenarios_batches_only_in_scope_units():
     assert [s.id for s in scs] == ["scenario:run-x:a"]
 
 
+def test_scenario_schema_coerces_scalar_and_single_object_drift():
+    """The deployed model intermittently emits a scalar where a list is expected (source_refs:"x") or a
+    single item object instead of a list — must COERCE, not reject (rejection → silent heuristic 0.1x)."""
+    from common.testplan.llm.schemas import Scenarios
+
+    scs = Scenarios(items=[{"id": "s1", "title": "t", "kind": "happy",
+                                  "source_refs": "jira:LUZ-1", "data_refs": None,
+                                  "preconditions": "logged in"}])
+    it = scs.items[0]
+    assert it.source_refs == ["jira:LUZ-1"] and it.data_refs == [] and it.preconditions == ["logged in"]
+    one = Scenarios(items={"id": "s2", "title": "t2", "kind": "negative"})  # single obj → list
+    assert len(one.items) == 1 and one.items[0].id == "s2"
+
+
 def test_judge_prompt_is_scope_aware():
     """The judge (the assured-loop gate) must see the scope boundary + elicited kinds, else it grades
     an out-of-scope scenario the same as in-scope and its reflections steer regeneration wrong."""

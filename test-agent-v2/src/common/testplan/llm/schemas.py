@@ -10,7 +10,20 @@ hand-parsers did (``loads_array`` + ``it.get(k)`` + ``setdefault``) now lives in
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+def _as_list(v):
+    """Coerce a real model's list-field drift into a list — the fix for the deployed generator failing
+    schema validation (``list_type``) → silent heuristic fallback. Claude-on-Vertex intermittently
+    emits a bare scalar (``source_refs: "jira:X"``) or a single object where the schema wants a list;
+    offline fakes always return clean lists, so this only bit in prod. None → [], scalar/dict → [it]."""
+    if v is None:
+        return []
+    if isinstance(v, (str, bytes, dict)):
+        return [v]
+    return v  # already a list (or a genuinely wrong type → let pydantic reject it)
+
 
 from common.testplan.models import HAPPY, TestData, TestPlan, TestScenario, TestStep
 
@@ -20,6 +33,8 @@ class InScope(BaseModel):
     (the rest are sibling/framework/cross-project nodes the crawl swept in, kept only as context)."""
 
     in_scope_ids: list[str] = Field(default_factory=list)
+
+    _coerce = field_validator("in_scope_ids", mode="before")(_as_list)
 
 
 class ScenarioItem(BaseModel):
@@ -33,11 +48,15 @@ class ScenarioItem(BaseModel):
     data_refs: list[str] = Field(default_factory=list)
     source_refs: list[str] = Field(default_factory=list)
 
+    _coerce = field_validator("preconditions", "data_refs", "source_refs", mode="before")(_as_list)
+
 
 class Scenarios(BaseModel):
     """The scenario-generator output — replaces ``loads_array`` + the ``_FIELDS`` pick."""
 
     items: list[ScenarioItem] = Field(default_factory=list)
+
+    _coerce = field_validator("items", mode="before")(_as_list)
 
     def to_scenarios(self, plan: TestPlan, now: str = "") -> list[TestScenario]:
         default_method = plan.methodology[0] if plan.methodology else "api"
@@ -65,9 +84,13 @@ class TestDataItem(BaseModel):
     spec: dict = Field(default_factory=dict)
     source_refs: list[str] = Field(default_factory=list)
 
+    _coerce = field_validator("source_refs", mode="before")(_as_list)
+
 
 class TestDataList(BaseModel):
     items: list[TestDataItem] = Field(default_factory=list)
+
+    _coerce = field_validator("items", mode="before")(_as_list)
 
     def to_test_data(self, plan: TestPlan, now: str = "") -> list[TestData]:
         return [
@@ -101,6 +124,8 @@ class JudgeVerdict(BaseModel):
     issues: list[str] = Field(default_factory=list)
     reflections: list[str] = Field(default_factory=list)
 
+    _coerce = field_validator("issues", "reflections", mode="before")(_as_list)
+
     _DIMS = ("ac_coverage", "atomicity", "testability", "traceability", "faithfulness",
              "negative_edge_coverage", "non_duplication")
 
@@ -117,9 +142,13 @@ class StepItem(BaseModel):
     scenario_id: str = ""
     steps: list[dict] = Field(default_factory=list)  # {order, keyword, action, expected}
 
+    _coerce = field_validator("steps", mode="before")(_as_list)
+
 
 class StepsList(BaseModel):
     items: list[StepItem] = Field(default_factory=list)
+
+    _coerce = field_validator("items", mode="before")(_as_list)
 
     def to_steps(self, test_data: list[TestData]) -> dict[str, list[TestStep]]:
         data_refs = [d.id for d in test_data]
