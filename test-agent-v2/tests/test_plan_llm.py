@@ -220,6 +220,29 @@ async def test_claude_scenarios_batches_only_in_scope_units():
     assert [s.id for s in scs] == ["scenario:run-x:a"]
 
 
+def test_loads_obj_tolerates_fence_and_prose():
+    """The recovery parser: pull a JSON object out of fenced / prose-wrapped model output."""
+    from common.llm.parse import loads_obj
+
+    assert loads_obj('```json\n{"items": [1]}\n```') == {"items": [1]}
+    assert loads_obj('Here you go:\n{"a": 1}\nhope that helps') == {"a": 1}
+    assert loads_obj("no json here") is None
+    assert loads_obj('[1, 2, 3]') is None  # an array is not an object
+
+
+async def test_claude_scenarios_recovers_when_model_fences_its_json():
+    """Prod bug repro: Claude-on-Vertex fences its JSON so ADK's output_schema leaves state empty →
+    generation degraded to heuristic. run_json_agent must recover it from the raw model text."""
+    from test_plan_definition.implement.generate.llm import claude_scenarios
+    from tests.tpd_fakes import FakeGeneratorModel
+
+    fenced = '```json\n{"items": [{"id": "scenario:run-x:a", "title": "A", "kind": "happy", ' \
+             '"source_refs": ["jira:LUZ-1"]}]}\n```'
+    fake = FakeGeneratorModel(model="fake", scenarios_json=fenced)
+    scs = await claude_scenarios(_plan(), _plan_pack(), [TestData(id="td", kind="mock-data")], model=fake)
+    assert scs and scs[0].id == "scenario:run-x:a"   # recovered despite the code fence
+
+
 def test_scenario_schema_coerces_scalar_and_single_object_drift():
     """The deployed model intermittently emits a scalar where a list is expected (source_refs:"x") or a
     single item object instead of a list — must COERCE, not reject (rejection → silent heuristic 0.1x)."""
