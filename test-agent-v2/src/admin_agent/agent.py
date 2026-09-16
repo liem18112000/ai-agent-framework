@@ -101,6 +101,13 @@ class AdminRouter(RouterAgent):
         context_id = parts[1] if len(parts) > 1 else None
         return await admin.view_memory(await self._bank(), self._engine(), tier, context_id)
 
+    @command("memory-graph", "memory-graph [title]")
+    async def _memory_graph(self, rest: str) -> str:
+        """Render memory_node + memory_edge as a self-contained force-directed HTML page (graphify-style).
+        Returns the HTML itself — the client writes it to a file and publishes it via the Artifact tool."""
+        title = rest.strip() or "Memory graph"
+        return await admin.memory_graph_html(await self._bank(), self._engine(), title=title)
+
     @command("wipe-all", "wipe-all <confirm>")
     async def _wipe_all(self, rest: str) -> str:
         return await admin.wipe_all(await self._bank(), self._engine(), rest.strip())

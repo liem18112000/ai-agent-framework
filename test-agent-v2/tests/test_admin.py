@@ -193,3 +193,23 @@ def test_two_backups_are_distinct_versions_listed_newest_first():
     out = admin.list_backups(bank)
     assert "Backups (2)" in out
     assert out.index("second") < out.index("first")  # newest first
+
+
+# --- F5: memory-graph HTML visualisation -----------------------------------------------------------
+async def test_memory_graph_html_renders_nodes_edges_from_index_fallback():
+    """No DB → reads the GCS index; emits a self-contained force-directed page with the node + a legend."""
+    bank = _bank()
+    _add_note(bank, Note(id="jira:LUZ-9", type="jira-issue", title="Dunning ticket", run_id="r"))
+    _add_note(bank, Note(id="attachment:spec", type="attachment", title="spec.pdf", run_id="r",
+                         links=[]))
+    # an edge jira -> attachment via the index graph
+    bank.update_index(lambda g: g.edges.__setitem__(
+        "e1", {"source_id": "jira:LUZ-9", "target": "attachment:spec", "type": "attachment"}))
+
+    html = await admin.memory_graph_html(bank, None, title="Mem")
+    assert "<canvas" in html and "const DATA=" in html          # self-contained force-graph page
+    assert "GCS knowledge index" in html                        # fallback source labelled
+    assert "attachment:spec" in html and "jira-issue" in html   # node + type legend present
+    assert "__DATA__" not in html                               # all tokens substituted
+    # safe <script> embedding — no raw closing tag can break out of the DATA literal
+    assert "</script>" not in html.split("const DATA=")[1].split("</script>", 1)[0]

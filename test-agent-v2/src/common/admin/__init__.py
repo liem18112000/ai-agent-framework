@@ -14,6 +14,7 @@ Split into one module per feature (`runs` / `memory_view` / `backup` / `wipe`) o
 from __future__ import annotations
 
 from common.admin.backup import backup_memory, list_backups
+from common.admin.memory_graph import memory_graph_html
 from common.admin.memory_view import view_memory
 from common.admin.runs import RunDetail, RunSummary, compare_runs, get_run, list_runs
 from common.admin.wipe import wipe_all, wipe_required_token
@@ -26,6 +27,7 @@ __all__ = [
     "get_run",
     "list_backups",
     "list_runs",
+    "memory_graph_html",
     "view_memory",
     "wipe_all",
     "wipe_required_token",

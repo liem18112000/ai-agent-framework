@@ -105,7 +105,7 @@ _PROCEDURAL_AGENTS = (
     ("test_evaluation", "score the pack / plan (read-only quality gate)",
      ("evaluate_pack", "evaluate_plan")),
     ("admin_agent", "[ADMIN — non-pipeline] memory & history operator utility",
-     ("list_runs", "get_run", "view_memory", "backup_memory", "list_backups", "wipe_all")),
+     ("list_runs", "get_run", "view_memory", "publish_memory_graph", "backup_memory", "list_backups", "wipe_all")),
 )
 
 

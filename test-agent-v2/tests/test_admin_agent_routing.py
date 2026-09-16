@@ -87,3 +87,16 @@ async def test_admin_agent_serves_a2a_card_via_lifespan(monkeypatch):
             assert (await c.get("/livez")).status_code == 200
             card = (await c.get("/.well-known/agent-card.json")).json()
             assert card["name"] == "admin_agent"
+
+
+async def test_router_memory_graph_returns_html(monkeypatch):
+    from common.models import Note
+
+    bank = _seeded_bank()
+    note = Note(id="jira:LUZ-1", type="jira-issue", title="ticket", run_id="run-a")
+    bank.upsert_note(note)
+    bank.update_index(lambda g: g.add_note(note))
+    _patch_bank(monkeypatch, bank)
+    monkeypatch.setattr("admin_agent.agent.AdminRouter._engine", lambda self: None)  # offline: index fallback
+    out = await drive_adk(build_root_agent, "memory-graph My Graph")
+    assert "<canvas" in out and "My Graph" in out and "jira-issue" in out

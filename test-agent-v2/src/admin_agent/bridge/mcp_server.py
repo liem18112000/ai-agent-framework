@@ -51,6 +51,14 @@ def register_tools(mcp: MCPServer, session: BridgeSession) -> dict:
         return (await session.ask("list-backups")).text
 
     @mcp.tool()
+    async def publish_memory_graph(title: str = "Memory graph") -> str:
+        """[ADMIN — not part of the testing pipeline] Render memory_node + memory_edge as a
+        self-contained, force-directed HTML page (graphify-style node-link view, coloured by node type,
+        drag + hover-for-synopsis). Returns the HTML string — write it to a .html file and publish it
+        with the Artifact tool. Reads pgvector when configured, else the GCS knowledge index."""
+        return (await session.ask(f"memory-graph {title}".strip())).text
+
+    @mcp.tool()
     async def wipe_all(confirm: str) -> str:
         """[ADMIN — not part of the testing pipeline] DESTRUCTIVE — clears the memory bank, pgvector,
         and the A2A task + ADK session tables in one call. `confirm` MUST equal the GCS_BUCKET value
@@ -61,5 +69,5 @@ def register_tools(mcp: MCPServer, session: BridgeSession) -> dict:
     return {
         "list_runs": list_runs, "get_run": get_run, "compare_runs": compare_runs,
         "view_memory": view_memory, "backup_memory": backup_memory,
-        "list_backups": list_backups, "wipe_all": wipe_all,
+        "list_backups": list_backups, "publish_memory_graph": publish_memory_graph, "wipe_all": wipe_all,
     }
