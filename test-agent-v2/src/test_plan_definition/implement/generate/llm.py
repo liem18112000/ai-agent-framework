@@ -33,7 +33,8 @@ async def classify_in_scope(plan: TestPlan, plan_pack, *, model=None) -> set[str
     agent = build_generator_agent(name="tpd_scope_classifier", system=pack_block(summary),
                                   output_schema=InScope, output_key="tpd_scope", model=model)
     data = await run_json_agent(agent, output_key="tpd_scope",
-                                user=scope_classify_prompt(plan, summary, grounded))
+                                user=scope_classify_prompt(plan, summary, grounded,
+                                                           understanding=plan_pack.understanding))
     if not data:
         return None
     ids = {i for i in InScope(**data).in_scope_ids if i in {n.id for n in grounded}}

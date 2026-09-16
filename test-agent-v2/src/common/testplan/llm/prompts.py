@@ -123,26 +123,34 @@ def brief_prompt(plan: TestPlan, summary: str, open_questions: list[str], *,
     return f"{body}\n\n{pack_block(summary)}" if include_context else body
 
 
-def scope_classify_prompt(plan: TestPlan, summary: str, grounded) -> str:
+def scope_classify_prompt(plan: TestPlan, summary: str, grounded, understanding: str = "") -> str:
     """One-call SCOPE CLASSIFIER: pick the pack node ids that are IN scope for testing THIS ticket.
     The crawl sweeps in sibling tickets, framework/meta pages and cross-project docs; those are context,
-    not things to write scenarios for. Marker 'SCOPE CLASSIFIER' (not a generator router substring)."""
+    not things to write scenarios for. Marker 'SCOPE CLASSIFIER' (not a generator router substring).
+    The confirmed ``understanding`` is the ANCHOR — the model classifies each node against the feature it
+    describes, not against the run id (which carries no signal). Elevated to the top so it isn't buried
+    and truncated inside the pack summary (the reason an earlier prompt-only tweak barely moved 36->35)."""
     listing = "\n".join(
         f"- {n.id} :: {n.title} :: {(n.synopsis or '')[:160]}" for n in grounded) or "(none)"
+    target = understanding.strip() or (
+        f"(no understanding text; anchor on these in-scope hints: {', '.join(plan.scope) or '(none)'})")
     return (
-        "You are a SCOPE CLASSIFIER for a QA test plan. From the pack nodes below, return ONLY the ids "
-        "that are IN SCOPE for testing THIS ticket — the ticket's own feature and the requirements / "
-        "code / specs that DIRECTLY implement or specify it.\n"
-        "EXCLUDE by DEFAULT (leave out): OTHER Jira tickets/issues (sibling issues in the same epic — a "
-        "node about a DIFFERENT feature or ticket is out of scope even when it looks related), "
-        "framework/meta/agent-infrastructure pages, cross-project documentation, and anything not needed "
-        "to verify THIS ticket's own behaviour. Keep a node ONLY if you can name how it implements or "
-        "specifies the ticket under test; when a node is about a different ticket/feature, leave it OUT.\n"
-        f"Ticket / understanding: {plan.context_id}. In-scope hints: {', '.join(plan.scope) or '(none)'}. "
+        "You are a SCOPE CLASSIFIER for a QA test plan.\n\n"
+        f"=== TICKET UNDER TEST (the ONLY feature in scope) ===\n{target}\n"
+        "=== END TICKET UNDER TEST ===\n\n"
+        "From the pack nodes below, return ONLY the ids that DIRECTLY implement, specify, or exercise the "
+        "feature described above — the ticket's own code, requirements, specs and spec attachments.\n"
+        "The pack was CRAWLED FROM AN EPIC and deliberately contains MANY sibling Jira tickets that are "
+        "DIFFERENT issues from the one under test. EXCLUDE them ALL. Also exclude framework/meta/"
+        "agent-infrastructure pages and cross-project documentation. A node is IN only if you can state, "
+        "in one phrase, how it belongs to THE feature above; if it is about a different ticket or feature "
+        "— even a related-looking one in the same epic — leave it OUT.\n"
+        f"In-scope hints: {', '.join(plan.scope) or '(none)'}. "
         f"Out-of-scope hints: {', '.join(plan.out_of_scope) or '(none)'}.\n\n"
         "Return ONLY a JSON object {in_scope_ids: [pack ids, verbatim]} — a SUBSET of the ids below. Be "
-        "selective: a smaller, on-target set is better than sweeping in siblings. Never return an empty "
-        f"list — if unsure keep only the node(s) MOST specific to the ticket.\n\nPack nodes:\n{listing}\n\n{pack_block(summary)}"
+        "selective: expect to keep only a HANDFUL (the target ticket + its implementing code/specs), not "
+        "most of the list. Never return an empty list — if unsure keep only the node(s) MOST specific to "
+        f"the feature above.\n\nPack nodes:\n{listing}\n\n{pack_block(summary)}"
     )
 
 
