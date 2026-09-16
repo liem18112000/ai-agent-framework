@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import time
+
 import httpx
 
+from common.benchmark.store import add_latency
 from common.bridge.a2a_client import A2ABridgeClient, A2AError, A2AResult
 
 
@@ -27,12 +30,17 @@ class BridgeSession:
         self.tasks.clear()
 
     async def ask(self, text: str, **kw: str | None) -> A2AResult:
+        start = time.monotonic()
         try:
-            return await self.get_client().send(text, **kw)
+            res = await self.get_client().send(text, **kw)
         except A2AError as exc:
             raise RuntimeError(str(exc)) from exc
         except httpx.HTTPError as exc:
             raise RuntimeError(f"Cannot reach the A2A agent at {self.base_url}: {exc}") from exc
+        # Phase-0 latency capture: accumulate server processing time per run (excludes human think-time
+        # between tool calls, since each `ask` is one call). Keyed on the resolved context_id.
+        add_latency(res.context_id or kw.get("context_id"), (time.monotonic() - start) * 1000)
+        return res
 
     async def turn(self, context_id: str, answer: str | None, start_text: str) -> A2AResult:
         """One multi-turn interrogation step: send the answer when answering, else (re)start.

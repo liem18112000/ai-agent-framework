@@ -13,7 +13,7 @@ the scoring engines (`evaluate_pack`/`evaluate_plan`); the model + blob I/O live
 from __future__ import annotations
 
 from common.adk.events import now
-from common.benchmark import Benchmark, read_benchmark, write_benchmark
+from common.benchmark import Benchmark, read_benchmark, read_latency, write_benchmark
 from common.interrogate.pack import load_pack
 from common.memory.bank import ROOT, _slug
 from test_evaluation.engine import evaluate_pack, evaluate_plan
@@ -51,6 +51,7 @@ def compute_benchmark(bank, context_id: str) -> Benchmark:
             bm.tps, bm.tps_components = p.tps, p.components.as_dict()
             bm.seed = bm.seed or p.seed
         bm.ok = bm.pqs is not None or bm.tps is not None
+        bm.latency_ms = read_latency(context_id)  # server processing time, if a shared cache captured it
         if not bm.ok:
             bm.error = "nothing to score (no pack, no plan)"
     except Exception as exc:  # noqa: BLE001 — a benchmark must always produce a record, even on failure

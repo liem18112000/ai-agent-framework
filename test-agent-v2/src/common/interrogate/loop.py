@@ -31,15 +31,22 @@ def _resolve_max_questions() -> int:
     return _DEFAULT_MAX_QUESTIONS
 
 
+def _resolve_max_rounds() -> int:
+    """Re-seed passes when a caller doesn't specify: 1 under Turbo (shallower, faster), else 4."""
+    from common.adk.config import turbo_on
+
+    return 1 if turbo_on() else 4
+
+
 class RefineSession:
     def __init__(
         self, bank, context_id: str, *, seed: str = "", rounds=ROUNDS, max_questions: int | None = None,
-        max_rounds: int = 4, generator=None, understander=None, gatherer: Gatherer | None = None,
+        max_rounds: int | None = None, generator=None, understander=None, gatherer: Gatherer | None = None,
         answered_by: str = "human", run_id: str = "refine", now: str = "",
     ) -> None:
         self.bank, self.context_id, self.rounds = bank, context_id, tuple(rounds)
         self.max_questions = max_questions if max_questions is not None else _resolve_max_questions()
-        self.max_rounds = max_rounds
+        self.max_rounds = max_rounds if max_rounds is not None else _resolve_max_rounds()
         self.generator, self.understander, self.gatherer = generator, understander, gatherer
         self.answered_by, self.run_id, self.now = answered_by, run_id, now
 

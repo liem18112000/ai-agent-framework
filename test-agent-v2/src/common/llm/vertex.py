@@ -4,9 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import os
+from functools import lru_cache
 from typing import Any
 
 _ENV_KEYS = ("VERTEX_PROJECT", "VERTEX_LOCATION", "VERTEX_MODEL")
+
+
+@lru_cache(maxsize=None)  # one (project, location) per process — client setup is not free
+def _client(project: str, location: str):
+    """Process-wide AnthropicVertex singleton. Safe to share across the to_thread workers (the client
+    is built for concurrent use); reused so we don't redo credential/transport setup on every call."""
+    from anthropic import AnthropicVertex
+
+    return AnthropicVertex(project_id=project, region=location)
 
 
 def vertex_config() -> tuple[str, str, str] | None:
@@ -39,9 +49,7 @@ def complete(prompt: str, *, project: str, location: str, model: str, max_tokens
     connection alive past read timeouts). When `cache_prefix` is given, that stable block is
     **prompt-cached**, so repeated calls sharing it (e.g. the 4 define rounds over one pack) are
     materially faster and ~cheaper on the cached tokens; set `stream=False`/`cache_prefix=None` to opt out."""
-    from anthropic import AnthropicVertex
-
-    client = AnthropicVertex(project_id=project, region=location)
+    client = _client(project, location)
     kwargs = {
         "model": model, "max_tokens": max_tokens, "thinking": {"type": "disabled"},
         "messages": [{"role": "user", "content": _user_content(prompt, cache_prefix)}],
@@ -71,9 +79,7 @@ def describe_image(data: bytes, *, media_type: str, project: str, location: str,
     must already be a vision-accepted type (image/png|jpeg|gif|webp) — see extract._vision_payload."""
     import base64
 
-    from anthropic import AnthropicVertex
-
-    client = AnthropicVertex(project_id=project, region=location)
+    client = _client(project, location)
     b64 = base64.standard_b64encode(data).decode("ascii")
     content = [
         {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},

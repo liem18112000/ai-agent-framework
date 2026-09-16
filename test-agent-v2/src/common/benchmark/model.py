@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field, fields
 
 # Bump to invalidate every cached blob at once (read_benchmark treats an older version as a miss).
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 @dataclass
@@ -25,6 +25,7 @@ class Benchmark:
     tps_components: dict = field(default_factory=dict)
     retrieval: dict | None = None       # {"precision", "recall", "leaked"} highlight from the pack eval
     seed: str = ""
+    latency_ms: float | None = None     # total server processing time for the run (None = not captured)
     computed_at: str = ""               # ISO-ish UTC stamp
     error: str = ""                     # set when ok=false
     schema_version: int = SCHEMA_VERSION

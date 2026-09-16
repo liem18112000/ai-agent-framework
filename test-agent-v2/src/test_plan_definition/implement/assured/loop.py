@@ -61,9 +61,13 @@ async def run_assured_scenarios(
     from test_plan_definition.implement.generate.scenarios import heuristic_scenarios
 
     # env-configured bounds (fall back to the defaults on a malformed value)
-    max_iters, threshold, budget_s = _DEFAULT_MAX_ITERS, _DEFAULT_THRESHOLD, _DEFAULT_BUDGET_S
+    from common.adk.config import turbo_on
+
+    # Turbo caps the reflect→regenerate loop at 1 round (the top latency lever); explicit env overrides.
+    iters_default = 1 if turbo_on() else _DEFAULT_MAX_ITERS
+    max_iters, threshold, budget_s = iters_default, _DEFAULT_THRESHOLD, _DEFAULT_BUDGET_S
     with contextlib.suppress(ValueError):
-        max_iters = max(1, int(os.environ.get("TPD_ASSURED_MAX_ITERS", _DEFAULT_MAX_ITERS)))
+        max_iters = max(1, int(os.environ.get("TPD_ASSURED_MAX_ITERS", iters_default)))
     with contextlib.suppress(ValueError):
         threshold = float(os.environ.get("TPD_ASSURED_THRESHOLD", _DEFAULT_THRESHOLD))
     with contextlib.suppress(ValueError):

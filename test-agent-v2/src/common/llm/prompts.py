@@ -59,9 +59,14 @@ GUIDANCE = {
 }
 
 
-def question_prompt(pack: Pack, round_name: str) -> str:
-    """Claude-on-Vertex prompt asking for one interrogation round's questions."""
+def question_prompt(pack: Pack, round_name: str, *, include_context: bool = True) -> str:
+    """Claude-on-Vertex prompt asking for one interrogation round's questions.
+
+    `include_context=False` drops the trailing pack dump so the caller can pass `pack.summary_text()`
+    as a stable `cache_prefix` (Anthropic prompt caching) — the pack is then reused across the round's
+    LLM calls instead of re-sent uncached each round (mirrors the define path)."""
     guidance = GUIDANCE.get(round_name, f"ROUND: {round_name}")
+    ctx = f"\n\nContext pack:\n{pack.summary_text()}" if include_context else ""
     return (
         "You are the QA Testing Agent's interrogation step, applying the vinnstack interrogation "
         f"method for this round.\n\n{guidance}\n\n"
@@ -73,8 +78,7 @@ def question_prompt(pack: Pack, round_name: str) -> str:
         "and depends_on (ids of earlier questions it is gated on); order by dependency.\n\n"
         "Return ONLY a JSON array; each item: {id, round, question, why, options:[{label,"
         "implication}], recommendation, depends_on:[], applies_to, status, confidence}. "
-        f"Use id prefix 'Q-{round_name[:3]}-'.\n\n"
-        f"Context pack:\n{pack.summary_text()}"
+        f"Use id prefix 'Q-{round_name[:3]}-'.{ctx}"
     )
 
 

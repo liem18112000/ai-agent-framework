@@ -25,7 +25,10 @@ def claude_questions(pack: Pack, round_name: str) -> list[Question]:
     # this module — a top-level import would cycle (see the refactor note). Deferred to call time.
     from common.adk.model import complete
 
-    raw = complete(question_prompt(pack, round_name), max_tokens=6000)
+    # Prompt-cache the pack (stable across a pass's rounds) instead of re-sending it uncached each
+    # round — mirrors the define path. cache_prefix goes first (Anthropic ephemeral cache prefix).
+    raw = complete(question_prompt(pack, round_name, include_context=False), max_tokens=6000,
+                   cache_prefix=pack.summary_text())
     return _parse(raw, round_name)
 
 

@@ -17,9 +17,12 @@ _OFF = {"0", "false", "no", "off"}
 
 
 def critique_enabled() -> bool:
-    """Per-round interrogation critique gate (env ``INTERROGATION_CRITIQUE``, default ON). Off lets a
-    deployment drop the extra per-round Vertex call when its latency/cost isn't wanted."""
-    return os.environ.get("INTERROGATION_CRITIQUE", "1").strip().lower() not in _OFF
+    """Per-round interrogation critique gate (env ``INTERROGATION_CRITIQUE``, default ON — OFF under
+    Turbo, which drops this extra per-round Vertex call). An explicit env value always overrides."""
+    from common.adk.config import turbo_on
+
+    default = "0" if turbo_on() else "1"
+    return os.environ.get("INTERROGATION_CRITIQUE", default).strip().lower() not in _OFF
 
 
 class RoundCritique(BaseModel):
