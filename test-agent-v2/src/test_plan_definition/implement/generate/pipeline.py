@@ -13,6 +13,7 @@ from common.testplan.models import (
     TestScenario,
     TestStep,
 )
+from common.interrogate.round.case_design import EXTRA_KINDS, kinds_from_answer
 from common.testplan.pack import load_plan_pack
 from test_plan_definition.implement.assured import run_assured_scenarios
 from test_plan_definition.implement.generate.steps import generate_all_steps
@@ -31,6 +32,13 @@ async def implement_plan(bank, context_id: str, *, run_id: str = "implement", no
     if plan.status != CONFIRMED:
         return ImplementResult(plan=plan, message=f"Test plan for {context_id} is {plan.status}; "
                               "approve it (resolve open gaps) before implementing.")
+
+    # `guidance=` free text is otherwise only an LLM reflection, so extra kinds the user asked for
+    # (security/concurrency/i18n…) never reached plan.test_kinds and generation used only the seed
+    # defaults. Fold any guidance-named EXTRA kinds into the plan here (union, defaults untouched).
+    if guidance and (named := [k for k in kinds_from_answer(guidance) if k in EXTRA_KINDS]):
+        plan.test_kinds = list(dict.fromkeys([*(plan.test_kinds or []), *named]))
+        store.write_plan(bank, plan)
 
     plan_pack = load_plan_pack(bank, context_id)
     # test-data/steps stay behind `detail` (heuristic by default — one LLM path unless opted in). On a
