@@ -48,6 +48,14 @@ class PromptTemplate:
     version: int = 0          # 0 = the Python default; DB-published versions start at 1
     engine: str = NONE
     required_vars: tuple[str, ...] = ()
+    #: Substrings ANY body published under this key must contain — the output contract the consuming
+    #: parser depends on. Travels with the key's definition so `publish()` can enforce it without the
+    #: store importing a domain module.
+    contract: tuple[str, ...] = ()
+    #: Substrings a published body must NOT contain. Needed because the contract is per key and
+    #: sometimes inverted: the testplan generators must never say "Return ONLY a JSON array", while
+    #: `engine.questions` MUST (it is parsed by `loads_array`).
+    forbids: tuple[str, ...] = ()
 
     def render(self, params: Mapping[str, object] | None = None) -> str:
         """Substitute ``$name`` params into the body (``engine="none"`` only).

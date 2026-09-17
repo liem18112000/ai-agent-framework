@@ -121,11 +121,26 @@ $listing
 Return ONLY a JSON object {"items": [ ... ]} — each item: {scenario_id, steps:[{order, keyword (Given|When|Then|And), action, expected}]}."""
 
 
+#: P5.1 — the output contract enforced at the WRITE boundary: (required substrings, forbidden ones).
+#: The ADK ``output_schema`` for these generators is an object wrapper, so a body asking for a bare
+#: array parses to a single element and the batch silently degrades — the defect that cost three
+#: rebuilds. Pinning it here means `prompt_publish` rejects it, not a 15-minute redeploy.
+_CONTRACTS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    SCENARIOS: (('{"items": [ ... ]}',), ("Return ONLY a JSON array",)),
+    TESTDATA: (('{"items": [ ... ]}',), ("Return ONLY a JSON array",)),
+    STEPS: (('{"items": [ ... ]}',), ("Return ONLY a JSON array",)),
+    JUDGE_SCENARIOS: (("Return ONLY a JSON object",), ()),
+    SCOPE_CLASSIFY: (("Return ONLY a JSON object",), ()),
+}
+
+
 def _t(key: str, body: str) -> PromptTemplate:
     from common.prompts import declared_vars
 
+    contract, forbids = _CONTRACTS.get(key, ((), ()))
     return PromptTemplate(key=key, body=body, version=0, engine=NONE,
-                          required_vars=declared_vars(body))
+                          required_vars=declared_vars(body),
+                          contract=contract, forbids=forbids)
 
 
 #: version 0 everywhere — the body compiled into the image. DB-published versions start at 1.
@@ -139,13 +154,5 @@ DEFAULTS = {t.key: t for t in (
     _t(STEPS, _STEPS_BODY),
 )}
 
-#: The output-schema wrapper each generator template must ask for — the schema-contract rail (§4.5).
-#: This is the defect that cost a rebuild three times: the prompt said "JSON array" while the ADK
-#: ``output_schema`` is an object wrapper, so recovery parsed one element and the batch degraded.
-SCHEMA_CONTRACT = {
-    SCENARIOS: '{"items": [ ... ]}',
-    TESTDATA: '{"items": [ ... ]}',
-    STEPS: '{"items": [ ... ]}',
-    JUDGE_SCENARIOS: "Return ONLY a JSON object",
-    SCOPE_CLASSIFY: "Return ONLY a JSON object",
-}
+#: Derived view kept for readability/tests — the single source of truth is ``_CONTRACTS`` above.
+SCHEMA_CONTRACT = {k: req[0] for k, (req, _f) in _CONTRACTS.items() if req}

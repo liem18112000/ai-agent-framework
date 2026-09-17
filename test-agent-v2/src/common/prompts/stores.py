@@ -64,12 +64,16 @@ class PyPromptStore:
         return {k: t.version for k, t in self._defaults.items()}
 
 
-def validate(key: str, body: str, engine: str, required_vars: tuple[str, ...]) -> None:
+def validate(key: str, body: str, engine: str, required_vars: tuple[str, ...], *,
+             contract: tuple[str, ...] = (), forbids: tuple[str, ...] = ()) -> None:
     """Publish-time rail: reject a template that would render wrong at 3am instead of at publish time.
 
-    Checks the engine is known, the body is non-empty, and — the one that actually bites — that every
-    ``$name`` in the body is declared. An undeclared placeholder renders as the literal text ``$foo``
-    inside the prompt, which the model reads as an instruction."""
+    Checks the engine is known, the body is non-empty, every ``$name`` is declared, and — P5.1 — that
+    the body still honours its key's OUTPUT CONTRACT. That last check is the one that matters now that
+    bodies are editable data: the "asked for a bare JSON array while the schema is an object wrapper"
+    defect cost three rebuilds, and the compile-time test over the shipped defaults cannot see a body
+    typed into `prompt_publish`. An undeclared placeholder, separately, renders as the literal text
+    ``$foo`` inside the prompt, which the model reads as an instruction."""
     if engine not in ENGINES:
         raise ValueError(f"prompt {key!r}: unknown engine {engine!r} (expected one of {ENGINES})")
     if not body.strip():
@@ -79,6 +83,14 @@ def validate(key: str, body: str, engine: str, required_vars: tuple[str, ...]) -
         if undeclared:
             raise ValueError(f"prompt {key!r}: undeclared placeholders {undeclared} "
                              f"(declare them in required_vars or remove the $)")
+    missing = [c for c in contract if c not in body]
+    if missing:
+        raise ValueError(f"prompt {key!r}: body no longer states its required contract {missing} — "
+                         "the consuming parser depends on that wording")
+    present = [f for f in forbids if f in body]
+    if present:
+        raise ValueError(f"prompt {key!r}: body contains forbidden wording {present} — "
+                         "this key's parser expects the opposite shape")
 
 
 class PgPromptStore:
@@ -131,8 +143,10 @@ class PgPromptStore:
         for key, eng, ver, body, req in rows:
             required = tuple(v for v in (req or "").split(",") if v)
             try:
-                validate(key, body, eng, required)
-            except ValueError as exc:
+                base = self._fallback.get(key)
+                validate(key, body, eng, required,
+                         contract=base.contract, forbids=base.forbids)
+            except (ValueError, PromptNotFound) as exc:
                 log.warning("prompts: %s — keeping the Python default for this key", exc)
                 continue
             snap[key] = PromptTemplate(key=key, body=body, version=int(ver), engine=eng,
@@ -145,7 +159,8 @@ class PgPromptStore:
                       required_vars: tuple[str, ...] | None = None) -> int:
         """Append a new version and move the pointer. Returns the new version number."""
         required = required_vars if required_vars is not None else declared_vars(body)
-        validate(key, body, engine, required)
+        base = self._fallback.get(key)          # raises PromptNotFound for an unknown key
+        validate(key, body, engine, required, contract=base.contract, forbids=base.forbids)
         eng = _engine()
         if eng is None:
             raise RuntimeError("no database configured — cannot publish prompts")
@@ -170,18 +185,25 @@ class PgPromptStore:
         return int(nxt)
 
     async def rollback(self, key: str, version: int) -> int:
-        """Point ``key`` back at an existing version (no row is ever deleted)."""
+        """Point ``key`` back at an existing version. No row is ever deleted — the pointer moves.
+
+        **Version 0 is the image default, not a DB row** (the open question P5 had to answer). Rather
+        than make "get me back to the known-good shipped body" inexpressible — the exact thing you
+        want during an incident — 0 is accepted as a special case: the pointer is set to 0, the JOIN
+        in ``_SELECT`` then matches nothing for that key, and ``get`` falls through to the image
+        default. Published versions stay in ``prompt_version`` for audit and can be restored."""
         eng = _engine()
         if eng is None:
             raise RuntimeError("no database configured — cannot roll back prompts")
         from sqlalchemy import text
 
         async with eng.begin() as conn:
-            found = (await conn.execute(
-                text("SELECT 1 FROM prompt_version WHERE key = :k AND version = :v"),
-                {"k": key, "v": version})).first()
-            if not found:
-                raise PromptNotFound(f"{key} v{version}")
+            if version != 0:
+                found = (await conn.execute(
+                    text("SELECT 1 FROM prompt_version WHERE key = :k AND version = :v"),
+                    {"k": key, "v": version})).first()
+                if not found:
+                    raise PromptNotFound(f"{key} v{version}")
             await conn.execute(text("UPDATE prompt_template SET current_version = :v WHERE key = :k"),
                                {"k": key, "v": version})
         await self.refresh(force=True)

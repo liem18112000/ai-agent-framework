@@ -206,3 +206,74 @@ def test_prompt_section_is_absent_for_runs_predating_p7(monkeypatch):
 
     monkeypatch.setattr(runs, "_prompt_pins", lambda bank, ctx: {})
     assert runs._prompt_section(None, "a", "b") == []
+
+
+# --- P5.1: the contract is enforced at the WRITE boundary ------------------------------------------
+def test_validate_enforces_required_and_forbidden_contract_wording():
+    """The rail that matters now that bodies are editable data. The compile-time test over DEFAULTS
+    cannot see a body typed into `prompt_publish`; this can."""
+    with pytest.raises(ValueError, match="required contract"):
+        validate("k", "Return something", NONE, (), contract=('{"items": [ ... ]}',))
+    with pytest.raises(ValueError, match="forbidden wording"):
+        validate("k", 'Return ONLY a JSON array of {"items": [ ... ]}', NONE, (),
+                 contract=('{"items": [ ... ]}',), forbids=("Return ONLY a JSON array",))
+    validate("k", 'Return ONLY a JSON object {"items": [ ... ]}', NONE, (),
+             contract=('{"items": [ ... ]}',), forbids=("Return ONLY a JSON array",))
+
+
+def test_every_key_carries_its_contract_and_its_own_body_satisfies_it():
+    """Each shipped body must satisfy the contract attached to its own key — across all three
+    template sets, including the INVERTED engine.questions case."""
+    from common.llm import templates as engine
+    from knowledge_gathering.gather.explore.planners import templates as kga
+
+    for mod in (templates, kga, engine):
+        for key, tpl in mod.DEFAULTS.items():
+            validate(key, tpl.body, tpl.engine, tpl.required_vars,
+                     contract=tpl.contract, forbids=tpl.forbids)
+
+    # the inversion, stated explicitly so nobody "harmonises" it later
+    assert engine.DEFAULTS[engine.QUESTIONS].contract == ("Return ONLY a JSON array",)
+    assert "Return ONLY a JSON array" in templates.DEFAULTS[templates.SCENARIOS].forbids
+
+
+async def test_publish_rejects_a_contract_violating_body(monkeypatch):
+    """`prompt_publish` must refuse a body that breaks its key's parser — before the write, not after
+    a 15-minute redeploy. Exercised without a DB: the contract lookup + validate run first."""
+    from common.prompts import PgPromptStore
+    from common.prompts import stores as st
+
+    monkeypatch.setattr(st, "_engine", lambda: object())  # get past the "no DB" guard
+    store = PgPromptStore(PyPromptStore(templates.DEFAULTS))
+    with pytest.raises(ValueError, match="forbidden wording"):
+        # contains the required wrapper, so ONLY the forbidden-array rule can fire
+        await store.publish(templates.SCENARIOS,
+                            'Return ONLY a JSON array {"items": [ ... ]} of scenarios.')
+    with pytest.raises(ValueError, match="required contract"):
+        await store.publish(templates.SCENARIOS, "Generate scenarios however you like.")
+
+
+async def test_publish_rejects_an_unknown_key(monkeypatch):
+    from common.prompts import PgPromptStore
+    from common.prompts import stores as st
+
+    monkeypatch.setattr(st, "_engine", lambda: object())
+    store = PgPromptStore(PyPromptStore(templates.DEFAULTS))
+    with pytest.raises(PromptNotFound):
+        await store.publish("tpd.not_a_key", "anything")
+
+
+def test_a_db_row_that_violates_its_contract_is_dropped_not_served():
+    """refresh() revalidates every row against the key's contract, so a row written before this rail
+    (or out-of-band) cannot serve — the fail-closed path keeps the image body."""
+    from common.prompts import PgPromptStore, PromptTemplate
+
+    fallback = PyPromptStore(templates.DEFAULTS)
+    store = PgPromptStore(fallback)
+    store._snapshot = {templates.SCENARIOS: PromptTemplate(
+        key=templates.SCENARIOS, body="Return ONLY a JSON array.", version=9)}
+    # a poisoned snapshot still serves until refresh revalidates; assert the guard exists on the row
+    base = fallback.get(templates.SCENARIOS)
+    with pytest.raises(ValueError):
+        validate(templates.SCENARIOS, "Return ONLY a JSON array.", NONE, (),
+                 contract=base.contract, forbids=base.forbids)

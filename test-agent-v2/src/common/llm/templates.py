@@ -39,8 +39,11 @@ $opens
 
 
 def _t(key: str, body: str) -> PromptTemplate:
+    # engine.questions is parsed by `loads_array`, so the ARRAY wording is REQUIRED here — the exact
+    # inverse of the testplan generators. The contract is per key, never global.
+    contract = ("Return ONLY a JSON array",) if key == QUESTIONS else ()
     return PromptTemplate(key=key, body=body, version=0, engine=NONE,
-                          required_vars=declared_vars(body))
+                          required_vars=declared_vars(body), contract=contract)
 
 
 DEFAULTS = {t.key: t for t in (
