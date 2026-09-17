@@ -9,6 +9,19 @@ from common.llm.vertex import agenerate as _vertex_agenerate
 from common.llm.vertex import complete as _vertex_complete
 from common.llm.vertex import vertex_config
 
+# Fast-tier output ceiling. The default model (sonnet-5) allows 128000, but a fast model has a lower cap
+# — claude-haiku-4-5 rejects anything > 64000 (Vertex 400s the request). Fast-tier calls are short
+# (distill/restate/critique/judge), so clamping to this never truncates. Env-overridable for other fast
+# models. Root cause of the fast judge failing the whole assured loop in the first A/B run.
+_FAST_MAX_TOKENS_DEFAULT = 64000
+
+
+def _fast_max_tokens() -> int:
+    try:
+        return max(1, int(os.environ["VERTEX_MODEL_FAST_MAX_TOKENS"]))
+    except (KeyError, ValueError, TypeError):
+        return _FAST_MAX_TOKENS_DEFAULT
+
 
 class VertexClaudeProvider:
     name = "claude"
@@ -25,6 +38,12 @@ class VertexClaudeProvider:
         if tier == "fast":
             return os.environ.get("VERTEX_MODEL_FAST") or model
         return model
+
+    @staticmethod
+    def _cap_max_tokens(max_tokens: int, tier: str) -> int:
+        """Clamp to the fast model's output ceiling on ``tier="fast"`` (haiku caps at 64000 < the 128000
+        default; an over-cap request 400s on Vertex). No-op on the default tier."""
+        return min(max_tokens, _fast_max_tokens()) if tier == "fast" else max_tokens
 
     def llm_agent_model(self, *, max_tokens: int | None = None, tier: str = "default"):
         """A `LiteLlm` for Claude-on-Vertex, or `None` when VERTEX_* is unset (→ heuristic, I7)."""
@@ -43,7 +62,7 @@ class VertexClaudeProvider:
         if os.environ.get("TPD_ADK_CACHE", "1") != "0":
             extra["cache_control_injection_points"] = [{"location": "message", "role": "system"}]
         return LiteLlm(model=f"vertex_ai/{model}", vertex_project=project, vertex_location=location,
-                       max_tokens=max_tokens or get_config().default_max_tokens,
+                       max_tokens=self._cap_max_tokens(max_tokens or get_config().default_max_tokens, tier),
                        thinking={"type": "disabled"}, **extra)
 
     def complete(self, prompt: str, *, max_tokens: int, cache_prefix: str | None = None,
@@ -51,7 +70,7 @@ class VertexClaudeProvider:
         project, location, model = self._require_config()
         return _vertex_complete(prompt, project=project, location=location,
                                 model=self._tier_model(model, tier),
-                                max_tokens=max_tokens, cache_prefix=cache_prefix)
+                                max_tokens=self._cap_max_tokens(max_tokens, tier), cache_prefix=cache_prefix)
 
     async def agenerate(self, prompt: str, *, max_tokens: int) -> str:
         project, location, model = self._require_config()

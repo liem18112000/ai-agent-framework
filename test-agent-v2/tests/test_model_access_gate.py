@@ -45,3 +45,16 @@ def test_fast_tier_resolves_to_vertex_model_fast_or_falls_back(monkeypatch):
     monkeypatch.setenv("VERTEX_MODEL_FAST", "fast-model")
     assert P._tier_model("default-model", "fast") == "fast-model"
     assert P._tier_model("default-model", "default") == "default-model"  # default tier ignores it
+
+
+def test_fast_tier_clamps_max_tokens_to_fast_ceiling(monkeypatch):
+    """The fast model (haiku) caps output at 64000 < the 128000 default; tier="fast" must clamp or
+    Vertex 400s the request (this killed the assured judge in the first A/B). Default tier passes through."""
+    from common.adk.providers.vertex_claude import VertexClaudeProvider as P
+
+    monkeypatch.delenv("VERTEX_MODEL_FAST_MAX_TOKENS", raising=False)
+    assert P._cap_max_tokens(128000, "default") == 128000
+    assert P._cap_max_tokens(128000, "fast") == 64000
+    assert P._cap_max_tokens(1200, "fast") == 1200  # already under the ceiling → unchanged
+    monkeypatch.setenv("VERTEX_MODEL_FAST_MAX_TOKENS", "32000")
+    assert P._cap_max_tokens(128000, "fast") == 32000

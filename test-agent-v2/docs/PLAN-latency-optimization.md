@@ -23,7 +23,7 @@ the repo hook rejects those). Full detail in memory note `v2-latency-map-and-pla
 | **Phase 0** latency capture | ✅ done | `Benchmark.latency_ms` (`SCHEMA_VERSION` 1→2); `BridgeSession.ask` accumulates via `get_cache()`; `compute_benchmark` reads it |
 | **Phase 2** `TESTAGENT_TURBO` toggle | ✅ done | `adk/config.py::turbo_on()` read at 3 gates: assured iters 2→1, critique off, refine passes 4→1 |
 | **Phase 3** fast model tier (B5) | ✅ done | `agent_model/complete(tier="fast")` → `VERTEX_MODEL_FAST`; routed at distill/understanding/define-brief/critique/judge; inert until env set |
-| **Live A/B** on **LUZ-158230** | ⬜ TODO | single-process, `CACHE_BACKEND=memory`, turbo off vs on. Heavy (41 units → ~28 batch calls ×2 configs); run headless/background or in the deploy session, not interactively |
+| **Live A/B** on **LUZ-158230** | ✅ ran (`tools/ab_latency.py`) | baseline vs turbo+fast, real Vertex. **1.17× overall / 1.44× implement**; assured score EQUAL (0.38); TPS ≈ equal; **PQS 0.75→0.45** (turbo's shallower refine). Caught + fixed the fast-judge 64000-cap bug. See §A/B below |
 | **TF plumbing** (`TESTAGENT_TURBO` + `VERTEX_MODEL_FAST`) | ✅ done (`9e98c48`) | `local.perf_env` → KGA+TPD; `var.turbo` / `var.vertex_model_fast`, both inert by default; `terraform validate` passes. Flip via tfvars + apply |
 | **Blocked lever** `_BATCH_CONCURRENCY` | 🔍 investigated | root cause unconfirmed (hardcoded ADK ids vs Vertex quota); safe unblock path documented under sink #1 — needs a controlled live experiment, not a flag flip |
 
@@ -257,6 +257,38 @@ components/retrieval), **no latency**. So:
 > The new `common/cache` `Cache` port (Redis/Memorystore) caches **benchmark blobs**, not LLM responses.
 > It *could* back an LLM-response cache, but hit rate is ~0 (per-ticket packs, sampled output) — prompt
 > caching (A2) is the real lever. Reuse the port only if we later find a genuinely repeated exact call.
+
+---
+
+## A/B results — LUZ-158230 (`tools/ab_latency.py`, real Vertex)
+
+Harness: gather **once** (live Atlassian, no `repo=` → no codegraph build), then run refine→define→implement
+on isolated bank clones for **baseline** (full model, no turbo) vs **turbo+fast** (`TESTAGENT_TURBO=1` +
+`VERTEX_MODEL_FAST=claude-haiku-4-5`). Times each stage; scores via `compute_benchmark`. Stages are
+stochastic (default sampling), so treat these as **directional**, not precise — a rigorous read needs N runs.
+
+**Run 2 (valid — after the fast-judge fix):**
+
+| Arm | refine | define | implement | LLM total | scenarios | assured | PQS | TPS |
+|---|---|---|---|---|---|---|---|---|
+| baseline | 163s | 199s | 492s | **854s** | 40 | 0.38 | **0.75** | 0.61 |
+| turbo+fast | 184s | 207s | 342s | **733s** | 54 | **0.38** | **0.45** | 0.66 |
+
+**Findings:**
+- **Latency:** turbo+fast ≈ **1.17× overall, 1.44× implement**. The win is concentrated in **implement**
+  (B1 assured iters 2→1). refine/define moved within noise — turbo's critique-off/fewer-passes are small
+  next to the unchanged full-model question generation, and the fast tier on those stages (understanding
+  700, critique 1200) is negligible.
+- **Quality:** assured score **identical (0.38)** and TPS ≈ equal — the plan/scenario quality is preserved.
+  But **PQS drops 0.75→0.45, reproducibly** (same in both runs): turbo's shallower **refine** (B2 critique
+  off + B3 1 pass) yields a lower-precision knowledge pack. So the real Turbo trade is on **pack quality**,
+  not the plan. Tuning lever for Phase 4: keep critique/passes if PQS matters, or gate B2/B3 separately.
+- **Bug caught + fixed:** run 1 showed `max_tokens 128000 > 64000` — the fast judge (`agent_model(tier="fast")`
+  inheriting the 128000 default) exceeds **claude-haiku-4-5's 64000 output cap** → judge dead → assured 0.0,
+  PQS 0.45. That would break any prod deploy with `VERTEX_MODEL_FAST=haiku`. Fixed by clamping fast-tier
+  `max_tokens` to 64000 (`VertexClaudeProvider._cap_max_tokens`, env `VERTEX_MODEL_FAST_MAX_TOKENS`).
+  Run 2 = 0 cap errors. **Lesson:** a fast tier MUST clamp `max_tokens` to the fast model's own ceiling —
+  the default-model ceiling is not portable across models.
 
 ---
 
