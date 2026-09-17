@@ -15,14 +15,18 @@ class ModelProvider(Protocol):
         """True when the provider's transport is configured (replaces the raw `vertex_config()` gate,"""
         ...
 
-    def llm_agent_model(self, *, max_tokens: int | None = None):
-        """The model object for an ADK `LlmAgent` (a `LiteLlm` for Claude-on-Vertex), or `None` when"""
+    def llm_agent_model(self, *, max_tokens: int | None = None, tier: str = "default"):
+        """The model object for an ADK `LlmAgent` (a `LiteLlm` for Claude-on-Vertex), or `None` when
+        unset. ``tier="fast"`` MAY select a cheaper/faster model for classification/judging sub-tasks;
+        a provider without a fast tier simply returns its default model (no behaviour change)."""
         ...
 
-    def complete(self, prompt: str, *, max_tokens: int, cache_prefix: str | None = None) -> str:
+    def complete(self, prompt: str, *, max_tokens: int, cache_prefix: str | None = None,
+                 tier: str = "default") -> str:
         """Synchronous single-shot completion (engine text path). ``cache_prefix`` is an optional
         stable prefix a provider MAY prompt-cache (Anthropic ephemeral cache); ``None`` = no caching,
-        identical to a plain completion. Providers that can't cache simply ignore it."""
+        identical to a plain completion. ``tier="fast"`` MAY route to a cheaper model (see
+        ``llm_agent_model``). Providers that can't cache / have no fast tier ignore these."""
         ...
 
     async def agenerate(self, prompt: str, *, max_tokens: int) -> str:

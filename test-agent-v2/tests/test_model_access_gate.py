@@ -32,3 +32,16 @@ def test_gemini_backend_is_scrubbed():
             if "gemini" in line.lower():
                 hits.append(f"{p.relative_to(_SRC)}:{i}: {line.strip()}")
     assert not hits, "Gemini references must be gone from src/ (C1):\n" + "\n".join(hits)
+
+
+def test_fast_tier_resolves_to_vertex_model_fast_or_falls_back(monkeypatch):
+    """`tier="fast"` uses VERTEX_MODEL_FAST when set, else the default model (so the fast tier is inert
+    until an operator configures it — zero behaviour change by default)."""
+    from common.adk.providers.vertex_claude import VertexClaudeProvider as P
+
+    monkeypatch.delenv("VERTEX_MODEL_FAST", raising=False)
+    assert P._tier_model("default-model", "default") == "default-model"
+    assert P._tier_model("default-model", "fast") == "default-model"  # unset → fall back
+    monkeypatch.setenv("VERTEX_MODEL_FAST", "fast-model")
+    assert P._tier_model("default-model", "fast") == "fast-model"
+    assert P._tier_model("default-model", "default") == "default-model"  # default tier ignores it

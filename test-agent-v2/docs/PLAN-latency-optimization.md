@@ -22,7 +22,7 @@ the repo hook rejects those). Full detail in memory note `v2-latency-map-and-pla
 | **Mode A — A3** parallelize planners | ❌ dropped | unsafe (shared ADK `ctx.session.state`) + low-value |
 | **Phase 0** latency capture | ✅ done | `Benchmark.latency_ms` (`SCHEMA_VERSION` 1→2); `BridgeSession.ask` accumulates via `get_cache()`; `compute_benchmark` reads it |
 | **Phase 2** `TESTAGENT_TURBO` toggle | ✅ done | `adk/config.py::turbo_on()` read at 3 gates: assured iters 2→1, critique off, refine passes 4→1 |
-| **Phase 3** fast model tier (B5) | ⬜ TODO | `agent_model(tier="fast")` → `VERTEX_MODEL_FAST` for judge/critique/distill/restate |
+| **Phase 3** fast model tier (B5) | ✅ done | `agent_model/complete(tier="fast")` → `VERTEX_MODEL_FAST`; routed at distill/understanding/define-brief/critique/judge; inert until env set |
 | **Live A/B** on LUZ-156281 | ⬜ TODO | single-process, `CACHE_BACKEND=memory`, turbo off vs on |
 | **TF plumbing** for `TESTAGENT_TURBO` | ⬜ TODO | add env to KGA+TPD in `variables.tf`/`services.tf` |
 
@@ -36,7 +36,16 @@ the repo hook rejects those). Full detail in memory note `v2-latency-map-and-pla
 - `SCHEMA_VERSION` 1→2 invalidates cached `Benchmark` blobs → lazy recompute on next read (harmless).
 - Standard v2: direct `terraform apply` is classifier-blocked → `SKIP_BUILD=1 bash deploy.sh`; build image before pointing services; 2Gi already set.
 
-**Next step when resuming:** either Phase 3 (fast tier — the big Turbo win) or run the live A/B to get baseline numbers first.
+**Reconciled with new code (2026-09-17 review):** the quality workstream (`PLAN-llm-generation-quality.md`)
+landed **batched scenario generation** + raised caps to **128000**. Impact on this plan: (a) A2 refine
+cache_prefix **survived** the prompts.py template refactor (verified); (b) implement is now **N sequential
+batch calls** (`_BATCH_UNITS=3`, `_BATCH_CONCURRENCY=1`) — a bigger, pack-size-scaling sink, so **B1
+(iters→1)** matters more; (c) the biggest remaining implement lever, **raising `_BATCH_CONCURRENCY`, is
+BLOCKED** — concurrent in-process ADK Runners are prod-proven-broken (same root cause as the dropped A3);
+(d) B6-cut is doubly confirmed (128000 = model ceiling to stop truncation).
+
+**Next step when resuming:** either Phase 3 (fast tier — the big Turbo win), the live A/B, or the higher-value
+but harder **ADK-concurrency fix** that unblocks `_BATCH_CONCURRENCY` (cuts implement wall-clock the most).
 
 ---
 
@@ -55,14 +64,26 @@ Per-stage cost with **default flags** (verified in code):
 | **gather (explore=on)** | 2–3 × 400-tok planners | **SERIAL** (`gather/agent.py:71,77,82`) | independent planners run one after another |
 | **refine — per round** | **2** (gen 6000 + critique 1200) | serial | gen prompt re-sends the pack **UNCACHED** (`llm/questions.py:28`) |
 | **define — per round** | **2** (gen 6000 + critique 1200) | serial | gen is **cached** (`define/questions.py:32`) ✓ |
-| **implement (per call)** | **2** assured (gen **16000** + judge 1500) | serial | up to **4** across 2 iters (`TPD_ASSURED_MAX_ITERS=2`), 540s budget |
+| **implement (per call)** | **N batches + judge**, ×2 iters | **serial** (`_BATCH_CONCURRENCY=1`) | gen is now **batched** (`_BATCH_UNITS=3` grounded units/call, `max_tokens=128000`); N ≈ units÷3 → cost scales with pack size (see quality plan) |
 | **evaluate** | **0** — fully deterministic | n/a | not a latency concern |
 
 Ranked wall-clock sinks:
 
 1. **Implement assured loop** (`implement/assured/loop.py`) — **always-on** (the old `TPD_ASSURED` opt-in
-   gate is gone). Up to `2 × 2 = 4` serial calls, 540s budget — and the generate is now a **16000-tok** ceiling (raised in 55d5a51 to stop truncation), so this is by far the *Biggest LLM sink* and B1 (iters→1) is the top turbo lever.
-   The code comment itself (`loop.py:6`) says "keep `TPD_ASSURED_MAX_ITERS=1` in a latency-sensitive deployment".
+   gate is gone), and generation is now **batched** (`generate/llm.py`): the pack's grounded units are split
+   into `_BATCH_UNITS=3`-unit slices, one generation call each, run **sequentially** (`_BATCH_CONCURRENCY=1`).
+   So one assured round = **N generation calls** (N ≈ units÷3) **+ 1 judge**, and the whole loop is that ×
+   `TPD_ASSURED_MAX_ITERS` (2). For a big pack (e.g. LUZ-158230 ≈ 41 units → ~14 batches) that's **~28
+   serial generations + 2 judges** under the 540s budget. By far the *Biggest LLM sink* — and it now
+   **scales with pack size**, so **B1 (iters→1)** is the top turbo lever (halves the batch count).
+
+   ⚠️ **The single biggest remaining implement-latency lever is BLOCKED: `_BATCH_CONCURRENCY`.** Batches are
+   independent and *should* run concurrently (N serial → N÷k), but it's pinned to **1** because deployed logs
+   showed concurrent batches failing — **concurrent in-process ADK Runners are the prime suspect**
+   (`generate/llm.py` comment). This is the **same root cause that killed A3** (planners racing on shared ADK
+   `ctx`), now confirmed in prod. Unblocking it (a safe concurrency model for ADK Runners) would cut implement
+   wall-clock the most — but it's a real fix, not a flag flip. Until then, do **not** propose parallelizing
+   any ADK-Runner path; prod evidence says it breaks.
 2. **Gather codegraph build** — up to 300s git-clone + graphify (network/subprocess, not LLM).
 3. **Refine/define interrogation** — 2 serial calls **per round** (generate + critique), × 3–4 rounds
    × up to 4 re-seed passes. Refine's generate is **uncached** (define's is cached).
@@ -106,11 +127,15 @@ Define already solved this: `define/questions.py:31-32` passes `cache_prefix=pac
 Identical questions, cached input tokens → materially faster + cheaper on every round after the first.
 **Effort: S.** Win: largest no-quality-loss cut on the refine path.
 
-### A3. Parallelize the independent serial calls — ❌ DROPPED (unsafe + low-value)
+### A3. Parallelize the independent serial calls — ❌ DROPPED (unsafe, now prod-confirmed)
 Investigated during implementation: `_run_planner` runs each planner under the **same** ADK `ctx` and
 writes shared `ctx.session.state[output_key]` (`gather/agent.py`). `asyncio.gather`-ing them races on
 that shared session state — not a safe free win. And both targets are low-value: the planners are 2–3 ×
 400-tok (minor per the diagnosis), and steps-batching is off by default (`TPD_LLM_DETAIL`). Skipped.
+**Now confirmed in prod:** the quality workstream tried concurrent scenario-generation batches and had to
+pin `_BATCH_CONCURRENCY=1` because concurrent in-process ADK Runners failed live (`generate/llm.py`). So
+"parallelize ADK calls" is not just skipped here — it's a **known-broken pattern**; the real win is fixing
+ADK concurrency (see sink #1), not sprinkling `asyncio.gather`.
 *Not* parallelizable either: assured gen→judge (judge grades the generation), interrogation rounds
 (human answers between them).
 
@@ -148,16 +173,24 @@ directly at each gate. Turbo is mostly *wiring existing flags*, not new logic.
 | **B5** Fast model tier | **NEW** `VERTEX_MODEL_FAST` | off | on (judge/critique/distill/restate) | cheaper model on judging/summarizing sub-tasks |
 
 **Cut B6 (lower max_tokens):** `max_tokens` is a *ceiling*, not a cost — a short answer streams the same
-under 6000 or 4000, so lowering it buys no speed. Worse, it's actively harmful: `_SCEN_MAX_TOKENS` was
-just raised 6000→**16000** in `implement/generate/llm.py` precisely because 6000 *truncated* rich packs →
-schema-invalid → silent heuristic fallback (~0.08 score). Caps go **up** when they bite, never down for speed.
+under any cap, so lowering it buys no speed. Worse, it's actively harmful: both `default_max_tokens` and
+`_SCEN_MAX_TOKENS` are now **128000** (the claude-sonnet-5 output ceiling) precisely because a lower cap
+*truncates* mid-JSON → schema-invalid → silent heuristic fallback (~0.08). The quality workstream even
+concluded that raising the cap alone can't win (a full suite can exceed any single call) — hence
+**batching**, not bigger caps. Caps go **up** when they bite, never down for speed.
 
 **B3 wiring:** `max_rounds` is already a `RefineSession` constructor arg (default 4) — pass it from the
 `turbo` flag; don't add a parallel module constant.
 
-### B5 is the only real new feature: a second model tier
+### B5 is the only real new feature: a second model tier — ✅ IMPLEMENTED
+**Design decision:** the fast tier is **decoupled from turbo** — driven purely by the `VERTEX_MODEL_FAST`
+env, not the `TESTAGENT_TURBO` flag. `tier="fast"` resolves to `VERTEX_MODEL_FAST` when set, else falls
+back to the default model, so it's **inert until an operator configures a fast model** (zero behaviour
+change by default, and usable independently of the other turbo trade-offs). `_tier_model` (in
+`providers/vertex_claude.py`) dedups the resolution across `llm_agent_model` + `complete`.
+
 Today `agent_model()` / `complete()` resolve one model (`providers/__init__.py` registers one provider).
-Add a `tier` parameter routed to `VERTEX_MODEL_FAST` when set:
+Added a `tier` parameter routed to `VERTEX_MODEL_FAST` when set:
 
 ```python
 def agent_model(*, max_tokens=None, tier="default"): ...   # tier="fast" → VERTEX_MODEL_FAST
@@ -228,9 +261,11 @@ components/retrieval), **no latency**. So:
   B3 refine passes→1 (`interrogate/loop.py::_resolve_max_rounds`). Explicit per-flag env still overrides.
   B4 (explore) needs no code — already default-off; turbo doesn't force-override an explicit `explore`
   request. **Follow-up:** add `TESTAGENT_TURBO` to `variables.tf`/`services.tf` so it's deploy-settable.
-- **Phase 3 — Fast tier (B5).** Provider `tier` + `VERTEX_MODEL_FAST`; route judge/critique/distill/
-  restate. The big perceived-speed win.
-- **Phase 4 — Tune.** Pick the default (turbo on or off?) from Phase-0/3 benchmark data.
+- **Phase 3 — Fast tier (B5).** ✅ Done (591 passed). Provider `tier` + `VERTEX_MODEL_FAST`, routed at
+  distill/understanding/define-brief/critique/judge; scenario generation + question generation stay on
+  the full model. Decoupled from turbo (env-driven, inert until `VERTEX_MODEL_FAST` set).
+  **Follow-up:** add `VERTEX_MODEL_FAST` to `variables.tf`/`services.tf` + pick the fast model (e.g. Haiku).
+- **Phase 4 — Tune.** Pick the default (turbo on or off?) + the fast model from Phase-0/3 benchmark data.
 
 ## Invariants to preserve
 - Heuristic fallback stays intact — every LLM call already degrades to a heuristic on

@@ -47,7 +47,7 @@ async def critique_round(pack, kind: str, questions_text: str, *, model=None) ->
         from common.adk import agent_model
         from common.testplan.llm.adk import build_generator_agent, run_json_agent
 
-        model = model or agent_model(max_tokens=1200)
+        model = model or agent_model(max_tokens=1200, tier="fast")  # self-critique judge → fast tier
         if model is None or pack is None:
             return ""
         target = _TARGET.get(kind, "understanding")

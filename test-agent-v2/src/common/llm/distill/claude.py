@@ -16,4 +16,4 @@ def claude_distill(note: Note, text: str) -> str:
         f"Summarize this {note.type}{title} for a QA engineer in 2 sentences, keeping any concrete "
         f"rules, limits, IDs, endpoints and error/boundary conditions it states:\n\n{text[:8000]}"
     )
-    return complete(prompt, max_tokens=200).strip()
+    return complete(prompt, max_tokens=200, tier="fast").strip()  # cheap distillation → fast tier

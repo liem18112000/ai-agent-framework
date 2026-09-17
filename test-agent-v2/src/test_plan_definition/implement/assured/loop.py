@@ -129,7 +129,8 @@ async def run_assured_scenarios(
 
     # The P4 LLM-as-judge model — its own smaller max_tokens (the verdict is short → cheap per round),
     # resolved once (the injected/configured model is stable across rounds). None → no judge signal.
-    judge_model = model or agent_model()  # inherit the ceiling — a cap truncates the verdict mid-JSON
+    # inherit the ceiling (a cap truncates the verdict mid-JSON); fast tier — judging is cheap grading
+    judge_model = model or agent_model(tier="fast")
 
     # One scope-classifier call per implement (not per round): which pack nodes are in scope for THIS
     # ticket, so generation batches over the ticket's own behaviours instead of the whole crawled pack

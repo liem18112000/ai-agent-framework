@@ -19,4 +19,4 @@ def claude_understanding(
     from common.adk.model import complete
 
     return complete(understanding_prompt(pack, insights, open_questions, confidence, deferred),
-                    max_tokens=700).strip() + "\n"
+                    max_tokens=700, tier="fast").strip() + "\n"  # summarisation → fast tier

@@ -17,12 +17,22 @@ class VertexClaudeProvider:
         """True when VERTEX_* is set (project/location/model resolvable)."""
         return vertex_config() is not None
 
-    def llm_agent_model(self, *, max_tokens: int | None = None):
+    @staticmethod
+    def _tier_model(model: str, tier: str) -> str:
+        """The model id for a tier: ``fast`` → ``VERTEX_MODEL_FAST`` when set (a cheaper model for
+        classification/judging), else the default model — so the fast tier is inert until an operator
+        sets that env (zero behaviour change by default). Any other tier → the default model."""
+        if tier == "fast":
+            return os.environ.get("VERTEX_MODEL_FAST") or model
+        return model
+
+    def llm_agent_model(self, *, max_tokens: int | None = None, tier: str = "default"):
         """A `LiteLlm` for Claude-on-Vertex, or `None` when VERTEX_* is unset (→ heuristic, I7)."""
         cfg = vertex_config()
         if cfg is None:
             return None
         project, location, model = cfg
+        model = self._tier_model(model, tier)
         from google.adk.models.lite_llm import LiteLlm
 
         extra = {}
@@ -36,9 +46,11 @@ class VertexClaudeProvider:
                        max_tokens=max_tokens or get_config().default_max_tokens,
                        thinking={"type": "disabled"}, **extra)
 
-    def complete(self, prompt: str, *, max_tokens: int, cache_prefix: str | None = None) -> str:
+    def complete(self, prompt: str, *, max_tokens: int, cache_prefix: str | None = None,
+                 tier: str = "default") -> str:
         project, location, model = self._require_config()
-        return _vertex_complete(prompt, project=project, location=location, model=model,
+        return _vertex_complete(prompt, project=project, location=location,
+                                model=self._tier_model(model, tier),
                                 max_tokens=max_tokens, cache_prefix=cache_prefix)
 
     async def agenerate(self, prompt: str, *, max_tokens: int) -> str:
