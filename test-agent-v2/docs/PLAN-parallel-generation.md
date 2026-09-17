@@ -53,15 +53,12 @@ fails (partial success returns the merged set).
 
 ![Phase B — Vertex Claude Batch API](parallel-gen-B-batchapi.png)
 
-**Status: implemented, gated off** (`test_plan_definition/implement/generate/batch.py`). Enable with
-`TPD_BATCH_MODE=vertex_batch`; default is the synchronous path. `AnthropicVertex` has no batch API, so it
-uses `google-cloud-aiplatform` `BatchPredictionJob` against `publishers/anthropic/models/<id>` with the
-verified JSONL envelope (`{"custom_id", "request": {"anthropic_version": "vertex-2023-10-16", "messages",
-"max_tokens"}}`). The request-builder + output-parser are **unit-tested** (`tests/test_plan_batch.py`); the
-submit/poll/collect path is a **preview API, not offline-testable** — best-effort (any failure → sync
-fallback) and waits inline to `TPD_BATCH_BUDGET_S`. **Follow-ups:** validate the live `BatchPredictionJob`
-call + output layout against the preview API; and make it truly async (submit → checkpoint job id → poll on
-`implement_plan` re-invoke) instead of an inline bounded wait.
+**Status: implemented then REMOVED** (reverted before live validation, superseded by Phase C). The code
+(`batch.py` + a `TPD_BATCH_MODE` gate) built the verified JSONL envelope (`{"custom_id", "request":
+{"anthropic_version": "vertex-2023-10-16", "messages", "max_tokens"}}`) against
+`google-cloud-aiplatform` `BatchPredictionJob` (`AnthropicVertex` has no batch API). The design + the API
+facts are retained here for reference; if revived, it's the one path that could beat the per-project Vertex
+quota (server-side + 50% cheaper), but async (mins–hrs) and preview.
 
 **When:** A hits the Vertex quota, OR you want an **offline "submit & come back"** mode + the **50% batch
 discount**. The provider runs the fan-out — no Pub/Sub to build.
