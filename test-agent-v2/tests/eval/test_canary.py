@@ -9,10 +9,9 @@ from __future__ import annotations
 
 import pytest
 
-from test_evaluation.engine import evaluate_pack
+from test_evaluation.engine import evaluate_pack, evaluate_plan
 from test_evaluation.golden import load_canaries, load_canary_plans
 from test_evaluation.models import EvalCase, PlanEvalCase
-from test_evaluation.engine import evaluate_plan
 from tests.eval.harness import recorded_client, run_gather_offline, run_refine_offline
 from tests.eval.harness_tpd import run_plan_offline
 

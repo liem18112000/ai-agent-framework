@@ -65,8 +65,8 @@ def test_extract_ctx_handles_three_token_plan_command():
 
 def test_evaluate_pack_url_check_uses_pack_summary_not_titles(monkeypatch):
     """M2: a URL that lives in a note synopsis (not its title) is grounded, not 'invented'."""
-    import test_evaluation.engine.loaders as loaders
     from common.models import Note, Pack
+    from test_evaluation.engine import loaders
 
     url = "https://axonivy.atlassian.net/browse/LUZ-501"
     pack = Pack(context_id="LUZ-501",

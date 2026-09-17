@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from common.llm import templates
 from common.models import Insight, Question
 
 if TYPE_CHECKING:
@@ -59,27 +60,25 @@ GUIDANCE = {
 }
 
 
+def _render(key: str, params: dict) -> str:
+    """Render an engine-path prompt from the store (falls back to the image bodies without a DB)."""
+    from common.llm.templates import DEFAULTS
+    from common.prompts import store_for
+
+    return store_for(DEFAULTS).get(key).render(params)
+
+
 def question_prompt(pack: Pack, round_name: str, *, include_context: bool = True) -> str:
     """Claude-on-Vertex prompt asking for one interrogation round's questions.
 
     `include_context=False` drops the trailing pack dump so the caller can pass `pack.summary_text()`
     as a stable `cache_prefix` (Anthropic prompt caching) — the pack is then reused across the round's
     LLM calls instead of re-sent uncached each round (mirrors the define path)."""
-    guidance = GUIDANCE.get(round_name, f"ROUND: {round_name}")
-    ctx = f"\n\nContext pack:\n{pack.summary_text()}" if include_context else ""
-    return (
-        "You are the QA Testing Agent's interrogation step, applying the vinnstack interrogation "
-        f"method for this round.\n\n{guidance}\n\n"
-        "Output rules:\n"
-        "- Self-answer anything derivable from the pack and mark status 'self-answered' with your "
-        "recommendation as the answer; surface (status 'open') ONLY genuine judgement calls where two "
-        "valid choices change what gets built or verified.\n"
-        "- Every open question needs 2-4 options (label + implication), a recommendation + rationale, "
-        "and depends_on (ids of earlier questions it is gated on); order by dependency.\n\n"
-        "Return ONLY a JSON array; each item: {id, round, question, why, options:[{label,"
-        "implication}], recommendation, depends_on:[], applies_to, status, confidence}. "
-        f"Use id prefix 'Q-{round_name[:3]}-'.{ctx}"
-    )
+    return _render(templates.QUESTIONS, {
+        "guidance": GUIDANCE.get(round_name, f"ROUND: {round_name}"),
+        "round_prefix": round_name[:3],
+        "ctx": f"\n\nContext pack:\n{pack.summary_text()}" if include_context else "",
+    })
 
 
 def understanding_prompt(
@@ -87,16 +86,12 @@ def understanding_prompt(
     deferred: list[Question] | None = None,
 ) -> str:
     """Claude-on-Vertex prompt to restate the agent's understanding for a human to confirm."""
-    decided = "\n".join(f"- {i.statement} ({i.answered_by})" for i in insights) or "(none)"
-    opens = "\n".join(f"- {q.question}" for q in open_questions) or "(none)"
     # The 'Out/deferred' heading needs the deferred questions behind it — the heuristic sibling renders
     # them, so the LLM brief must too, else it silently hides gaps the agent chose not to resolve.
-    dfr = "\n".join(f"- {q.question}" for q in (deferred or [])) or "(none)"
-    return (
-        "Restate, in plain language for a human to confirm, what the QA Testing Agent now "
-        f"understands. Overall confidence is '{confidence}'. Use these headings: Problem, "
-        "In scope, Out/deferred, Settled decisions, Open gaps.\n\n"
-        f"Context pack:\n{pack.summary_text()}\n\n"
-        f"Settled decisions:\n{decided}\n\nDeferred (out of scope for now):\n{dfr}\n\n"
-        f"Open gaps:\n{opens}\n"
-    )
+    return _render(templates.UNDERSTANDING, {
+        "confidence": confidence,
+        "pack": pack.summary_text(),
+        "decided": "\n".join(f"- {i.statement} ({i.answered_by})" for i in insights) or "(none)",
+        "deferred": "\n".join(f"- {q.question}" for q in (deferred or [])) or "(none)",
+        "opens": "\n".join(f"- {q.question}" for q in open_questions) or "(none)",
+    })

@@ -6,11 +6,10 @@ from google.adk.evaluation.eval_metrics import EvalMetric, EvalStatus
 from google.adk.evaluation.eval_set import EvalSet
 from google.adk.evaluation.evaluator import EvaluationResult
 
-from test_evaluation.engine import evaluate_pack
+from test_evaluation.engine import evaluate_pack, evaluate_plan
 from test_evaluation.eval import adk_metrics
 from test_evaluation.eval.evalset import eval_case_for, pack_eval_set, plan_eval_set
 from test_evaluation.golden import golden_for
-from test_evaluation.engine import evaluate_plan
 from tests.eval.harness import recorded_client, run_gather_offline
 from tests.eval.harness_tpd import run_plan_offline
 

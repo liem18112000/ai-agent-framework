@@ -128,3 +128,81 @@ def test_rewired_prompts_render_through_the_store():
     assert "GENERATE ONLY for these pack unit ids" in body
     assert "scenario:run-x:" in body
     assert "$" not in body                                        # nothing left unsubstituted
+
+
+# --- P6: widened coverage (KGA planners + engine prompts) -------------------------------------
+def test_kga_planner_templates_keep_their_json_contract_and_injection_guard():
+    """These planners put RAW TICKET TEXT in front of the model, so the untrusted-data fence is a
+    security control, not phrasing — a publish must not be able to drop it. Their JSON contract is the
+    bare object shape (no output_schema wrapper), so that gets pinned too."""
+    from knowledge_gathering.gather.explore.planners import templates as kga
+
+    for key, contract in kga.SCHEMA_CONTRACT.items():
+        body = kga.DEFAULTS[key].body
+        assert contract in body, f"{key} lost its JSON contract"
+        assert kga.INJECTION_GUARD in body, f"{key} lost the untrusted-data fence"
+        validate(key, body, kga.DEFAULTS[key].engine, kga.DEFAULTS[key].required_vars)
+
+
+def test_kga_planner_render_substitutes_the_ticket():
+    from knowledge_gathering.gather.explore.planners import templates as kga
+
+    out = kga.render(kga.HYPOTHESIZE, "ZIP import", "imports transfer.zip", ["health"])
+    assert "Title: ZIP import" in out and "Labels: health" in out
+    assert '{"key_phrases":[...],"entities":[...],"subsystems":[...]}' in out
+    assert "$" not in out
+
+
+def test_engine_questions_template_keeps_the_ARRAY_contract():
+    """Opposite of the testplan generators: engine.questions is parsed by `loads_array`, so a bare
+    JSON array is CORRECT here. Pinning it stops a well-meaning publish from 'fixing' it to an object
+    and silently breaking the parser."""
+    from common.llm import templates as engine
+
+    body = engine.DEFAULTS[engine.QUESTIONS].body
+    assert "Return ONLY a JSON array" in body
+    for key, tpl in engine.DEFAULTS.items():
+        validate(key, tpl.body, tpl.engine, tpl.required_vars)
+
+
+def test_rewired_engine_prompts_render():
+    from common.llm.prompts import question_prompt
+
+    class _Pack:
+        def summary_text(self):
+            return "PACK"
+
+    body = question_prompt(_Pack(), "business", include_context=False)
+    assert "ROUND: Business" in body and "Use id prefix 'Q-bus-'" in body
+    assert "$" not in body
+
+
+# --- P7: attributable scores ----------------------------------------------------------------------
+def test_compare_runs_attributes_a_score_delta_to_differing_prompt_versions(monkeypatch):
+    """The payoff: two runs of one ticket differ for unknown reasons unless you know which prompts
+    each ran. Same versions -> variance; different versions -> an experiment."""
+    from common.admin import runs
+
+    monkeypatch.setattr(runs, "_prompt_pins",
+                        lambda bank, ctx: {"tpd.scenarios": 2 if ctx == "b" else 1})
+    monkeypatch.setattr(runs, "_assured_score", lambda bank, ctx: 0.55 if ctx == "b" else 0.34)
+    out = "\n".join(runs._prompt_section(None, "a", "b"))
+    assert "Prompts differ" in out
+    assert "| `tpd.scenarios` | v1 | v2 |" in out
+    assert "Higher score: **b**" in out and "+0.210" in out
+
+
+def test_compare_runs_calls_identical_prompt_versions_variance(monkeypatch):
+    from common.admin import runs
+
+    monkeypatch.setattr(runs, "_prompt_pins", lambda bank, ctx: {"tpd.scenarios": 1})
+    monkeypatch.setattr(runs, "_assured_score", lambda bank, ctx: 0.34)
+    out = "\n".join(runs._prompt_section(None, "a", "b"))
+    assert "Identical prompt versions" in out and "model variance" in out
+
+
+def test_prompt_section_is_absent_for_runs_predating_p7(monkeypatch):
+    from common.admin import runs
+
+    monkeypatch.setattr(runs, "_prompt_pins", lambda bank, ctx: {})
+    assert runs._prompt_section(None, "a", "b") == []

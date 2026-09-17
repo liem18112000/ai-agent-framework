@@ -250,6 +250,54 @@ def _bucket(label: str, items: list[str]) -> list[str]:
     return out
 
 
+def _prompt_pins(bank, ctx: str) -> dict:
+    """The prompt key -> version map a run was pinned to (empty for runs predating P7)."""
+    from common.testplan import memory as tp
+
+    try:
+        return tp.read_prompt_versions(bank, ctx) or {}
+    except Exception:  # noqa: BLE001 — provenance is an overlay, never breaks the report
+        return {}
+
+
+def _assured_score(bank, ctx: str):
+    """The run's best assured judge score, or None when the loop never scored it."""
+    from common.testplan import memory as tp
+
+    try:
+        return (tp.read_assured_state(bank, ctx) or {}).get("final_score")
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _prompt_section(bank, a: str, b: str) -> list[str]:
+    """P7 — attribute a score difference to the prompts each run actually used.
+
+    Without this, two runs of the same ticket differ for unknown reasons (model variance? prompt
+    edit?). With the pins recorded per run, a score delta across differing prompt versions is an
+    EXPERIMENT; across identical versions it is variance. Say which, explicitly."""
+    pa, pb = _prompt_pins(bank, a), _prompt_pins(bank, b)
+    if not pa and not pb:
+        return []
+    sa, sb = _assured_score(bank, a), _assured_score(bank, b)
+    differing = sorted(k for k in set(pa) | set(pb) if pa.get(k, 0) != pb.get(k, 0))
+    out = ["", "## Prompt versions — what each run actually ran"]
+    out += [(f"- assured score: {a} = {sa if sa is not None else 'n/a'} · "
+             f"{b} = {sb if sb is not None else 'n/a'}")]
+    if not differing:
+        out += [("- **Identical prompt versions** — any score difference here is model variance, "
+                 "not a prompt change.")]
+        return out
+    out += ["- **Prompts differ** — the score delta is attributable to these keys:", "",
+            f"| key | {a} | {b} |", "|---|---|---|"]
+    out += [f"| `{k}` | v{pa.get(k, 0)} | v{pb.get(k, 0)} |" for k in differing]
+    if sa is not None and sb is not None:
+        better, delta = (b, sb - sa) if sb > sa else (a, sa - sb)
+        out += ["", (f"- Higher score: **{better}** (+{delta:.3f}). Treat as one observation, not "
+                     "proof — re-run before adopting a prompt version on that basis.")]
+    return out
+
+
 def compare_runs(bank, context_a: str, context_b: str) -> str:
     """F3 — diff two runs of the same ticket into COMMON (stable across runs) vs DIVERGENT (only in one).
 
@@ -278,6 +326,8 @@ def compare_runs(bank, context_a: str, context_b: str) -> str:
         body += _bucket("Common (stable)", common)
         body += _bucket(f"Only in {context_a}", only_a)
         body += _bucket(f"Only in {context_b}", only_b)
+
+    body += _prompt_section(bank, context_a, context_b)
 
     head = [f"# Compare runs: {context_a} vs {context_b}", "",
             f"**Consensus {agree_sum}/{union_sum} ({_pct(agree_sum, union_sum)})** — higher = more "

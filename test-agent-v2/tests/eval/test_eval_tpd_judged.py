@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import pytest
 
+from test_evaluation.engine import evaluate_plan
 from test_evaluation.golden import load_golden_plans
 from test_evaluation.metrics import ragas_judge
 from test_evaluation.metrics.gherkin_lint import gherkin_lint
 from test_evaluation.metrics.mutation import fault_class_coverage
 from test_evaluation.metrics.oracle import oracle_strength
 from test_evaluation.models import PlanEvalCase
-from test_evaluation.engine import evaluate_plan
 from tests.eval.harness_tpd import run_plan_offline
 
 _CASES = load_golden_plans()

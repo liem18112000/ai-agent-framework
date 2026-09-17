@@ -126,6 +126,19 @@ def read_assured_state(bank, context_id: str) -> dict:
     return bank.get_json(f"{_dir(context_id)}/assured.json", {})
 
 
+def write_prompt_versions(bank, context_id: str, pins: dict) -> str:
+    """P7 — the prompt key -> version map this run was PINNED to.
+
+    Machine-readable on purpose: the run log is Markdown (human-facing), and `compare_runs` needs to
+    attribute a score difference between two runs to the prompts they actually used. Parsing that back
+    out of rendered Markdown would be fragile, so the pins get their own small JSON artifact."""
+    return bank.put_json(f"{_dir(context_id)}/prompts.json", pins)
+
+
+def read_prompt_versions(bank, context_id: str) -> dict:
+    return bank.get_json(f"{_dir(context_id)}/prompts.json", {})
+
+
 def write_implement_state(bank, context_id: str, state: dict) -> str:
     """The interrogative-implement round state (case-design/data-design/step-oracle) — resumable."""
     return bank.put_json(f"{_dir(context_id)}/implement-state.json", state)

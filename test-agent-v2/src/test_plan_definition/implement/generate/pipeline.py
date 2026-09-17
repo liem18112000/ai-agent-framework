@@ -82,6 +82,7 @@ async def implement_plan(bank, context_id: str, *, run_id: str = "implement", no
         prompt_versions=prompt_versions,
     )
     store.append_plan_run_log(bank, run)
+    store.write_prompt_versions(bank, context_id, prompt_versions)  # P7: attributable scores
     log.info("implement done: %d scenarios, %d steps, %d test-data, feature=%s, quality=%s, %s",
              len(scenarios), len(steps), len(test_data), bool(feature),
              quality.final_score if quality else "n/a", coverage or "no-coverage")
