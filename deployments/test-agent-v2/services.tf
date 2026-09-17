@@ -155,6 +155,10 @@ module "tpd" {
           { name = "A2A_BEARER_TOKEN", secret = google_secret_manager_secret.a2a_bearer.secret_id },
           { name = "TPD_CAPTURE_LESSONS", value = "1" },
           { name = "TPD_RECALL_LESSONS", value = "1" },
+          # Observability during the generation-quality debugging phase — surfaces the app loggers
+          # (generator batch failures, scope classifier) to Cloud Logging. Remove once stabilised.
+          { name = "TPD_LOG", value = "1" },
+          { name = "COMMON_LOG", value = "1" },
         ]
       )
     },

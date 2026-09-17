@@ -12,6 +12,24 @@ def wipe_required_token() -> str:
     return os.environ.get("GCS_BUCKET") or "WIPE"
 
 
+#: The pgvector recall tier — rebuildable from the GCS bank via ``pg/backfill.py``.
+_PGVECTOR_TABLES = ("memory_node", "memory_edge")
+
+#: Per-run state a wipe is MEANT to clear. This is an ALLOWLIST, and deliberately so.
+#:
+#: It used to be "every table that is not pgvector", which made wipe_all a catch-all: any table added
+#: to the shared database was silently in scope. That bit hard on 2026-09-17 — the wipe truncated
+#: ``adk_internal_metadata``, removing ADK's ``schema_version`` row, and EVERY agent then failed with
+#: "Schema version not found in adk_internal_metadata" on its next request (all five share one
+#: DatabaseSessionService, so one row = total outage). It also destroyed the prompt store's
+#: ``prompt_template`` / ``prompt_version`` rows, which are CONFIGURATION, not memory — wiping the
+#: memory bank should never discard someone's edited prompts.
+#:
+#: Anything not listed here is reported as preserved rather than quietly truncated. Add a table here
+#: only if a memory wipe genuinely should clear it.
+_RUNTIME_TABLES = ("sessions", "events", "app_states", "user_states", "tasks")
+
+
 async def wipe_all(bank, engine, confirm: str, *, required_token: str | None = None) -> str:
     """DESTRUCTIVE (F3): clear the memory bank, pgvector, and the A2A task + ADK session tables in one
     guarded call. Requires `confirm` == the required token (GCS_BUCKET, or 'WIPE' when unset).
@@ -38,14 +56,17 @@ async def wipe_all(bank, engine, confirm: str, *, required_token: str | None = N
     from sqlalchemy import text
 
     names = await _table_names(engine)
-    pg_tables = [t for t in ("memory_node", "memory_edge") if t in names]
-    other_tables = [t for t in names if t not in pg_tables]
+    pg_tables = [t for t in _PGVECTOR_TABLES if t in names]
+    other_tables = [t for t in _RUNTIME_TABLES if t in names]
+    skipped = sorted(set(names) - set(pg_tables) - set(other_tables))
     async with engine.begin() as conn:
         pg_rows = await _truncate(conn, text, pg_tables)
         other_rows = await _truncate(conn, text, other_tables)
     report.append(f"- pgvector: {pg_rows} rows truncated ({', '.join(pg_tables) or 'no tables'})")
     report.append(f"- task/session store: {other_rows} rows truncated "
                   f"({', '.join(other_tables) or 'no tables'})")
+    if skipped:
+        report.append(f"- preserved (not memory/run data): {', '.join(skipped)}")
     return "\n".join(report)
 
 

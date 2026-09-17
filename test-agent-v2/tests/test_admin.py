@@ -213,3 +213,30 @@ async def test_memory_graph_html_renders_nodes_edges_from_index_fallback():
     assert "__DATA__" not in html                               # all tokens substituted
     # safe <script> embedding — no raw closing tag can break out of the DATA literal
     assert "</script>" not in html.split("const DATA=")[1].split("</script>", 1)[0]
+
+
+def test_wipe_all_preserves_schema_metadata_and_config_tables():
+    """Regression for a 2026-09-17 FULL OUTAGE.
+
+    wipe_all used to truncate "every table that is not pgvector", which made it a catch-all: any table
+    added to the shared database was silently in scope. A real wipe therefore truncated ADK's
+    `adk_internal_metadata`, removing its `schema_version` row — and because all five agents share one
+    DatabaseSessionService, every agent then failed with "Schema version not found" on its next
+    request. The same wipe destroyed `prompt_template`/`prompt_version`, which are CONFIGURATION, not
+    memory: wiping the memory bank must never discard someone's edited prompts.
+
+    The selection is now an allowlist, so a table nobody classified is preserved, not destroyed."""
+    from common.admin import wipe
+
+    assert "adk_internal_metadata" not in wipe._RUNTIME_TABLES
+    assert "adk_internal_metadata" not in wipe._PGVECTOR_TABLES
+    for cfg in ("prompt_template", "prompt_version"):
+        assert cfg not in wipe._RUNTIME_TABLES and cfg not in wipe._PGVECTOR_TABLES
+
+    # the tables a wipe SHOULD clear are still covered
+    assert set(wipe._PGVECTOR_TABLES) == {"memory_node", "memory_edge"}
+    assert {"sessions", "events", "tasks"} <= set(wipe._RUNTIME_TABLES)
+
+    # and an unknown future table is preserved by default, never silently truncated
+    known = set(wipe._PGVECTOR_TABLES) | set(wipe._RUNTIME_TABLES)
+    assert "some_future_table" not in known
