@@ -100,6 +100,16 @@ async def run_assured_scenarios(
     # ticket, so generation batches over the ticket's own behaviours instead of the whole crawled pack
     # (sibling/framework nodes tank the judge's faithfulness + scope precision). None → don't filter.
     in_scope_ids = await classify_in_scope(plan, plan_pack, model=model)
+    # The plan's scope/out_of_scope come from define and are often unreliable (seen: scope = the ticket
+    # id duplicated 6x AND the ticket itself listed OUT of scope). That garbage feeds `_scope_block`
+    # verbatim into BOTH the generator and the judge, so every scenario citing a real pack id reads as
+    # an out-of-scope invention and faithfulness tanks. The classifier IS the authoritative in/out
+    # boundary for testing — adopt it as the plan's boundary so both prompts see the truth. Idempotent.
+    if in_scope_ids:
+        grounded_ids = {n.id for n in plan_pack.pack.grounded}
+        plan.scope = sorted(in_scope_ids)
+        plan.out_of_scope = sorted(grounded_ids - in_scope_ids)
+        store.write_plan(bank, plan)
 
     scenarios: list[TestScenario] = []
     round_durations: list[float] = []  # cost of each round completed IN THIS run (empty on resume)

@@ -200,7 +200,7 @@ def scenarios_prompt(plan: TestPlan, summary: str, test_data: list[TestData],
         "meta pages — cover the ticket's own behaviours only.\n"
         "- Each scenario MUST cite the REAL note/insight id it covers in source_refs (a pack id, verbatim).\n"
         + focus + "\n"
-        "Return ONLY a JSON array; each item: {id, title, kind, "
+        'Return ONLY a JSON object {"items": [ ... ]} — each item: {id, title, kind, '
         "methodology, description (one sentence: what it verifies), rationale (why it matters), "
         "preconditions:[], data_refs:[], source_refs:[]}. "
         f"Use id prefix 'scenario:{plan.context_id}:'.\n"
@@ -223,7 +223,7 @@ def testdata_prompt(plan: TestPlan, summary: str, *, include_context: bool = Tru
         "the pack (not placeholders). Per the test-design method, include boundary/invalid values (e.g. "
         "at/over each documented limit) so the negative/boundary/error scenarios have data. Add a "
         "fixture for any input payload the API needs.\n\n"
-        "Return ONLY a JSON array; each item: {id, kind (mock-data|test-account|fixture), "
+        'Return ONLY a JSON object {"items": [ ... ]} — each item: {id, kind (mock-data|test-account|fixture), '
         "spec (object of concrete fields), source_refs:[note ids]}. "
         f"Use id prefix 'test-data:{plan.context_id}:'."
     )
@@ -287,7 +287,7 @@ def steps_prompt(scenarios: list[TestScenario], plan: TestPlan, summary: str,
         "the end state / pass metric. negative -> assert rejection + no side effects; boundary -> "
         "assert behaviour at the limit; error -> assert graceful failure + consistent state.\n\n"
         f"Scenarios:\n{listing}\n\n"
-        "Return ONLY a JSON array; each item: {scenario_id, steps:[{order, "
+        'Return ONLY a JSON object {"items": [ ... ]} — each item: {scenario_id, steps:[{order, '
         "keyword (Given|When|Then|And), action, expected}]}."
     )
     return f"{body}\n\n{pack_block(summary)}" if include_context else body

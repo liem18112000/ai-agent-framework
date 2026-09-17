@@ -192,6 +192,21 @@ def test_scenarios_prompt_injects_scope_boundary():
     assert "Agentic-Framework self-check" in body  # out-of-scope items named for the model to exclude
 
 
+def test_generator_prompts_request_the_object_schema_not_a_bare_array():
+    """Regression: the run_json_agent generators output `{items:[...]}` schemas, so their prompts MUST
+    ask for a JSON OBJECT. A bare-array ask makes Claude emit `[...]`, whose largest brace span is a
+    single element → `Scenarios(**that)` is empty → every batch silently degraded to the heuristic
+    (the prod cap). Offline fakes returned clean objects so this never surfaced in the recovery test."""
+    from common.testplan.llm.prompts import scenarios_prompt, steps_prompt, testdata_prompt
+
+    plan = _plan()
+    for body in (scenarios_prompt(plan, "pack", [], include_context=False),
+                 testdata_prompt(plan, "pack", include_context=False),
+                 steps_prompt([], plan, "pack", [], include_context=False)):
+        assert '{"items": [' in body
+        assert "Return ONLY a JSON array" not in body
+
+
 async def test_classify_in_scope_returns_the_subset_the_model_picks():
     """The scope classifier returns only the model-picked pack ids (intersected with real grounded ids);
     None when unconfigured or <2 units (nothing to filter)."""
