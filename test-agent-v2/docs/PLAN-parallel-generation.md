@@ -25,6 +25,14 @@ wall. That makes **Phase A** a few-line fix, and gates whether B/C are needed.
 
 ![Phase A — in-process concurrency fix](parallel-gen-A-inprocess.png)
 
+**Status: implemented + validated (bug fixed, but not the speedup).** Commit `8429530`: `run_json_agent`
+unique ADK app/session ids per call, `claude_scenarios` fresh model (LiteLlm) per batch, `TPD_BATCH_CONCURRENCY`
+env (default 1). Live A/B on LUZ-158230 (conc 1/2/3, `AB_MODE=conc`): **0 per-batch degradations at all
+concurrencies** → the old "all concurrent batches empty" bug is gone. But implement only went 322→305→296s
+(~1.05–1.09×), so **concurrency is throughput-bound by Vertex, not client-side** — raising the knob is nearly a
+no-op. So **deploy at `TPD_BATCH_CONCURRENCY=1`** (the fixes ship as safe hygiene; the knob is there but buys
+little). The real implement lever is **Phase B** (server-side fan-out, below) or a **Vertex quota increase**.
+
 **Change (`common/testplan/llm/adk.py::run_json_agent`):** derive a **unique** `session_id`/`app_name` and a
 unique `output_key` per call (e.g. suffix a monotonic counter or the batch id). Then make
 `_BATCH_CONCURRENCY` an env knob (`TPD_BATCH_CONCURRENCY`, default stays 1 until proven).
