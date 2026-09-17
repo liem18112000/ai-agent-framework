@@ -14,6 +14,17 @@ from common.store import CASConflict
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
 
 
+@pytest.fixture(autouse=True)
+def _single_judge_sample(monkeypatch):
+    """Offline determinism: sample the assured judge ONCE per round (production default is 3).
+
+    The judge is sampled k times and gated on the median because a real judge re-run on identical
+    input disagrees with itself. Offline the fake model is deterministic, so k>1 buys nothing and only
+    inflates the call counts the loop-mechanics tests assert on. `test_judge_samples_k_times_and_gates_
+    on_the_median` overrides this to cover the real default."""
+    monkeypatch.setenv("TPD_JUDGE_SAMPLES", "1")
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _offline_default_no_vertex():
     """Offline hygiene (session-wide). Each agent package's `__init__` runs `load_dotenv()`, so a local

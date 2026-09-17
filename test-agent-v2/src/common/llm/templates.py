@@ -17,7 +17,7 @@ _QUESTIONS_BODY = """You are the QA Testing Agent's interrogation step, applying
 $guidance
 
 Output rules:
-- Self-answer anything derivable from the pack and mark status 'self-answered' with your recommendation as the answer; surface (status 'open') ONLY genuine judgement calls where two valid choices change what gets built or verified.
+- Self-answer anything derivable from the pack, marking status 'self-answered' with your recommendation as the answer. Surface as 'open' the genuine judgement calls — where two valid choices change what gets built or verified. A round with no open questions is a real outcome, not a target.
 - Every open question needs 2-4 options (label + implication), a recommendation + rationale, and depends_on (ids of earlier questions it is gated on); order by dependency.
 
 Return ONLY a JSON array; each item: {id, round, question, why, options:[{label,implication}], recommendation, depends_on:[], applies_to, status, confidence}. Use id prefix 'Q-$round_prefix-'.$ctx"""

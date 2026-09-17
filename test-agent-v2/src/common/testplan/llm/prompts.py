@@ -48,7 +48,7 @@ ROUND_FOCUS = {
 # P0 — Gherkin best-practice grounding injected into the scenario/steps generators. Declarative,
 # one-behaviour-per-scenario, business language, independent scenarios, concrete data (no glue).
 GHERKIN_GUIDELINES = (
-    "Gherkin best practices (follow all):\n"
+    "Gherkin best practices:\n"
     "- One behaviour per scenario; keep it atomic and independently runnable (no ordering between "
     "scenarios, no shared mutable state).\n"
     "- Declarative, business language (WHAT is verified), not imperative UI/API glue (HOW to click "

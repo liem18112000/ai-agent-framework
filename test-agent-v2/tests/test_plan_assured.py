@@ -366,3 +366,32 @@ async def test_implement_max_rounds_finalizes_immediately_when_accepted(pack_buc
 
     res = await implement_plan(bank, "run-6f2a", model=fake, max_rounds=1)
     assert res.done and res.quality.accepted and res.quality.rounds == 1 and res.steps
+
+
+async def test_judge_samples_k_times_and_gates_on_the_median(monkeypatch, tmp_path):
+    """Production default k=3: the judge is sampled repeatedly and the MEDIAN verdict gates the loop.
+
+    An LLM judge re-run on identical input disagrees with itself (published intra-rater alpha
+    0.27-0.79); our own scores swung 0.08/0.28/0.08/0.34 on one ticket. One draw is not a measurement.
+    Median (not mean) keeps `issues`/`reflections` coherent — they are one judge's reasoning, and the
+    reflect step feeds them into the next generation."""
+    from test_plan_definition.implement.assured import loop as loop_mod
+
+    monkeypatch.setenv("TPD_JUDGE_SAMPLES", "3")
+    assert loop_mod._judge_samples() == 3
+
+    class _V:
+        def __init__(self, s):
+            self._s = s
+            self.issues = [f"issue-{s}"]
+
+        def score(self):
+            return self._s
+
+    # median of the three sampled scores, and it is a REAL verdict (its own issues survive)
+    picked = loop_mod._median_verdict([_V(0.9), _V(0.1), _V(0.5)])
+    assert picked.score() == 0.5
+    assert picked.issues == ["issue-0.5"]
+
+    monkeypatch.setenv("TPD_JUDGE_SAMPLES", "1")
+    assert loop_mod._judge_samples() == 1          # the escape hatch back to single-draw

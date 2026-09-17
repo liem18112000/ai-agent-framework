@@ -25,8 +25,7 @@ Description: $description
 Labels: $labels
 """
 
-_HYPOTHESIZE_BODY = """You are the QA Testing Agent's search-planning step. Given a ticket's title, short description, and labels, return the MOST distinctive, specific search terms to find related work in Jira/Confluence and the codebase — key phrases, domain entities, and subsystem/component names.
-Return at most ~6 of the MOST distinctive, specific search terms. Prefer rare/precise terms (proper nouns, code identifiers, unique feature names) over broad generic words. AVOID generic words like: document, system, data, service, component, module, UI, frontend, styling, management, validation, mapping, structure. Keep each term 1-2 words.
+_HYPOTHESIZE_BODY = """You are the QA Testing Agent's search-planning step. Given a ticket's title, short description, and labels, return at most ~6 search terms that would find related work in Jira/Confluence and the codebase. Prefer rare, precise terms — proper nouns, code identifiers, unique feature names, domain entities, subsystem/component names — over words that would match most tickets in this repository. Keep each term 1-2 words.
 Return ONLY JSON: {"key_phrases":[...],"entities":[...],"subsystems":[...]}.
 Do NOT invent ticket ids, issue keys, or URLs — return concepts to search for, not specific tickets.
 """ + _TICKET_TAIL

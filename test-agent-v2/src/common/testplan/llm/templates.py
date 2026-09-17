@@ -71,8 +71,7 @@ Available test-data ids (use in data_refs): $data_ids.
 $scope_block
 $gherkin$pack_grounding
 Rules:
-- For EACH IN-SCOPE acceptance criterion / behaviour in the pack, generate a scenario for EACH listed kind that applies (skip a kind only when genuinely inapplicable to that behaviour). Emit as MANY cases per kind as the test-design method yields — there is NO cap; aim to cover 100%.
-- Do NOT invent scenarios for pack nodes that are out-of-scope, sibling tickets, or framework/meta pages — cover the ticket's own behaviours only.
+- For EACH IN-SCOPE acceptance criterion / behaviour in the pack, generate a scenario for EACH listed kind that applies (skip a kind only when genuinely inapplicable to that behaviour). Cover each behaviour to the depth the test-design method yields.
 - Each scenario MUST cite the REAL note/insight id it covers in source_refs (a pack id, verbatim).
 $focus
 Return ONLY a JSON object {"items": [ ... ]} — each item: {id, title, kind, methodology, description (one sentence: what it verifies), rationale (why it matters), preconditions:[], data_refs:[], source_refs:[]}. Use id prefix 'scenario:$context_id:'.
@@ -87,7 +86,7 @@ Produce the data the scenarios need: at least one test-account (authenticated ca
 
 Return ONLY a JSON object {"items": [ ... ]} — each item: {id, kind (mock-data|test-account|fixture), spec (object of concrete fields), source_refs:[note ids]}. Use id prefix 'test-data:$context_id:'."""
 
-_JUDGE_BODY = """You are a STRICT, INDEPENDENT QA CRITIC. SCORE THE SCENARIOS below against the approved plan + context pack. You did not write them — reward real coverage, punish invention.
+_JUDGE_BODY = """You are an independent QA CRITIC scoring the scenarios below — which you did not write — against the approved plan and context pack.
 Methodology: $methodology. Pass metric(s): $metrics.
 Test-design method(s): $methods.
 Kinds that should be covered (open set): $kinds.
