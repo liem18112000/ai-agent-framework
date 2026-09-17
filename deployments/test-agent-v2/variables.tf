@@ -21,6 +21,18 @@ variable "vertex_model" {
   default     = "claude-sonnet-5"
 }
 
+variable "vertex_model_fast" {
+  type        = string
+  description = "Vertex AI model id for the FAST tier (cheap classification/judging: distill, restate, critique, assured judge). Empty = disabled (those calls use vertex_model). Set e.g. claude-haiku-4-5 to speed them up. Injected into KGA + TPD."
+  default     = ""
+}
+
+variable "turbo" {
+  type        = bool
+  description = "Turbo latency profile (TESTAGENT_TURBO) for KGA + TPD: 1 assured iteration, no per-round interrogation critique, 1 refine pass. Trades a little quality for speed. Off = full quality."
+  default     = false
+}
+
 # --- Two-tier memory (pgvector recall) — all inert under the default gcs backend ---
 variable "memory_backend" {
   type        = string

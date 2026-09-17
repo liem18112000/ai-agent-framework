@@ -61,6 +61,7 @@ module "kga" {
       liveness_probe_http_path = "/livez"
       env = concat(
         local.memory_env, # pgvector recall tier (inert under MEMORY_BACKEND=gcs)
+        local.perf_env,   # TESTAGENT_TURBO / VERTEX_MODEL_FAST (both inert by default)
         var.deploy_cloudsql ? [
           { name = "DB_INSTANCE_CONNECTION_NAME", value = local.cloudsql_connection_name },
           { name = "DB_NAME", value = var.db_name },
@@ -159,7 +160,8 @@ module "tpd" {
           # (generator batch failures, scope classifier) to Cloud Logging. Remove once stabilised.
           { name = "TPD_LOG", value = "1" },
           { name = "COMMON_LOG", value = "1" },
-        ]
+        ],
+        local.perf_env, # TESTAGENT_TURBO / VERTEX_MODEL_FAST (both inert by default)
       )
     },
   ]

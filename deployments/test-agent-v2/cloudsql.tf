@@ -178,4 +178,13 @@ locals {
     { name = "MEMORY_DRAIN_BUDGET_S", value = var.memory_drain_budget_s },
     { name = "MEMORY_SEMANTIC_SEED", value = var.memory_semantic_seed },
   ]
+
+  # Latency perf profile, injected into KGA + TPD. Both inert by default: TESTAGENT_TURBO is emitted
+  # only when var.turbo (trades a little quality for speed — fewer assured iters, no per-round critique,
+  # fewer refine passes); VERTEX_MODEL_FAST only when set (else tier="fast" falls back to the default
+  # model in code). A runtime flip is a tfvars change + apply. See docs/PLAN-latency-optimization.md.
+  perf_env = concat(
+    var.turbo ? [{ name = "TESTAGENT_TURBO", value = "1" }] : [],
+    var.vertex_model_fast != "" ? [{ name = "VERTEX_MODEL_FAST", value = var.vertex_model_fast }] : [],
+  )
 }
