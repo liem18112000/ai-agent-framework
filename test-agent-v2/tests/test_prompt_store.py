@@ -298,3 +298,54 @@ def test_a_body_using_fewer_params_than_the_key_declares_is_allowed():
     base = templates.DEFAULTS[templates.BRIEF]
     validate(base.key, "Confidence is '$confidence' only.", NONE, base.required_vars,
              contract=base.contract, forbids=base.forbids)
+
+
+# --- a stale seeded row must never shadow a newer image body --------------------------------------
+def _pg(defaults):
+    from common.prompts import PgPromptStore
+    return PgPromptStore(PyPromptStore(defaults))
+
+
+def test_untouched_seed_stops_winning_once_the_image_body_changes():
+    """THE deploy trap this guards.
+
+    Seeded rows are authoritative at runtime, so after a deploy that ships new prompt text the old
+    row kept serving until a human remembered `prompt_seed force`. Silent, and it bit us: the judge
+    and generator edits went live in the image while the DB still served the pre-edit bodies.
+
+    A seeded row is a COPY of an image body, not an intentional override — so once the image moves on,
+    the image wins."""
+    from common.prompts import PromptTemplate
+    from common.prompts.stores import body_sha
+
+    image = PromptTemplate(key="k", body="NEW body", required_vars=())
+    store = _pg({"k": image})
+    # a row seeded from the OLD image body
+    store._snapshot = {"k": PromptTemplate(key="k", body="OLD body", version=1,
+                                           seeded=True, image_sha=body_sha("OLD body"))}
+    assert store.is_stale_seed("k")
+    assert store.get("k").body == "NEW body"          # the image wins, automatically
+    assert store.get("k").version == 0
+
+
+def test_a_hand_edited_row_still_wins_after_an_image_change():
+    """The override must survive — otherwise the store is pointless. Only UNTOUCHED seeds defer."""
+    from common.prompts import PromptTemplate
+    from common.prompts.stores import body_sha
+
+    store = _pg({"k": PromptTemplate(key="k", body="NEW image body", required_vars=())})
+    store._snapshot = {"k": PromptTemplate(key="k", body="deliberate override", version=2,
+                                           seeded=False, image_sha=body_sha("OLD body"))}
+    assert not store.is_stale_seed("k")
+    assert store.get("k").body == "deliberate override"
+
+
+def test_a_seed_matching_the_current_image_is_not_stale():
+    from common.prompts import PromptTemplate
+    from common.prompts.stores import body_sha
+
+    store = _pg({"k": PromptTemplate(key="k", body="same body", required_vars=())})
+    store._snapshot = {"k": PromptTemplate(key="k", body="same body", version=1,
+                                           seeded=True, image_sha=body_sha("same body"))}
+    assert not store.is_stale_seed("k")
+    assert store.get("k").version == 1                # the row serves; no needless churn

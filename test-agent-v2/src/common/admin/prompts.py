@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 
 from common.prompts import PgPromptStore, PromptNotFound, store_for
+from common.prompts.stores import body_sha
 
 _MAX_BODY = 4000
 
@@ -54,11 +55,24 @@ async def list_prompts() -> str:
         await store.refresh()
         for key in sorted(d):
             tpl = store.get(key)
-            source = "database" if tpl.version > 0 else "image default"
-            in_db += tpl.version > 0
+            stale = isinstance(store, PgPromptStore) and store.is_stale_seed(key)
+            if stale:
+                source = "image (seed is stale)"
+            elif tpl.version > 0:
+                source = "database (edited)" if not tpl.seeded else "database"
+            else:
+                source = "image default"
+            in_db += tpl.version > 0 and not stale
             rows.append(f"| `{key}` | {tpl.version} | {source} | {len(tpl.body)} |")
     total = len(_all_keys())
     rows += ["", f"**{in_db}/{total} served from the database.**"]
+    stale_now = [k for k, dd in _all_keys().items()
+                 if isinstance(store_for(dd), PgPromptStore) and store_for(dd).is_stale_seed(k)]
+    if stale_now:
+        rows += ["", ("**" + str(len(stale_now)) + " seeded row(s) are STALE** — the image shipped new "
+                      "prompt text and those rows are untouched copies of the old body, so the IMAGE "
+                      "is being served (not the row). Run `prompt_seed` to bring the rows back in "
+                      "line. Hand-edited rows are never overridden this way.")]
     if in_db < total:
         rows += ["", ("Keys showing `image default` have NO row in Postgres yet — the body compiled "
                       "into the image is serving them. Run `prompt_seed` to copy the in-use bodies "
@@ -81,13 +95,17 @@ async def seed_prompts(force: bool = False) -> str:
             return "No database configured — prompts are served from the image and cannot be seeded."
         await store.refresh()
         for key in sorted(d):
-            if not force and store.get(key).version > 0:
+            # A STALE seed (row copied from an older image body) is re-seeded even without `force`:
+            # the image is the source of truth for rows nobody edited by hand, so a deploy that ships
+            # new prompt text should not need anyone to remember this command.
+            if not force and store.get(key).version > 0 and not store.is_stale_seed(key):
                 skipped.append(key)
                 continue
             base = d[key]
             try:
                 version = await store.publish(key, base.body, engine=base.engine,
                                               note="seeded from image default", created_by="seed",
+                                              image_sha=body_sha(base.body),
                                               required_vars=base.required_vars)
                 seeded.append(f"{key} v{version}")
             except (ValueError, RuntimeError) as exc:

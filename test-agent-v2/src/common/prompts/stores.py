@@ -38,11 +38,26 @@ _DDL = (
         note          TEXT NOT NULL DEFAULT '',
         PRIMARY KEY (key, version)
     )""",
+    # Additive schema evolution. ADD COLUMN IF NOT EXISTS is idempotent, so an existing deployment
+    # gains the column without a migration framework. (A column RENAME or type change would need
+    # real migration handling — this trick only covers additions.)
+    "ALTER TABLE prompt_version ADD COLUMN IF NOT EXISTS image_sha TEXT NOT NULL DEFAULT \'\'",
 )
 
-_SELECT = """SELECT t.key, t.engine, t.current_version, v.body, v.required_vars
+_SELECT = """SELECT t.key, t.engine, t.current_version, v.body, v.required_vars,
+                    v.created_by, v.image_sha
              FROM prompt_template t
              JOIN prompt_version v ON v.key = t.key AND v.version = t.current_version"""
+
+#: `created_by` value written by `prompt_seed`. A row with this author is a copy of an image body.
+SEED_AUTHOR = "seed"
+
+
+def body_sha(body: str) -> str:
+    """Stable fingerprint of a prompt body — ties a seeded row to the image it was copied from."""
+    import hashlib
+
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
 class PyPromptStore:
@@ -106,9 +121,26 @@ class PgPromptStore:
     # --- read path (sync, snapshot-only) ---------------------------------------------------------
     def get(self, key: str, *, version: int | None = None) -> PromptTemplate:
         tpl = self._snapshot.get(key)
-        if tpl is not None and (version is None or tpl.version == version):
-            return tpl
-        return self._fallback.get(key)           # unpublished / stale-pin / not refreshed yet
+        if tpl is None or (version is not None and tpl.version != version):
+            return self._fallback.get(key)       # unpublished / stale-pin / not refreshed yet
+        if self.is_stale_seed(key, tpl):
+            # The row is an untouched COPY of an older image body, and the image has since moved on
+            # (a deploy shipped new prompt text). Serving the row would silently run the OLD prompt
+            # until someone remembered to re-seed — the exact trap this guards. A HUMAN-edited row is
+            # never overridden here: that is a deliberate override and still wins.
+            return self._fallback.get(key)
+        return tpl
+
+    def is_stale_seed(self, key: str, tpl: PromptTemplate | None = None) -> bool:
+        """True when `key`'s row is an unmodified seed whose source image body has changed."""
+        tpl = tpl if tpl is not None else self._snapshot.get(key)
+        if tpl is None or not tpl.seeded:
+            return False
+        try:
+            base = self._fallback.get(key)
+        except PromptNotFound:
+            return False
+        return bool(tpl.image_sha) and tpl.image_sha != body_sha(base.body)
 
     def pinned(self) -> dict[str, int]:
         """The version actually serving each key right now — recorded on the run log (P4)."""
@@ -140,7 +172,7 @@ class PgPromptStore:
                         "last snapshot" if self._snapshot else "Python defaults")
             return
         snap: dict[str, PromptTemplate] = {}
-        for key, eng, ver, body, req in rows:
+        for key, eng, ver, body, req, author, img_sha in rows:
             required = tuple(v for v in (req or "").split(",") if v)
             try:
                 base = self._fallback.get(key)
@@ -150,12 +182,13 @@ class PgPromptStore:
                 log.warning("prompts: %s — keeping the Python default for this key", exc)
                 continue
             snap[key] = PromptTemplate(key=key, body=body, version=int(ver), engine=eng,
-                                       required_vars=required)
+                                       required_vars=required,
+                                       seeded=(author == SEED_AUTHOR), image_sha=img_sha or "")
         self._snapshot, self._loaded_at = snap, time.monotonic()
         log.info("prompts: snapshot loaded (%d published key(s))", len(snap))
 
     async def publish(self, key: str, body: str, *, engine: str = NONE, note: str = "",
-                      created_by: str = "admin",
+                      created_by: str = "admin", image_sha: str = "",
                       required_vars: tuple[str, ...] | None = None) -> int:
         """Append a new version and move the pointer. Returns the new version number."""
         base = self._fallback.get(key)          # raises PromptNotFound for an unknown key
@@ -180,9 +213,11 @@ class PgPromptStore:
                 text("SELECT COALESCE(MAX(version), 0) + 1 FROM prompt_version WHERE key = :k"),
                 {"k": key})).scalar_one()
             await conn.execute(
-                text("""INSERT INTO prompt_version (key, version, body, required_vars, created_by, note)
-                        VALUES (:k, :v, :b, :r, :c, :n)"""),
-                {"k": key, "v": nxt, "b": body, "r": ",".join(required), "c": created_by, "n": note})
+                text("""INSERT INTO prompt_version (key, version, body, required_vars, created_by,
+                                                   note, image_sha)
+                        VALUES (:k, :v, :b, :r, :c, :n, :s)"""),
+                {"k": key, "v": nxt, "b": body, "r": ",".join(required), "c": created_by, "n": note,
+                 "s": image_sha or ""})
             await conn.execute(
                 text("""INSERT INTO prompt_template (key, engine, current_version)
                         VALUES (:k, :e, :v)

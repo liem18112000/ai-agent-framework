@@ -240,3 +240,69 @@ def test_wipe_all_preserves_schema_metadata_and_config_tables():
     # and an unknown future table is preserved by default, never silently truncated
     known = set(wipe._PGVECTOR_TABLES) | set(wipe._RUNTIME_TABLES)
     assert "some_future_table" not in known
+
+
+# --- forget-memory: the confirm gate must actually gate -------------------------------------------
+class _FakeBank:
+    """Records whether anything was deleted, so a test can prove the gate held."""
+
+    def __init__(self):
+        self.deleted: list[str] = []
+
+    def load_index(self):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(nodes={"a": 1, "b": 2}, edges={"a->b": 1}), 0
+
+    def delete_prefix(self, prefix):
+        self.deleted.append(prefix)
+        return 7
+
+
+async def test_forget_memory_without_confirmation_deletes_nothing_and_previews():
+    """The whole point of the gate: a bare call must be SAFE. It reports what would go and hands back
+    the token, because server-driven confirm prompts (MCP elicitation) render blank over HTTP here —
+    so the re-confirm has to be a second deliberate call."""
+    from common.admin import forget_memory
+
+    bank = _FakeBank()
+    out = await forget_memory(bank, None, "", required_token="TOKEN")
+    assert bank.deleted == []                         # nothing was touched
+    assert "NOT EXECUTED" in out
+    assert "2 node(s) / 1 edge(s)" in out             # preview of what would be lost
+    assert "'TOKEN'" in out                           # tells the caller how to proceed
+    assert "PRESERVED" in out
+
+
+async def test_forget_memory_rejects_a_wrong_token():
+    from common.admin import forget_memory
+
+    bank = _FakeBank()
+    out = await forget_memory(bank, None, "not-the-token", required_token="TOKEN")
+    assert bank.deleted == [] and "NOT EXECUTED" in out
+
+
+async def test_forget_memory_with_the_token_clears_the_bank_only():
+    """With the token it deletes the memory bank — and says explicitly what it preserved, because the
+    2026-09-17 outage came from a destructive command whose blast radius was wider than its name."""
+    from common.admin import forget_memory
+
+    bank = _FakeBank()
+    out = await forget_memory(bank, None, "TOKEN", required_token="TOKEN")
+    assert bank.deleted == ["memory/"]
+    assert "7 blobs removed" in out
+    assert "preserved: A2A tasks, ADK sessions, adk_internal_metadata, prompt store" in out
+
+
+def test_forget_memory_never_targets_session_or_config_tables():
+    """forget-memory is memory-only: it must not reach the tables wipe_all clears, and must never go
+    near ADK's boot metadata or the prompt store."""
+    import inspect
+
+    from common.admin import wipe
+
+    src = inspect.getsource(wipe.forget_memory)
+    assert "_PGVECTOR_TABLES" in src                  # memory tier only
+    assert "_RUNTIME_TABLES" not in src               # not sessions/events/tasks
+    for forbidden in ("adk_internal_metadata", "prompt_template", "prompt_version"):
+        assert forbidden not in src or "does NOT touch" in src or "preserved" in src

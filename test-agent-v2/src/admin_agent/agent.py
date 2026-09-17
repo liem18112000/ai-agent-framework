@@ -147,6 +147,12 @@ class AdminRouter(RouterAgent):
     async def _wipe_all(self, rest: str) -> str:
         return await admin.wipe_all(await self._bank(), self._engine(), rest.strip())
 
+    @command("forget-memory", "forget-memory [confirm]")
+    async def _forget_memory(self, rest: str) -> str:
+        """Forget everything LEARNED (bank + pgvector) — nothing else. Two-phase: called bare it
+        previews what would go and returns the token; only the second call with that token deletes."""
+        return await admin.forget_memory(await self._bank(), self._engine(), rest.strip())
+
 
 def build_root_agent() -> AdminRouter:
     return AdminRouter(name="admin_agent")

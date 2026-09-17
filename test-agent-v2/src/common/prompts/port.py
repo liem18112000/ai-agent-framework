@@ -56,6 +56,12 @@ class PromptTemplate:
     #: sometimes inverted: the testplan generators must never say "Return ONLY a JSON array", while
     #: `engine.questions` MUST (it is parsed by `loads_array`).
     forbids: tuple[str, ...] = ()
+    #: True when this row was written by `prompt_seed` and never hand-edited since. Such a row is a
+    #: COPY of an image body, not an intentional override, so it must not outrank a newer image.
+    seeded: bool = False
+    #: sha256 of the image body this row was copied from. When the image moves on, this no longer
+    #: matches and an untouched seed is treated as stale — see `PgPromptStore.get`.
+    image_sha: str = ""
 
     def render(self, params: Mapping[str, object] | None = None) -> str:
         """Substitute ``$name`` params into the body (``engine="none"`` only).

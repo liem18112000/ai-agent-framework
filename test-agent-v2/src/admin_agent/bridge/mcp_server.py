@@ -48,6 +48,18 @@ def register_tools(mcp: MCPServer, session: BridgeSession) -> dict:
         return (await session.ask("prompt-list")).text
 
     @mcp.tool()
+    async def forget_memory(confirm: str = "") -> str:
+        """[ADMIN — not part of the testing pipeline] DESTRUCTIVE — make the agents forget everything
+        they have LEARNED: the GCS memory bank and the pgvector recall tier. Narrower than `wipe_all`:
+        it does NOT touch A2A tasks, ADK sessions, ADK schema metadata, or the prompt store.
+
+        TWO-PHASE. Call it with no `confirm` first: nothing is deleted and you get a preview of exactly
+        what would go plus the required token. ASK THE USER Yes/No with that preview, and only on an
+        explicit yes call again with `confirm` set. `memory-backups/**` survives — offer
+        `backup_memory` first."""
+        return (await session.ask(f"forget-memory {confirm}".strip())).text
+
+    @mcp.tool()
     async def prompt_seed(force: bool = False) -> str:
         """[ADMIN — not part of the testing pipeline] Copy the prompt bodies compiled into the image
         into Postgres as their first version, so the prompts actually in use become visible and
