@@ -98,5 +98,10 @@ async def run_json_agent(agent: LlmAgent, *, output_key: str, user: str = "gener
         log.warning("%s: no structured state and raw text unparseable (%d chars) → heuristic",
                     agent.name, len("\n".join(texts)))
     else:
-        log.info("%s: recovered structured output from raw model text (ADK state was empty)", agent.name)
+        # Log the SHAPE (not the content) — a recovered-but-empty payload is otherwise invisible: the
+        # caller just reports "batch empty/invalid" and degrades, with no way to tell an empty `items`
+        # from a wrong-dict pick by `loads_obj`. Keys + per-key length is enough to tell those apart.
+        shape = {k: (len(v) if isinstance(v, (list, str, dict)) else v) for k, v in recovered.items()}
+        log.info("%s: recovered structured output from raw model text (ADK state was empty); "
+                 "raw=%d chars, shape=%s", agent.name, len("\n".join(texts)), shape)
     return recovered
