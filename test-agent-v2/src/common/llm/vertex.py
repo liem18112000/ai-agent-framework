@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import os
-from functools import lru_cache
+from functools import cache
 from typing import Any
 
 _ENV_KEYS = ("VERTEX_PROJECT", "VERTEX_LOCATION", "VERTEX_MODEL")
 
 
-@lru_cache(maxsize=None)  # one (project, location) per process — client setup is not free
+@cache  # one (project, location) per process — client setup is not free
 def _client(project: str, location: str):
     """Process-wide AnthropicVertex singleton. Safe to share across the to_thread workers (the client
     is built for concurrent use); reused so we don't redo credential/transport setup on every call."""

@@ -7,6 +7,8 @@ required confirm token.
 
 from __future__ import annotations
 
+import json
+
 from mcp.server.mcpserver import MCPServer
 
 from common.bridge import BridgeSession
@@ -38,6 +40,38 @@ def register_tools(mcp: MCPServer, session: BridgeSession) -> dict:
         (all|working|episodic|semantic|procedural). `working` needs a context_id."""
         arg = f"view-memory {tier}" + (f" {context_id}" if context_id else "")
         return (await session.ask(arg, context_id=context_id)).text
+
+    @mcp.tool()
+    async def prompt_list() -> str:
+        """[ADMIN — not part of the testing pipeline] List every prompt key, the version now serving
+        it, and whether that body comes from the database or the image default (version 0)."""
+        return (await session.ask("prompt-list")).text
+
+    @mcp.tool()
+    async def prompt_get(key: str) -> str:
+        """[ADMIN — not part of the testing pipeline] Show the body currently serving `key`, with its
+        engine and declared $parameters."""
+        return (await session.ask(f"prompt-get {key}")).text
+
+    @mcp.tool()
+    async def prompt_publish(key: str, body: str, note: str = "", engine: str = "none") -> str:
+        """[ADMIN — not part of the testing pipeline] Publish a NEW version of a prompt body. Validated
+        before the write (every $placeholder must be declared), append-only, and it takes effect on the
+        next run that refreshes — runs already in flight keep their pinned version."""
+        payload = json.dumps({"key": key, "body": body, "note": note, "engine": engine})
+        return (await session.ask(f"prompt-publish {payload}")).text
+
+    @mcp.tool()
+    async def prompt_rollback(key: str, version: int) -> str:
+        """[ADMIN — not part of the testing pipeline] Point `key` back at an earlier version. Nothing
+        is deleted — the publish pointer moves, so a bad prompt is a one-call revert."""
+        return (await session.ask(f"prompt-rollback {key} {version}")).text
+
+    @mcp.tool()
+    async def prompt_history(key: str) -> str:
+        """[ADMIN — not part of the testing pipeline] Version log for one prompt key, newest first
+        (version, when, by, size, note)."""
+        return (await session.ask(f"prompt-history {key}")).text
 
     @mcp.tool()
     async def backup_memory(summary: str) -> str:

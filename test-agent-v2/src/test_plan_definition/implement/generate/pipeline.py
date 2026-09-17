@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from common.interrogate.round.case_design import EXTRA_KINDS, kinds_from_answer
 from common.testplan import memory as store
+from common.testplan.llm.prompts import refresh_store
 from common.testplan.models import (
     CONFIRMED,
     TEST_PLAN,
@@ -13,7 +15,6 @@ from common.testplan.models import (
     TestScenario,
     TestStep,
 )
-from common.interrogate.round.case_design import EXTRA_KINDS, kinds_from_answer
 from common.testplan.pack import load_plan_pack
 from test_plan_definition.implement.assured import run_assured_scenarios
 from test_plan_definition.implement.generate.steps import generate_all_steps
@@ -41,6 +42,10 @@ async def implement_plan(bank, context_id: str, *, run_id: str = "implement", no
         store.write_plan(bank, plan)
 
     plan_pack = load_plan_pack(bank, context_id)
+    # P2/P4 — load + PIN the prompt snapshot once, before any generator renders. Every prompt
+    # in this run then reads the same bodies, so a publish landing mid-run cannot make round 3
+    # incomparable to round 1; the pins ride onto the run log as provenance.
+    prompt_versions = await refresh_store()
     # test-data/steps stay behind `detail` (heuristic by default — one LLM path unless opted in). On a
     # resume (an unfinished assured pass exists) reuse the persisted set so a `detail` LLM test-data call
     # isn't repeated on every step; persist it up front so the next step can read it back.
@@ -74,6 +79,7 @@ async def implement_plan(bank, context_id: str, *, run_id: str = "implement", no
         run_id=run_id, context_id=context_id, plan_id=plan.id,
         scenarios_written=len(scenarios), steps_written=len(steps),
         testdata_written=len(test_data), confidence=plan.confidence, started=now, ended=now,
+        prompt_versions=prompt_versions,
     )
     store.append_plan_run_log(bank, run)
     log.info("implement done: %d scenarios, %d steps, %d test-data, feature=%s, quality=%s, %s",

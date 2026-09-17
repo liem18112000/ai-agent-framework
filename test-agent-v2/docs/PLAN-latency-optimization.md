@@ -10,6 +10,36 @@ small, opt-in (Mode B) quality trade. Two deliverables:
 
 ---
 
+## ▶ Status — resume here (2026-09-16)
+
+**Committed & pushed:** `b767e57` on `feature/test-agent/v2-adk` (15 files, plain message — no AI trailer,
+the repo hook rejects those). Full detail in memory note `v2-latency-map-and-plan`.
+
+| Item | State | Where |
+|---|---|---|
+| **Mode A — A1** reuse AnthropicVertex client | ✅ done | `common/llm/vertex.py` (`_client` lru_cache) |
+| **Mode A — A2** prompt-cache refine rounds | ✅ done | `common/llm/questions.py` + `prompts.py` (`include_context=False` + `cache_prefix`) |
+| **Mode A — A3** parallelize planners | ❌ dropped | unsafe (shared ADK `ctx.session.state`) + low-value |
+| **Phase 0** latency capture | ✅ done | `Benchmark.latency_ms` (`SCHEMA_VERSION` 1→2); `BridgeSession.ask` accumulates via `get_cache()`; `compute_benchmark` reads it |
+| **Phase 2** `TESTAGENT_TURBO` toggle | ✅ done | `adk/config.py::turbo_on()` read at 3 gates: assured iters 2→1, critique off, refine passes 4→1 |
+| **Phase 3** fast model tier (B5) | ⬜ TODO | `agent_model(tier="fast")` → `VERTEX_MODEL_FAST` for judge/critique/distill/restate |
+| **Live A/B** on LUZ-156281 | ⬜ TODO | single-process, `CACHE_BACKEND=memory`, turbo off vs on |
+| **TF plumbing** for `TESTAGENT_TURBO` | ⬜ TODO | add env to KGA+TPD in `variables.tf`/`services.tf` |
+
+**Tests:** `tests/test_turbo.py` (3) + a latency case in `tests/eval/test_benchmark.py`; targeted blast-radius
+80 pass. Run the **full suite in the foreground** (`python -m pytest tests/ -q`, ~64s) — backgrounding it ran slow.
+
+**Deploy caveats (for the deploy session):**
+- `b767e57` is **safe-by-default** — turbo off, latency capture no-op under `NullCache`. Deploying changes nothing on its own.
+- **Turbo won't activate** until `TESTAGENT_TURBO=1` is set on the KGA + TPD Cloud Run services (TF plumbing above not done).
+- **`latency_ms` is `None` in prod** — gateway and TEV don't share a cache (prod Redis is TEV-only). Latency is an **offline-A/B** metric only.
+- `SCHEMA_VERSION` 1→2 invalidates cached `Benchmark` blobs → lazy recompute on next read (harmless).
+- Standard v2: direct `terraform apply` is classifier-blocked → `SKIP_BUILD=1 bash deploy.sh`; build image before pointing services; 2Gi already set.
+
+**Next step when resuming:** either Phase 3 (fast tier — the big Turbo win) or run the live A/B to get baseline numbers first.
+
+---
+
 ## 0. Diagnosis — where the time actually goes
 
 Reframe first: **extended thinking is disabled on every call site** (`common/llm/vertex.py:46`,

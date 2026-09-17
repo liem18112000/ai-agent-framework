@@ -13,6 +13,7 @@ from collections.abc import Awaitable, Callable
 
 from common import admin
 from common.adk.router import RouterAgent
+from common.admin import prompts as admin_prompts
 from common.memory.factory import build_bank
 from common.monitoring import get_logger
 
@@ -83,6 +84,36 @@ class AdminRouter(RouterAgent):
         if len(parts) != 2:
             return "Provide two run ids: compare-runs <ctx-a> <ctx-b>."
         return await self._bank_call(lambda b: admin.compare_runs(b, parts[0], parts[1]))
+
+    # --- P3: the prompt store (read / publish / roll back / audit) ---------------------------
+    @command("prompt-list", "prompt-list")
+    async def _prompt_list(self, rest: str) -> str:
+        return await admin_prompts.list_prompts()
+
+    @command("prompt-get", "prompt-get <key>")
+    async def _prompt_get(self, rest: str) -> str:
+        if not rest:
+            return "Provide a key: prompt-get <key>."
+        return await admin_prompts.get_prompt(rest.strip())
+
+    @command("prompt-publish", "prompt-publish <json>")
+    async def _prompt_publish(self, rest: str) -> str:
+        if not rest:
+            return 'Provide a JSON payload: {"key": ..., "body": ...}.'
+        return await admin_prompts.publish_prompt(rest)
+
+    @command("prompt-rollback", "prompt-rollback <key> <version>")
+    async def _prompt_rollback(self, rest: str) -> str:
+        parts = rest.split()
+        if len(parts) != 2 or not parts[1].isdigit():
+            return "Usage: prompt-rollback <key> <version>."
+        return await admin_prompts.rollback_prompt(parts[0], int(parts[1]))
+
+    @command("prompt-history", "prompt-history <key>")
+    async def _prompt_history(self, rest: str) -> str:
+        if not rest:
+            return "Provide a key: prompt-history <key>."
+        return await admin_prompts.prompt_history(rest.strip())
 
     @command("backup-memory", "backup-memory <summary>")
     async def _backup_memory(self, rest: str) -> str:

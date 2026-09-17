@@ -72,6 +72,9 @@ class TestPlanRun:
     testdata_written: int = 0
     gaps: list[str] = field(default_factory=list)
     confidence: str = ""
+    #: P4 — prompt key -> version actually used for THIS run (0 = the body compiled into the
+    #: image). Makes a round-over-round score comparison auditable after a prompt publish.
+    prompt_versions: dict = field(default_factory=dict)
     started: str = ""
     ended: str = ""
 
