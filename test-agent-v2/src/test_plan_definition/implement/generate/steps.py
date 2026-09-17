@@ -84,7 +84,7 @@ async def generate_all_steps(
     system instruction (``pack_block``) and the per-batch TASK is the user turn (``steps_prompt``, so
     the pack isn't duplicated), matching the other implement generators."""
     if detail or os.environ.get("TPD_LLM_DETAIL"):
-        model = model or agent_model(max_tokens=8000)
+        model = model or agent_model()  # inherit the ceiling — a cap truncates the steps mid-JSON
         if model is not None:
             td = test_data or []
             summary = plan_pack.summary_text() if plan_pack is not None else ""

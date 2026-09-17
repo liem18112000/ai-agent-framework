@@ -26,7 +26,7 @@ async def classify_in_scope(plan: TestPlan, plan_pack, *, model=None) -> set[str
     grounded = plan_pack.pack.grounded
     if len(grounded) < 2:
         return None
-    model = model or agent_model(max_tokens=2000)
+    model = model or agent_model()  # inherit the ceiling — a cap truncates the id list mid-JSON
     if model is None:
         return None
     summary = plan_pack.summary_text()
@@ -47,7 +47,7 @@ async def classify_in_scope(plan: TestPlan, plan_pack, *, model=None) -> set[str
 # array truncates → schema-invalid → silent heuristic fallback (per-node stubs scoring ~0.09). So we
 # BATCH the pack's units and generate a bounded slice per call (concurrently), then merge. Each batch's
 # output fits well under the ceiling and its own TPD_GEN_TIMEOUT_S — robust to both size and time.
-_SCEN_MAX_TOKENS = 16000
+_SCEN_MAX_TOKENS = 128000  # the model's real output ceiling (claude-sonnet-5) — do NOT cap below it
 _BATCH_UNITS = 3        # grounded units per generation call — small so verbose real scenarios never truncate
 # ponytail: sequential (1) not concurrent. Deployed logs showed ALL 5-6 concurrent batches returning
 # empty structured-output SIMULTANEOUSLY (no exception, no timeout) → heuristic fallback → ~0.1 score;
