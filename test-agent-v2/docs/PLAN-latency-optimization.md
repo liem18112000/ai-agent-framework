@@ -23,7 +23,7 @@ the repo hook rejects those). Full detail in memory note `v2-latency-map-and-pla
 | **Phase 0** latency capture | ✅ done | `Benchmark.latency_ms` (`SCHEMA_VERSION` 1→2); `BridgeSession.ask` accumulates via `get_cache()`; `compute_benchmark` reads it |
 | **Phase 2** `TESTAGENT_TURBO` toggle | ✅ done | `adk/config.py::turbo_on()` read at 3 gates: assured iters 2→1, critique off, refine passes 4→1 |
 | **Phase 3** fast model tier (B5) | ✅ done | `agent_model/complete(tier="fast")` → `VERTEX_MODEL_FAST`; routed at distill/understanding/define-brief/critique/judge; inert until env set |
-| **Live A/B** on **LUZ-158230** | ✅ ran (`tools/ab_latency.py`) | baseline vs turbo+fast, real Vertex. **1.17× overall / 1.44× implement**; assured score EQUAL (0.38); TPS ≈ equal; **PQS 0.75→0.45** (turbo's shallower refine). Caught + fixed the fast-judge 64000-cap bug. See §A/B below |
+| **Live A/B** on **LUZ-158230** | ✅ done (2×2 decomposition) | **Verdict: deploy `TESTAGENT_TURBO=1`, `VERTEX_MODEL_FAST` UNSET → 1.35× faster, PQS unchanged (0.75).** Fast tier ≈ no speed + toxic combined with turbo (turbo+fast PQS 0.45). Caught+fixed the fast-judge 64000-cap bug. See §A/B |
 | **TF plumbing** (`TESTAGENT_TURBO` + `VERTEX_MODEL_FAST`) | ✅ done (`9e98c48`) | `local.perf_env` → KGA+TPD; `var.turbo` / `var.vertex_model_fast`, both inert by default; `terraform validate` passes. Flip via tfvars + apply |
 | **Blocked lever** `_BATCH_CONCURRENCY` | 🔍 investigated | root cause unconfirmed (hardcoded ADK ids vs Vertex quota); safe unblock path documented under sink #1 — needs a controlled live experiment, not a flag flip |
 
@@ -267,28 +267,31 @@ on isolated bank clones for **baseline** (full model, no turbo) vs **turbo+fast*
 `VERTEX_MODEL_FAST=claude-haiku-4-5`). Times each stage; scores via `compute_benchmark`. Stages are
 stochastic (default sampling), so treat these as **directional**, not precise — a rigorous read needs N runs.
 
-**Run 2 (valid — after the fast-judge fix):**
+**2×2 decomposition (definitive) — baseline / fast-only / turbo-only / turbo+fast:**
 
-| Arm | refine | define | implement | LLM total | scenarios | assured | PQS | TPS |
-|---|---|---|---|---|---|---|---|---|
-| baseline | 163s | 199s | 492s | **854s** | 40 | 0.38 | **0.75** | 0.61 |
-| turbo+fast | 184s | 207s | 342s | **733s** | 54 | **0.38** | **0.45** | 0.66 |
+| Arm | `turbo` | fast | LLM total | speed | **PQS** | TPS | scenarios |
+|---|---|---|---|---|---|---|---|
+| baseline | off | — | 875s | 1.0× | **0.75** | 0.67 | 52 |
+| fast-only | off | haiku | 835s | 1.05× | **0.75** | 0.64 | 51 |
+| **turbo-only** | on | — | 646s | **1.35×** | **0.75** | 0.77 | 52 |
+| turbo+fast | on | haiku | 627s | 1.4× | **0.45** | 0.76 | 64 |
 
-**Findings:**
-- **Latency:** turbo+fast ≈ **1.17× overall, 1.44× implement**. The win is concentrated in **implement**
-  (B1 assured iters 2→1). refine/define moved within noise — turbo's critique-off/fewer-passes are small
-  next to the unchanged full-model question generation, and the fast tier on those stages (understanding
-  700, critique 1200) is negligible.
-- **Quality:** assured score **identical (0.38)** and TPS ≈ equal — the plan/scenario quality is preserved.
-  But **PQS drops 0.75→0.45, reproducibly** (same in both runs): turbo's shallower **refine** (B2 critique
-  off + B3 1 pass) yields a lower-precision knowledge pack. So the real Turbo trade is on **pack quality**,
-  not the plan. Tuning lever for Phase 4: keep critique/passes if PQS matters, or gate B2/B3 separately.
-- **Bug caught + fixed:** run 1 showed `max_tokens 128000 > 64000` — the fast judge (`agent_model(tier="fast")`
-  inheriting the 128000 default) exceeds **claude-haiku-4-5's 64000 output cap** → judge dead → assured 0.0,
-  PQS 0.45. That would break any prod deploy with `VERTEX_MODEL_FAST=haiku`. Fixed by clamping fast-tier
-  `max_tokens` to 64000 (`VertexClaudeProvider._cap_max_tokens`, env `VERTEX_MODEL_FAST_MAX_TOKENS`).
-  Run 2 = 0 cap errors. **Lesson:** a fast tier MUST clamp `max_tokens` to the fast model's own ceiling —
-  the default-model ceiling is not portable across models.
+**Recommendation → deploy `TESTAGENT_TURBO=1` with `VERTEX_MODEL_FAST` UNSET.** 1.35× faster, **zero quality
+loss** (PQS 0.75, TPS fine). Findings:
+- **The speed is entirely turbo's B1** (implement assured iters 2→1: 545s→273s). refine/define moved within
+  LLM noise. So Turbo's value = the implement iteration cap.
+- **The fast tier buys ~nothing** (1.05×) — it only touches the small distill/restate/critique/judge calls,
+  dwarfed by the full-model question- and scenario-generation.
+- **Neither factor alone hurts PQS** (fast-only 0.75, turbo-only 0.75). **Only turbo+fast together drops it
+  to 0.45** — an interaction (turbo's shallower refine + haiku's weaker distillation compound). Reproducible:
+  turbo+fast = 0.45 across all three runs. So **do not combine the fast tier with turbo** (−0.30 PQS for +0.05×).
+- **Bug caught + fixed (run 1):** `max_tokens 128000 > 64000` — the fast judge inheriting the 128000 default
+  exceeds **claude-haiku-4-5's 64000 cap** → judge dead. Fixed by clamping fast-tier `max_tokens` to 64000
+  (`VertexClaudeProvider._cap_max_tokens`, env `VERTEX_MODEL_FAST_MAX_TOKENS`). The Phase-3 fast-tier code
+  stays (correct, tested, inert by default) — we just recommend not deploying `VERTEX_MODEL_FAST`.
+
+Caveat: one run per arm; stages are stochastic so latency is **directional**, but PQS is reproducible
+(baseline/single-factor 0.75 vs turbo+fast 0.45, 3×). A confirmatory turbo-only re-run would harden it.
 
 ---
 
@@ -312,7 +315,9 @@ stochastic (default sampling), so treat these as **directional**, not precise �
   distill/understanding/define-brief/critique/judge; scenario generation + question generation stay on
   the full model. Decoupled from turbo (env-driven, inert until `VERTEX_MODEL_FAST` set).
   **Follow-up:** add `VERTEX_MODEL_FAST` to `variables.tf`/`services.tf` + pick the fast model (e.g. Haiku).
-- **Phase 4 — Tune.** Pick the default (turbo on or off?) + the fast model from Phase-0/3 benchmark data.
+- **Phase 4 — Tune.** ✅ Done via the 2×2 A/B. Verdict: **deploy `TESTAGENT_TURBO=1`, leave `VERTEX_MODEL_FAST`
+  unset** (1.35× faster, PQS unchanged; the fast tier adds no speed and is toxic combined with turbo). Optional
+  next: a confirmatory turbo-only re-run, and a "turbo-lite" that decomposes the knobs if even finer control is wanted.
 
 ## Invariants to preserve
 - Heuristic fallback stays intact — every LLM call already degrades to a heuristic on

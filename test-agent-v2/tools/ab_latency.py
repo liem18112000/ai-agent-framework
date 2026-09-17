@@ -85,7 +85,10 @@ def main() -> int:
         b.gens = dict(base.gens)
         return MemoryBank(b)
 
-    arms = [("baseline", False, None), ("turbo+fast", True, model_fast)]
+    # 2x2 decomposition: isolate the turbo knobs (refine B2/B3 + implement B1) from the fast tier, so we
+    # can see WHICH factor causes the PQS drop and which buys the speed.
+    arms = [("baseline", False, None), ("fast-only", False, model_fast),
+            ("turbo-only", True, None), ("turbo+fast", True, model_fast)]
     results = []
     for name, turbo, mf in arms:
         _set_env(turbo=turbo, model_fast=mf)
@@ -113,14 +116,19 @@ def main() -> int:
               f"scenarios={rec['scenarios']} score={rec['assured_score']} pqs={bm.pqs} tps={bm.tps}",
               flush=True)
 
-    speedup = None
-    if len(results) == 2 and results[0]["llm_total_s"]:
-        speedup = round(results[0]["llm_total_s"] / max(results[1]["llm_total_s"], 0.1), 2)
+    base = results[0]["llm_total_s"] or 0.1
+    for r in results:  # each arm's speed + quality relative to baseline
+        r["speedup_vs_baseline_x"] = round(base / max(r["llm_total_s"], 0.1), 2)
     summary = {"ticket": ticket, "ctx": ctx, "depth": depth, "model_fast": model_fast,
-               "gather_s": round(gather_s, 1), "arms": results, "turbo_speedup_x": speedup}
+               "gather_s": round(gather_s, 1), "arms": results}
     out_path = _ROOT / "ab_latency_results.json"
     out_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    print(f"\n=== SUMMARY ===\nturbo speedup (LLM stages): {speedup}x\nwrote {out_path}", flush=True)
+    print("\n=== SUMMARY (vs baseline) ===", flush=True)
+    for r in results:
+        print(f"  {r['arm']:<12} {r['llm_total_s']:>6.0f}s  {r['speedup_vs_baseline_x']}x  "
+              f"pqs={r['pqs']} tps={r['tps']} assured={r['assured_score']} scenarios={r['scenarios']}",
+              flush=True)
+    print(f"wrote {out_path}", flush=True)
     return 0
 
 
