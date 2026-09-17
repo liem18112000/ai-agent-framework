@@ -2,7 +2,9 @@
 
 **Goal.** Cut the dominant, pack-size-scaling latency stage — implement's **batched scenario generation** —
 by running the batches **in parallel** instead of `_BATCH_CONCURRENCY=1` (sequential). Diagram:
-`docs/parallel-generation.excalidraw` / `.png`.
+One diagram per phase (embedded under each section below): `parallel-gen-A-inprocess`,
+`parallel-gen-B-batchapi`, `parallel-gen-C-workerpool` (`.excalidraw` / `.png`). A combined one-page
+overview is in `parallel-generation.png`.
 
 ## Where the time is (from the LUZ-158230 A/B)
 Implement is ~60% of LLM wall-clock and the only stage that scales with pack size. Generation splits the
@@ -20,6 +22,8 @@ wall. That makes **Phase A** a few-line fix, and gates whether B/C are needed.
 ---
 
 ## Phase A — In-process concurrency fix (do first; cheapest; no infra)
+
+![Phase A — in-process concurrency fix](parallel-gen-A-inprocess.png)
 
 **Change (`common/testplan/llm/adk.py::run_json_agent`):** derive a **unique** `session_id`/`app_name` and a
 unique `output_key` per call (e.g. suffix a monotonic counter or the batch id). Then make
@@ -39,6 +43,8 @@ fails (partial success returns the merged set).
 
 ## Phase B — Vertex Claude Batch API (async, provider-managed fan-out)
 
+![Phase B — Vertex Claude Batch API](parallel-gen-B-batchapi.png)
+
 **When:** A hits the Vertex quota, OR you want an **offline "submit & come back"** mode + the **50% batch
 discount**. The provider runs the fan-out — no Pub/Sub to build.
 
@@ -57,6 +63,8 @@ minutes-latency is acceptable and cost matters.
 ---
 
 ## Phase C — Pub/Sub + Cloud Run Worker Pool (your idea; distributed, scalable, resilient)
+
+![Phase C — Pub/Sub + Cloud Run Worker Pool](parallel-gen-C-workerpool.png)
 
 **When:** many tickets generating at once, resilience (retries/dead-letter), real-time-ish parallelism beyond
 one instance. A **documented ADK pattern** (Google codelab: ADK agent in a Cloud Run Worker Pool + Pub/Sub).
