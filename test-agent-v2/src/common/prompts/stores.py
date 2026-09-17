@@ -140,7 +140,12 @@ class PgPromptStore:
             base = self._fallback.get(key)
         except PromptNotFound:
             return False
-        return bool(tpl.image_sha) and tpl.image_sha != body_sha(base.body)
+        # Compare BODIES, not the recorded hash. A row whose author is `seed` is by definition a copy
+        # of an image body, so "body differs from the image" IS staleness — no fingerprint needed. The
+        # first version of this gated on image_sha, which silently exempted every row seeded before the
+        # column existed: exactly the population the check is for. image_sha is still recorded as
+        # provenance (visible in prompt_history), it just is not what decides.
+        return tpl.body != base.body
 
     def pinned(self) -> dict[str, int]:
         """The version actually serving each key right now — recorded on the run log (P4)."""

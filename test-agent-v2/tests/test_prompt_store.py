@@ -349,3 +349,16 @@ def test_a_seed_matching_the_current_image_is_not_stale():
                                            seeded=True, image_sha=body_sha("same body"))}
     assert not store.is_stale_seed("k")
     assert store.get("k").version == 1                # the row serves; no needless churn
+
+
+def test_a_legacy_seed_with_no_recorded_hash_is_still_detected_as_stale():
+    """Regression: the first implementation gated staleness on image_sha, so rows seeded BEFORE that
+    column existed were permanently exempt — the exact population the check exists for. Caught only by
+    deploying it and watching the guard not fire."""
+    from common.prompts import PromptTemplate
+
+    store = _pg({"k": PromptTemplate(key="k", body="NEW body", required_vars=())})
+    store._snapshot = {"k": PromptTemplate(key="k", body="OLD body", version=1,
+                                           seeded=True, image_sha="")}   # legacy row
+    assert store.is_stale_seed("k")
+    assert store.get("k").body == "NEW body"
