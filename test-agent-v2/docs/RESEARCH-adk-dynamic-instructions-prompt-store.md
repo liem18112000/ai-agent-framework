@@ -355,3 +355,104 @@ and contains every character a delimiter might use.
 - **The Postgres path is offline-untested.** Tables are created lazily (`CREATE TABLE IF NOT EXISTS`)
   on first refresh/publish, and every test here runs the no-DB fallback. The DB path needs one live
   verification against Cloud SQL before it can be trusted.
+
+
+---
+
+## 9. Progress tracker
+
+Last updated **2026-09-17**. Branch `feature/test-agent/v2-adk`.
+
+### Phase status
+
+| Phase | Scope | Status | Evidence |
+|---|---|---|---|
+| **P0** | Port + `PyPromptStore` + ADK adapter + `store_for()` | ✅ **Done** | `common/prompts/{port,stores,adk,__init__}.py`; 11 tests |
+| **P1** | 7 testplan bodies behind keys; `prompts.py` renders through the store | ✅ **Done** | `common/testplan/llm/templates.py`; `prompts.py::_render` |
+| **P2** | `PgPromptStore` on the shared Cloud SQL engine | ⚠️ **Built, unverified live** | `stores.py::PgPromptStore`; no live round-trip yet |
+| **P3** | Admin MCP surface (list/get/publish/rollback/history) | ⚠️ **Built, unverified live** | `common/admin/prompts.py`; 5 tools on the ADMIN group |
+| **P4** | Refresh-once-per-run pinning + provenance on the run log | ✅ **Done** | `refresh_store()`; `TestPlanRun.prompt_versions` |
+
+**Commits:** `4128e59` (P0–P4) · `9fe73ad` (report typo). Suite at the time of writing: **567 passed,
+14 skipped**, ruff clean on every touched file.
+
+### Verified vs unverified — read this before trusting anything
+
+| Claim | Confidence | How it was checked |
+|---|---|---|
+| ADK facts in §1 (`InstructionProvider`, `canonical_instruction`, `bypass_state_injection`, `static_instruction` semantics) | **High** | Read from the pinned SDK in `.venv`, quoted with `file:line` |
+| The 7 rewired prompts render the same contract as before | **High** | 567-test suite green, incl. pre-existing substring assertions on scope block / focus / schema wording |
+| Rails reject bad templates (undeclared `$placeholder`, unknown engine, empty body) | **High** | `test_prompt_store.py` — direct unit tests |
+| Fail-closed fallback to the image bodies | **Medium** | Unit-tested for the no-DB path; the *DB-unreachable-mid-run* path is reasoned, not exercised |
+| `PgPromptStore` reads, publishes, rolls back against real Postgres | **UNVERIFIED** | No live run. Every test exercises the no-DB branch |
+| The 5 MCP admin tools reach the store end to end | **UNVERIFIED** | Not deployed; A2A command routing untested for these 5 |
+| Lazy `CREATE TABLE IF NOT EXISTS` works on the shared Cloud SQL instance | **UNVERIFIED** | Depends on the runtime role having DDL rights — not confirmed |
+
+### Risk register
+
+| Risk | Impact | Mitigation in place |
+|---|---|---|
+| Runtime DB role lacks `CREATE TABLE` | `refresh()` logs a warning and serves image defaults forever — silently "working" but never DB-backed | `prompt_list` shows `source = image default` per key, so it is visible; P5 checks it explicitly |
+| A publish lands mid-run | Round N and round N+1 use different prompts; scores incomparable | Snapshot pinned at run start; pins recorded on `TestPlanRun.prompt_versions` |
+| A published body drifts from the `output_schema` | The exact defect that cost three rebuilds this week | `SCHEMA_CONTRACT` test — but it guards the **image defaults**, not arbitrary DB rows (see P5 gap below) |
+| Store cached per `id(defaults)` | A long-lived process holds a stale snapshot past TTL if nothing calls `refresh()` | `refresh_store()` at run start; `is_stale()` honours a 300 s TTL |
+
+### Known gap worth naming
+
+`SCHEMA_CONTRACT` currently validates `templates.DEFAULTS` — the bodies compiled into the image. It
+does **not** run against a body published to the database, which is precisely where a human typo will
+land. Closing that is the first real task of the next phase, not a nice-to-have.
+
+---
+
+## 10. Next phase — P5: make the database path trustworthy
+
+**Nothing above P1 should be relied on until this passes.** P2/P3 are code that has never touched a
+database; treating them as done would be the same mistake as the "0 chars" diagnosis earlier this week
+— a plausible mechanism that nobody exercised.
+
+### P5.1 — Close the schema-contract gap at the write boundary (do this first; no deploy needed)
+
+Move the contract check from "the shipped defaults" to "anything that becomes servable":
+
+- Extend `stores.validate()` to take the key's expected output-shape contract and enforce it, so
+  `publish()` rejects a body that drops `{"items": [ ... ]}` or reintroduces `Return ONLY a JSON array`.
+- Keep the existing `SCHEMA_CONTRACT` test over `DEFAULTS` as the compile-time half.
+- Add a test that `publish()` refuses a contract-violating body.
+
+This is the highest-value item in the whole phase and is offline-testable.
+
+### P5.2 — One live round-trip
+
+1. Deploy the current HEAD (`gcloud builds submit` → `terraform apply`, the flow used all session).
+2. `prompt_list` → every key should report **`image default` / version 0** on first call.
+3. `prompt_publish` a trivial, contract-valid edit to `tpd.judge_scenarios` (e.g. one added sentence).
+4. `prompt_list` → that key now reports **`database` / version 1**.
+5. `prompt_history tpd.judge_scenarios` → one row, correct author and note.
+6. Run `implement_plan` on a scratch context; confirm `TestPlanRun.prompt_versions` records
+   `tpd.judge_scenarios: 1` and `0` for the rest.
+7. `prompt_rollback tpd.judge_scenarios 0`… **note:** version 0 is the image default and is *not* a
+   DB row — decide whether rollback-to-image is expressible, or whether the first publish must always
+   be preceded by seeding v1 from the default. **This is an open design question P5 must answer.**
+
+### P5.3 — Failure drills
+
+- Revoke/point at a bad DB and confirm generation still runs on image defaults (fail-closed).
+- Publish a body with an undeclared `$placeholder` and confirm the write is rejected, not stored.
+
+### Acceptance
+
+P5 is done when a prompt edit reaches a deployed run **without a rebuild**, and a bad edit is provably
+rejected. Only then is the §2.1 cost — Cloud Build + terraform + re-run per one-line text fix —
+actually eliminated.
+
+### After P5
+
+| Phase | Scope | Why it waits |
+|---|---|---|
+| **P6** | Widen coverage: `common/llm/prompts.py` + the three KGA planner instructions behind keys | Mechanical repeat of P1; pointless before the DB path is proven |
+| **P7** | Measured prompt tuning — same context, two prompt versions, diff the assured scores | Needs `compare_runs` to surface `prompt_versions`; the pins exist now but nothing reads them |
+
+P7 is the payoff the whole design argues for: the assured judge already emits a 0–1 score per round,
+so once two runs can be attributed to two prompt versions, prompt work stops being taste and becomes
+an experiment against a metric we already compute.
