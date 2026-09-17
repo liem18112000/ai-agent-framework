@@ -90,6 +90,10 @@ class AdminRouter(RouterAgent):
     async def _prompt_list(self, rest: str) -> str:
         return await admin_prompts.list_prompts()
 
+    @command("prompt-seed", "prompt-seed [force]")
+    async def _prompt_seed(self, rest: str) -> str:
+        return await admin_prompts.seed_prompts(force=rest.strip().lower() in ("force", "1", "true"))
+
     @command("prompt-get", "prompt-get <key>")
     async def _prompt_get(self, rest: str) -> str:
         if not rest:

@@ -48,6 +48,14 @@ def register_tools(mcp: MCPServer, session: BridgeSession) -> dict:
         return (await session.ask("prompt-list")).text
 
     @mcp.tool()
+    async def prompt_seed(force: bool = False) -> str:
+        """[ADMIN — not part of the testing pipeline] Copy the prompt bodies compiled into the image
+        into Postgres as their first version, so the prompts actually in use become visible and
+        editable rows. Idempotent: keys already served from the database are skipped. `force=True`
+        republishes every key from the current image (use after an image upgrade)."""
+        return (await session.ask(f"prompt-seed {'force' if force else ''}".strip())).text
+
+    @mcp.tool()
     async def prompt_get(key: str) -> str:
         """[ADMIN — not part of the testing pipeline] Show the body currently serving `key`, with its
         engine and declared $parameters."""
