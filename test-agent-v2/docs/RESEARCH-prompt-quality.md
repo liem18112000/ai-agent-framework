@@ -9,6 +9,18 @@ Three parallel research streams (LLM-judge reliability · prompt-optimization to
 > and runs with thinking disabled. Until it is stabilized, a score delta is not evidence — which means
 > every "the fix worked, the score went up" claim in this project, including mine, is weak.
 
+> ### ⚠️ MEASURED 2026-09-17 — the first clause above is WRONG
+>
+> The claim "unstable by nature" was inherited from the literature and never tested on **our** judge.
+> It has now been measured on identical input (**21 draws across four runs**): **σ = 0.057**,
+> median **0.320**, and three of the four run medians landed on exactly 0.320. Our judge is far more
+> stable than the published α range predicted.
+>
+> What survives: the **downward bias** and `thinking: disabled` (§1 table, rows 2–3) — the judge scores
+> a hand-written, correctly-grounded suite at 0.32. What dies: "a score delta is not evidence." At
+> σ=0.057 a 0.10 delta needs only **n≈5 paired tickets**, and the 0.34-vs-0.70 gap is **6.6σ — real
+> quality, not noise.** See §1.1.
+
 ---
 
 ## 1. The instability is expected, not a defect
@@ -18,21 +30,64 @@ Three parallel research streams (LLM-judge reliability · prompt-optimization to
 disagrees with *itself* about as much as two mediocre human annotators do. Temperature 0 does not fix
 it (kernel/batching nondeterminism) and hurts quality.
 
-Our `run-e778a050` sequence — **0.08 / 0.28 / 0.08 / 0.34** — sits at the bad end of that documented
-regime. So:
+Our `run-e778a050` sequence — **0.08 / 0.28 / 0.08 / 0.34** — was read as "sitting at the bad end of
+that documented regime." **That reading was wrong.** Those four numbers came from four *different*
+generated suites, so they measure generator variance plus three real bugs, not judge noise. Re-running
+the judge on one *fixed* suite (§1.1) shows the judge barely moves.
 
-- The `max_tokens` truncation fix was real, but the **strong** evidence is the log showing batches
-  stopped degrading to the heuristic — *not* the 0.28 → 0.34 move.
-- P7's A/B comparison is attributable but **not conclusive**. Attribution ≠ significance.
+- The `max_tokens` truncation fix was real, and the log showing batches stopped degrading to the
+  heuristic is still the cleaner evidence — but the 0.28 → 0.34 move is no longer dismissible as noise.
+- P7's A/B comparison is attributable **and now affordably conclusive**: n≈3 paired tickets per arm.
 
 ### What the score is currently measuring
 
-| Contributor | Effect |
+| Contributor | Effect (revised after measurement) |
 |---|---|
-| Judge sampling noise | Large — the dominant term today |
-| Judge register ("STRICT… punish invention") | Systematic downward bias |
+| Judge sampling noise | **Small** — σ=0.057 (0.023 excluding two outliers). Assumed dominant; it is not |
+| Judge register ("STRICT… punish invention") | Systematic downward bias — **now the dominant term** |
 | `thinking: disabled` on the judge call | Unknown, plausibly negative on a judgment-heavy task |
-| Actual suite quality | The thing we want — currently the smallest signal |
+| Actual suite quality | The thing we want — and it **is** legible through the noise |
+
+---
+
+## 1.1 The measurement (2026-09-17)
+
+`scratchpad/judge_retest.py` holds one **fixed** 11-scenario suite (8 sound, plus a planted
+near-duplicate, an ungrounded scenario, and an out-of-scope one) and re-judges it K times. Fixing the
+input is the whole point: a pipeline re-run regenerates scenarios, so its round-to-round movement
+confounds judge noise with generator variance — exactly the error above.
+
+| Statistic | Result |
+|---|---|
+| Draws | **21**, across four runs (K = 7, 7, 3, 4) |
+| Median | **0.320** — 3 of the 4 run medians were exactly 0.320 |
+| Range | 0.250 – 0.500 |
+| σ, single draw | **0.057** pooled (per-run 0.060 / 0.019 / 0.035 / 0.098) |
+| σ, median-of-3 | 0.020 → **67 % variance reduction**, so the shipped `k=3` earns its cost |
+| n for a 0.10 delta | **≈5 paired tickets per arm** (α=.05, 80 % power) |
+| Gap to the 0.70 bar | **6.6σ** |
+
+**The spread is skewed, not symmetric.** 19 of 21 draws fall in 0.25–0.32 (σ=0.023); two lenient
+outliers at 0.45 and 0.50 carry the rest of the variance. The judge is *usually* tightly clustered and
+occasionally generous — so distrust a single HIGH score more than a single low one, and aggregate with
+the median, never the mean.
+
+**The judge is competent, not just stable.** It found all three planted flaws by id, and added three
+legitimate gaps we had not planted: no `security` scenario despite it being an elicited kind, no
+assertion of the job-history end-state named in the pass metric, and EP/BVA boundary coverage thinner
+than the plan's `test_design` promises.
+
+### What this reframes
+
+The 0.70 bar is not blocked by an unreliable judge — it is blocked by the suite genuinely missing
+things, and **the judge's own issue list is the fix list**. A hand-written suite with every scenario
+correctly cited still scores 0.32, so 0.70 means near-complete: every elicited kind present, pass-metric
+assertions explicit, boundary cases enumerated, zero duplicates/ungrounded/out-of-scope.
+
+**One open anomaly:** `faithfulness` scores 0.20–0.40 on a suite where every scenario cites the correct
+in-scope ticket. Either the criterion is being read as aggregate quality rather than groundedness, or it
+is miscalibrated. It is the lowest dimension in every draw, so it caps the achievable score — worth one
+look before any generator-prompt work.
 
 ---
 
