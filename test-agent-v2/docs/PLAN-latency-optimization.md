@@ -23,8 +23,9 @@ the repo hook rejects those). Full detail in memory note `v2-latency-map-and-pla
 | **Phase 0** latency capture | ✅ done | `Benchmark.latency_ms` (`SCHEMA_VERSION` 1→2); `BridgeSession.ask` accumulates via `get_cache()`; `compute_benchmark` reads it |
 | **Phase 2** `TESTAGENT_TURBO` toggle | ✅ done | `adk/config.py::turbo_on()` read at 3 gates: assured iters 2→1, critique off, refine passes 4→1 |
 | **Phase 3** fast model tier (B5) | ✅ done | `agent_model/complete(tier="fast")` → `VERTEX_MODEL_FAST`; routed at distill/understanding/define-brief/critique/judge; inert until env set |
-| **Live A/B** on LUZ-156281 | ⬜ TODO | single-process, `CACHE_BACKEND=memory`, turbo off vs on |
-| **TF plumbing** for `TESTAGENT_TURBO` | ⬜ TODO | add env to KGA+TPD in `variables.tf`/`services.tf` |
+| **Live A/B** on **LUZ-158230** | ⬜ TODO | single-process, `CACHE_BACKEND=memory`, turbo off vs on. Heavy (41 units → ~28 batch calls ×2 configs); run headless/background or in the deploy session, not interactively |
+| **TF plumbing** (`TESTAGENT_TURBO` + `VERTEX_MODEL_FAST`) | ✅ done (`9e98c48`) | `local.perf_env` → KGA+TPD; `var.turbo` / `var.vertex_model_fast`, both inert by default; `terraform validate` passes. Flip via tfvars + apply |
+| **Blocked lever** `_BATCH_CONCURRENCY` | 🔍 investigated | root cause unconfirmed (hardcoded ADK ids vs Vertex quota); safe unblock path documented under sink #1 — needs a controlled live experiment, not a flag flip |
 
 **Tests:** `tests/test_turbo.py` (3) + a latency case in `tests/eval/test_benchmark.py`; targeted blast-radius
 80 pass. Run the **full suite in the foreground** (`python -m pytest tests/ -q`, ~64s) — backgrounding it ran slow.
@@ -84,6 +85,20 @@ Ranked wall-clock sinks:
    `ctx`), now confirmed in prod. Unblocking it (a safe concurrency model for ADK Runners) would cut implement
    wall-clock the most — but it's a real fix, not a flag flip. Until then, do **not** propose parallelizing
    any ADK-Runner path; prod evidence says it breaks.
+
+   **Investigation (2026-09-17).** `run_json_agent` (`common/testplan/llm/adk.py`) already builds a **fresh
+   `InMemorySessionService` + `Runner` per call**, so the session store is *not* shared across batches. But
+   every call uses **hardcoded ids** — `app_name="tpd-gen"`, `user_id="tpd"`, `session_id="gen"` — identical
+   across concurrent batches. That's the one identifiable cross-call collision smell (harmless at
+   `_BATCH_CONCURRENCY=1`, where it never actually overlaps). **Root cause is NOT confirmed** — the code
+   comment says "prime suspect", and the deployed symptom was *empty/degraded batches*, not a crash, which is
+   equally consistent with a **Vertex concurrency/quota limit** (5–6 simultaneous 128000-token generations) or
+   litellm/ADK global state. **Safe unblock path (do NOT blind-flip the flag):** (1) give each run **unique**
+   app/user/session ids (a monotonic counter — cheap, removes the collision hypothesis); (2) raise
+   `_BATCH_CONCURRENCY=2` in a **controlled live run on LUZ-158230** and gate on the assured **score**, not just
+   latency — a silent regression here re-degrades batches to the ~0.09 heuristic. Because step (1) fixes a
+   non-problem while concurrency stays 1, it's **speculative until the experiment is actually run** — so it's
+   left as a documented next step, not a pre-emptive edit.
 2. **Gather codegraph build** — up to 300s git-clone + graphify (network/subprocess, not LLM).
 3. **Refine/define interrogation** — 2 serial calls **per round** (generate + critique), × 3–4 rounds
    × up to 4 re-seed passes. Refine's generate is **uncached** (define's is cached).
