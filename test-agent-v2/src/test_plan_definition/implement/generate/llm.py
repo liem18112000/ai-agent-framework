@@ -12,6 +12,7 @@ from common.testplan.llm.adk import build_generator_agent, run_json_agent
 from common.testplan.llm.prompts import pack_block, scenarios_prompt, scope_classify_prompt
 from common.testplan.llm.schemas import InScope, Scenarios
 from common.testplan.models import TestData, TestPlan, TestScenario
+from test_plan_definition.implement.generate import workers
 from test_plan_definition.monitoring import get_logger
 
 log = get_logger("llm.implement")
@@ -79,6 +80,16 @@ async def claude_scenarios(plan: TestPlan, plan_pack, test_data: list[TestData],
     # No grounded units (thin/empty pack) → one whole-pack call, unchanged behaviour (batch id list None).
     batches: list[list[str] | None] = [units[i:i + _BATCH_UNITS]
                                        for i in range(0, len(units), _BATCH_UNITS)] or [None]
+    if workers.enabled():  # Phase C: distributed generation via a Pub/Sub worker pool; else fall to sync
+        import uuid
+        distributed = await workers.worker_scenarios(
+            plan, plan_pack, test_data, batches=batches, now=now, reflections=reflections,
+            max_tokens=_SCEN_MAX_TOKENS, run=uuid.uuid4().hex[:12])
+        if distributed:
+            valid = {n.id for n in plan_pack.pack.notes} | set(plan.scope)
+            return refine_scenarios(distributed, valid) or distributed or None
+        log.info("TPD_GEN_MODE=workers produced nothing; using synchronous generation")
+
     sem = asyncio.Semaphore(_BATCH_CONCURRENCY)
 
     async def _batch(ids: list[str] | None) -> tuple[list[TestScenario], bool]:

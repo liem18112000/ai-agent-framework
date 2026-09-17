@@ -12,6 +12,7 @@ dependencies = [
   "fastapi>=0.110",                 # the agent server app (FastAPI, a superset of Starlette)
   "httpx>=0.27",
   "google-cloud-storage>=2.16",
+  "google-cloud-pubsub>=2.20",  # Phase C: distributed scenario generation (worker pool over Pub/Sub)
   "google-cloud-secret-manager>=2.20",
   "anthropic[vertex]>=1,<2",    # Claude on Vertex AI (claude-sonnet-5) — the Distill step
   "google-cloud-aiplatform>=1.60",  # vertexai TextEmbeddingModel — pgvector recall embeddings (M3); imported lazily

@@ -81,6 +81,24 @@ minutes-latency is acceptable and cost matters.
 
 ![Phase C — Pub/Sub + Cloud Run Worker Pool](parallel-gen-C-workerpool.png)
 
+**Status: implemented, gated off** (`TPD_GEN_MODE=workers` + `deploy_workers=true`). Design note: to avoid
+refactoring the assured loop, the **coordinator lives inside `claude_scenarios`** — it publishes one job per
+batch, then polls GCS for the results and merges (keeping the synchronous contract); the judge still runs once
+in the assured loop. Pieces:
+- `implement/generate/workers.py` — coordinator (publish + GCS-poll + merge) and the worker `handle_job`
+  (direct `complete()`, no ADK Runner → own-process). Pure job-build/result-path helpers **unit-tested**
+  (`tests/test_plan_workers.py`); publish/poll are lazy-imported (`google-cloud-pubsub`) and need live infra.
+- `worker.py` — a Starlette **push** endpoint (`uvicorn worker:app`); a Pub/Sub push subscription POSTs each
+  job, worker writes the result blob, returns 204 to ack (500 → retry → DLQ).
+- `deployments/.../pubsub.tf` — topic + DLQ + push subscription + a Cloud Run worker service + IAM, all gated
+  by `var.deploy_workers` (`terraform validate` passes). `TPD_GEN_MODE=workers`/`TPD_WORKER_TOPIC` set on TPD
+  when enabled.
+
+**Ceiling caveat (unchanged):** workers share the per-project Vertex quota, so single-ticket implement may not
+speed up (the A/B showed it's throughput-bound); C's wins are resilience + decoupling + scale across tickets.
+**Follow-ups:** live-validate end-to-end (publish → worker → GCS → poll); tune `worker_max_instances` vs quota;
+a Vertex quota increase is the orthogonal lever for raw throughput.
+
 **When:** many tickets generating at once, resilience (retries/dead-letter), real-time-ish parallelism beyond
 one instance. A **documented ADK pattern** (Google codelab: ADK agent in a Cloud Run Worker Pool + Pub/Sub).
 

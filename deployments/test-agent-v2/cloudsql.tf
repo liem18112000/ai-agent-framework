@@ -186,5 +186,10 @@ locals {
   perf_env = concat(
     var.turbo ? [{ name = "TESTAGENT_TURBO", value = "1" }] : [],
     var.vertex_model_fast != "" ? [{ name = "VERTEX_MODEL_FAST", value = var.vertex_model_fast }] : [],
+    # Phase C: point TPD at the worker pool (harmless on KGA, which doesn't generate scenarios).
+    var.deploy_workers ? [
+      { name = "TPD_GEN_MODE", value = "workers" },
+      { name = "TPD_WORKER_TOPIC", value = "tpd-gen-batches" },
+    ] : [],
   )
 }

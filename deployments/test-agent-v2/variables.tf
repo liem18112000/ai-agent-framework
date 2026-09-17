@@ -33,6 +33,18 @@ variable "turbo" {
   default     = false
 }
 
+variable "deploy_workers" {
+  type        = bool
+  description = "Phase C: deploy the distributed scenario-generation worker pool (Pub/Sub topic + DLQ + push subscription + a Cloud Run worker service) and set TPD_GEN_MODE=workers on TPD. Off = TPD generates synchronously (no worker infra). Note: workers share the per-project Vertex quota."
+  default     = false
+}
+
+variable "worker_max_instances" {
+  type        = number
+  description = "Max Cloud Run instances for the Phase C generation worker (also throttles the shared Vertex quota)."
+  default     = 5
+}
+
 # --- Two-tier memory (pgvector recall) — all inert under the default gcs backend ---
 variable "memory_backend" {
   type        = string
