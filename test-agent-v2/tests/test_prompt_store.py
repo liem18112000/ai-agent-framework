@@ -76,19 +76,6 @@ def test_generator_templates_declare_the_object_schema_contract():
         assert "Return ONLY a JSON array" not in body, f"{key} asks for a bare array"
 
 
-# --- ADK adapter ----------------------------------------------------------------------------------
-async def test_instruction_from_returns_an_awaitable_provider():
-    """ADK's canonical_instruction awaits the provider's result, so a store-backed (potentially
-    I/O-bound) provider is legal. Rendering happens in the provider because passing a callable sets
-    bypass_state_injection=True — ADK will NOT template the result for us."""
-    from common.prompts.adk import instruction_from, static_provider
-
-    store = PyPromptStore({"k": PromptTemplate(key="k", body="Kinds: $kinds", required_vars=("kinds",))})
-    provider = instruction_from(store, "k", params={"kinds": "happy"})
-    assert await provider(None) == "Kinds: happy"
-    assert static_provider("verbatim {braces}")(None) == "verbatim {braces}"
-
-
 # --- factory + pinning (P4) -----------------------------------------------------------------------
 def test_store_for_falls_back_to_python_defaults_without_a_db(monkeypatch):
     monkeypatch.delenv("TASK_DB_URL", raising=False)
@@ -316,13 +303,11 @@ def test_untouched_seed_stops_winning_once_the_image_body_changes():
     A seeded row is a COPY of an image body, not an intentional override — so once the image moves on,
     the image wins."""
     from common.prompts import PromptTemplate
-    from common.prompts.stores import body_sha
 
     image = PromptTemplate(key="k", body="NEW body", required_vars=())
     store = _pg({"k": image})
     # a row seeded from the OLD image body
-    store._snapshot = {"k": PromptTemplate(key="k", body="OLD body", version=1,
-                                           seeded=True, image_sha=body_sha("OLD body"))}
+    store._snapshot = {"k": PromptTemplate(key="k", body="OLD body", version=1, seeded=True)}
     assert store.is_stale_seed("k")
     assert store.get("k").body == "NEW body"          # the image wins, automatically
     assert store.get("k").version == 0
@@ -331,34 +316,31 @@ def test_untouched_seed_stops_winning_once_the_image_body_changes():
 def test_a_hand_edited_row_still_wins_after_an_image_change():
     """The override must survive — otherwise the store is pointless. Only UNTOUCHED seeds defer."""
     from common.prompts import PromptTemplate
-    from common.prompts.stores import body_sha
 
     store = _pg({"k": PromptTemplate(key="k", body="NEW image body", required_vars=())})
     store._snapshot = {"k": PromptTemplate(key="k", body="deliberate override", version=2,
-                                           seeded=False, image_sha=body_sha("OLD body"))}
+                                           seeded=False)}
     assert not store.is_stale_seed("k")
     assert store.get("k").body == "deliberate override"
 
 
 def test_a_seed_matching_the_current_image_is_not_stale():
     from common.prompts import PromptTemplate
-    from common.prompts.stores import body_sha
 
     store = _pg({"k": PromptTemplate(key="k", body="same body", required_vars=())})
-    store._snapshot = {"k": PromptTemplate(key="k", body="same body", version=1,
-                                           seeded=True, image_sha=body_sha("same body"))}
+    store._snapshot = {"k": PromptTemplate(key="k", body="same body", version=1, seeded=True)}
     assert not store.is_stale_seed("k")
     assert store.get("k").version == 1                # the row serves; no needless churn
 
 
-def test_a_legacy_seed_with_no_recorded_hash_is_still_detected_as_stale():
-    """Regression: the first implementation gated staleness on image_sha, so rows seeded BEFORE that
-    column existed were permanently exempt — the exact population the check exists for. Caught only by
-    deploying it and watching the guard not fire."""
+def test_a_legacy_seed_written_before_this_guard_is_still_detected_as_stale():
+    """Regression: the first implementation compared a stored sha256 of the source body, so rows
+    seeded before that column existed were permanently exempt — the exact population the check exists
+    for. Caught only by deploying it and watching the guard fail to fire."""
     from common.prompts import PromptTemplate
 
     store = _pg({"k": PromptTemplate(key="k", body="NEW body", required_vars=())})
     store._snapshot = {"k": PromptTemplate(key="k", body="OLD body", version=1,
-                                           seeded=True, image_sha="")}   # legacy row
+                                           seeded=True)}   # row written before this guard existed
     assert store.is_stale_seed("k")
     assert store.get("k").body == "NEW body"

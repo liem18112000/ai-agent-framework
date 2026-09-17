@@ -16,7 +16,6 @@ from __future__ import annotations
 import json
 
 from common.prompts import PgPromptStore, PromptNotFound, store_for
-from common.prompts.stores import body_sha
 
 _MAX_BODY = 4000
 
@@ -105,7 +104,6 @@ async def seed_prompts(force: bool = False) -> str:
             try:
                 version = await store.publish(key, base.body, engine=base.engine,
                                               note="seeded from image default", created_by="seed",
-                                              image_sha=body_sha(base.body),
                                               required_vars=base.required_vars)
                 seeded.append(f"{key} v{version}")
             except (ValueError, RuntimeError) as exc:

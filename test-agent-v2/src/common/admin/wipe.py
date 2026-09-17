@@ -70,15 +70,6 @@ async def wipe_all(bank, engine, confirm: str, *, required_token: str | None = N
     return "\n".join(report)
 
 
-def forget_required_token() -> str:
-    """The confirm token `forget_memory` demands — the same value `wipe_all` uses.
-
-    Deliberately the same mechanism rather than a second invented one: operators already know this
-    token, and a different token per destructive command is how people end up pasting the wrong one.
-    """
-    return wipe_required_token()
-
-
 async def forget_memory(bank, engine, confirm: str, *, required_token: str | None = None) -> str:
     """DESTRUCTIVE — forget everything the agents have LEARNED, and nothing else.
 
@@ -95,7 +86,9 @@ async def forget_memory(bank, engine, confirm: str, *, required_token: str | Non
     confirm prompts (MCP elicitation) render blank over HTTP in this client. `memory-backups/**`
     always survives, so a forget stays recoverable via `backup_memory`.
     """
-    required = required_token or forget_required_token()
+    # Same token as `wipe_all` on purpose: a different token per destructive command is how
+    # people end up pasting the wrong one.
+    required = required_token or wipe_required_token()
     pg_tables: list[str] = []
     if engine is not None:
         names = await _table_names(engine)

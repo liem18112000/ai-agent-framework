@@ -16,13 +16,10 @@ from dataclasses import dataclass
 from string import Template
 from typing import Protocol, runtime_checkable
 
-#: Rendered here, by ``PromptTemplate.render`` — ``$name`` substitution, literal braces preserved.
+#: The only rendering mode: ``$name`` substitution here, literal braces preserved. Kept as a stored
+#: column so a future mode is additive, but every template uses this one — do not add a second until
+#: something actually needs it.
 NONE = "none"
-#: Rendered by ADK's ``inject_session_state`` at the adapter, from session state (``{var}``).
-STATE = "state"
-#: Rendered by ADK's ``inject_session_state`` with jinja2 enabled.
-JINJA2 = "jinja2"
-ENGINES = (NONE, STATE, JINJA2)
 
 _VAR = re.compile(r"\$(\w+)|\$\{(\w+)\}")
 
@@ -59,9 +56,6 @@ class PromptTemplate:
     #: True when this row was written by `prompt_seed` and never hand-edited since. Such a row is a
     #: COPY of an image body, not an intentional override, so it must not outrank a newer image.
     seeded: bool = False
-    #: sha256 of the image body this row was copied from. When the image moves on, this no longer
-    #: matches and an untouched seed is treated as stale — see `PgPromptStore.get`.
-    image_sha: str = ""
 
     def render(self, params: Mapping[str, object] | None = None) -> str:
         """Substitute ``$name`` params into the body (``engine="none"`` only).
