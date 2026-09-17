@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import itertools
 import os
 
 from google.adk.agents import LlmAgent
@@ -24,12 +23,6 @@ from common.monitoring import get_logger
 log = get_logger("llm.adk")
 
 _DEFAULT_GEN_TIMEOUT_S = 180.0
-
-# Unique per-run ADK app/session ids (Phase A): concurrent batches must NOT share ADK session state.
-# Each call already gets its own InMemorySessionService, but reusing app/session/output ids across
-# concurrent runs risks collisions in any id-keyed ADK global (tracing, registries) — give each run a
-# distinct id. GIL makes next() atomic enough for asyncio.
-_RUN_SEQ = itertools.count()
 
 
 def _gen_timeout_s() -> float:
@@ -69,16 +62,14 @@ async def run_json_agent(agent: LlmAgent, *, output_key: str, user: str = "gener
 
     from common.llm.parse import loads_obj
 
-    uid = str(next(_RUN_SEQ))  # unique per call so concurrent batches never share ADK ids
-    app, sess = f"tpd-gen-{uid}", f"gen-{uid}"
     svc = InMemorySessionService()
-    await svc.create_session(app_name=app, user_id="tpd", session_id=sess)
-    runner = Runner(app_name=app, agent=agent, session_service=svc)
+    await svc.create_session(app_name="tpd-gen", user_id="tpd", session_id="gen")
+    runner = Runner(app_name="tpd-gen", agent=agent, session_service=svc)
 
     texts: list[str] = []  # capture the model's raw output for the state-empty recovery path
 
     async def _drive() -> None:
-        async for ev in runner.run_async(user_id="tpd", session_id=sess, new_message=types.Content(
+        async for ev in runner.run_async(user_id="tpd", session_id="gen", new_message=types.Content(
                 role="user", parts=[types.Part(text=user)])):
             for part in (getattr(getattr(ev, "content", None), "parts", None) or []):
                 if getattr(part, "text", None):
@@ -93,7 +84,7 @@ async def run_json_agent(agent: LlmAgent, *, output_key: str, user: str = "gener
     except Exception as exc:  # noqa: BLE001 — ADK schema-validation etc.; try the raw-text recovery below
         log.warning("%s: generator run raised (%s); trying raw-text recovery", agent.name, exc)
 
-    session = await svc.get_session(app_name=app, user_id="tpd", session_id=sess)
+    session = await svc.get_session(app_name="tpd-gen", user_id="tpd", session_id="gen")
     data = (session.state or {}).get(output_key) if session else None
     # Return state only if it has real content. On the deployed Claude/LiteLlm path ADK populates the
     # state with a DEFAULT-constructed schema (e.g. ``{"items": []}``) when it can't parse the model's

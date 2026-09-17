@@ -33,12 +33,6 @@ variable "turbo" {
   default     = false
 }
 
-variable "tpd_batch_concurrency" {
-  type        = number
-  description = "TPD scenario-generation batch concurrency (TPD_BATCH_CONCURRENCY). 1 = sequential (safe default); raise (2-3) to parallelize batches for faster implement once the assured score is validated (Phase A). Bounded by the per-project Vertex quota. Only emitted into the env when > 1."
-  default     = 1
-}
-
 # --- Two-tier memory (pgvector recall) — all inert under the default gcs backend ---
 variable "memory_backend" {
   type        = string

@@ -35,7 +35,7 @@ def _clock():
     return time.monotonic()
 
 
-def _set_env(turbo: bool, model_fast: str | None, concurrency: int | None = None) -> None:
+def _set_env(turbo: bool, model_fast: str | None) -> None:
     """Set the arm's env; each gate reads os.environ fresh so this is enough (single process)."""
     if turbo:
         os.environ["TESTAGENT_TURBO"] = "1"
@@ -45,10 +45,6 @@ def _set_env(turbo: bool, model_fast: str | None, concurrency: int | None = None
         os.environ["VERTEX_MODEL_FAST"] = model_fast
     else:
         os.environ.pop("VERTEX_MODEL_FAST", None)
-    if concurrency:
-        os.environ["TPD_BATCH_CONCURRENCY"] = str(concurrency)
-    else:
-        os.environ.pop("TPD_BATCH_CONCURRENCY", None)
 
 
 def main() -> int:
@@ -89,17 +85,13 @@ def main() -> int:
         b.gens = dict(base.gens)
         return MemoryBank(b)
 
-    # arms = (name, turbo, model_fast, concurrency). AB_MODE=conc validates Phase A (batch concurrency,
-    # baseline config); default is the 2x2 turbo/fast decomposition.
-    if os.environ.get("AB_MODE") == "conc":
-        arms = [("conc-1 (baseline)", False, None, 1), ("conc-2 (baseline)", False, None, 2),
-                ("conc-3 (baseline)", False, None, 3)]
-    else:
-        arms = [("baseline", False, None, None), ("fast-only", False, model_fast, None),
-                ("turbo-only", True, None, None), ("turbo+fast", True, model_fast, None)]
+    # 2x2 decomposition: isolate the turbo knobs (refine B2/B3 + implement B1) from the fast tier, so we
+    # can see WHICH factor causes the PQS drop and which buys the speed.
+    arms = [("baseline", False, None), ("fast-only", False, model_fast),
+            ("turbo-only", True, None), ("turbo+fast", True, model_fast)]
     results = []
-    for name, turbo, mf, conc in arms:
-        _set_env(turbo=turbo, model_fast=mf, concurrency=conc)
+    for name, turbo, mf in arms:
+        _set_env(turbo=turbo, model_fast=mf)
         bank = clone()
         timings = {}
         for stage, fn in (("refine", lambda: run_refine_offline(bank, ctx, seed=f"jira:{ticket}")),

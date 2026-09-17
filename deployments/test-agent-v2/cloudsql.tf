@@ -186,6 +186,5 @@ locals {
   perf_env = concat(
     var.turbo ? [{ name = "TESTAGENT_TURBO", value = "1" }] : [],
     var.vertex_model_fast != "" ? [{ name = "VERTEX_MODEL_FAST", value = var.vertex_model_fast }] : [],
-    var.tpd_batch_concurrency > 1 ? [{ name = "TPD_BATCH_CONCURRENCY", value = tostring(var.tpd_batch_concurrency) }] : [],
   )
 }

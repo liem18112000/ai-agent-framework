@@ -6,8 +6,6 @@ inlined at their sole call sites: the P4 judge in ``assured.py``, steps in ``ste
 from __future__ import annotations
 
 import asyncio
-import contextlib
-import os
 
 from common.adk import agent_model
 from common.testplan.llm.adk import build_generator_agent, run_json_agent
@@ -52,18 +50,12 @@ async def classify_in_scope(plan: TestPlan, plan_pack, *, model=None) -> set[str
 # output fits well under the ceiling and its own TPD_GEN_TIMEOUT_S — robust to both size and time.
 _SCEN_MAX_TOKENS = 128000  # the model's real output ceiling (claude-sonnet-5) — do NOT cap below it
 _BATCH_UNITS = 3        # grounded units per generation call — small so verbose real scenarios never truncate
-# Concurrent batches. HISTORY: deployed logs showed ALL 5-6 concurrent batches returning empty structured
-# output SIMULTANEOUSLY (no exception/timeout) → heuristic fallback → ~0.1 score, so it was pinned to 1.
-# Phase A removes the two shared-state suspects (each batch now gets a FRESH model instance below, and
-# run_json_agent uses UNIQUE ADK session ids), making >1 safe to try. Default stays 1 until a live run
-# confirms the assured score holds; raise via TPD_BATCH_CONCURRENCY. Bounded by the per-project Vertex quota.
-_DEFAULT_BATCH_CONCURRENCY = 1
-
-
-def _batch_concurrency() -> int:
-    with contextlib.suppress(KeyError, ValueError, TypeError):
-        return max(1, int(os.environ["TPD_BATCH_CONCURRENCY"]))
-    return _DEFAULT_BATCH_CONCURRENCY
+# ponytail: sequential (1) not concurrent. Deployed logs showed ALL 5-6 concurrent batches returning
+# empty structured-output SIMULTANEOUSLY (no exception, no timeout) → heuristic fallback → ~0.1 score;
+# concurrent in-process ADK Runners are the prime suspect. 1 = one batch at a time. Raise if proven safe.
+# (A validated concurrency>1 fix was tried and reverted — it fixed the empty-batch bug but Vertex is
+# throughput-bound so it bought no speedup; the real lever is the Phase B batch API. See docs.)
+_BATCH_CONCURRENCY = 1
 
 
 async def claude_scenarios(plan: TestPlan, plan_pack, test_data: list[TestData], *,
@@ -78,8 +70,9 @@ async def claude_scenarios(plan: TestPlan, plan_pack, test_data: list[TestData],
         refine_scenarios,
     )
 
-    if model is None and agent_model(max_tokens=_SCEN_MAX_TOKENS) is None:
-        return None  # no injected model + unconfigured provider → caller degrades to heuristic
+    model = model or agent_model(max_tokens=_SCEN_MAX_TOKENS)
+    if model is None:
+        return None
     summary = plan_pack.summary_text()
     units = [n.id for n in plan_pack.pack.grounded]
     if in_scope_ids:  # drop out-of-scope sibling/framework nodes from generation (keep as pack context)
@@ -95,16 +88,13 @@ async def claude_scenarios(plan: TestPlan, plan_pack, test_data: list[TestData],
             return refine_scenarios(batched, valid) or batched or None
         log.info("TPD_BATCH_MODE=vertex_batch produced nothing; using synchronous generation")
 
-    sem = asyncio.Semaphore(_batch_concurrency())
+    sem = asyncio.Semaphore(_BATCH_CONCURRENCY)
 
     async def _batch(ids: list[str] | None) -> tuple[list[TestScenario], bool]:
         async with sem:
-            # fresh model per batch so concurrent batches never share one LiteLlm instance (Phase A —
-            # the likely race behind the old concurrency=1 pin); an injected model (tests) is reused.
-            batch_model = model or agent_model(max_tokens=_SCEN_MAX_TOKENS)
             agent = build_generator_agent(
                 name="tpd_scenario_gen", system=pack_block(summary),
-                output_schema=Scenarios, output_key="tpd_scenarios", model=batch_model)
+                output_schema=Scenarios, output_key="tpd_scenarios", model=model)
             data = await run_json_agent(agent, output_key="tpd_scenarios",
                                         user=scenarios_prompt(plan, summary, test_data, reflections,
                                                               include_context=False, focus_units=ids))
