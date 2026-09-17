@@ -144,7 +144,7 @@ class PgPromptStore:
             required = tuple(v for v in (req or "").split(",") if v)
             try:
                 base = self._fallback.get(key)
-                validate(key, body, eng, required,
+                validate(key, body, eng, base.required_vars,
                          contract=base.contract, forbids=base.forbids)
             except (ValueError, PromptNotFound) as exc:
                 log.warning("prompts: %s — keeping the Python default for this key", exc)
@@ -158,9 +158,16 @@ class PgPromptStore:
                       created_by: str = "admin",
                       required_vars: tuple[str, ...] | None = None) -> int:
         """Append a new version and move the pointer. Returns the new version number."""
-        required = required_vars if required_vars is not None else declared_vars(body)
         base = self._fallback.get(key)          # raises PromptNotFound for an unknown key
-        validate(key, body, engine, required, contract=base.contract, forbids=base.forbids)
+        # The allowed parameter set comes from the KEY'S DEFINITION, never from the submitted body.
+        # Deriving it from the body made the rail self-defeating: every placeholder the author typed
+        # counted as "declared", so an undeclared $foo could never be rejected (caught live in P5.3).
+        # A published body may use FEWER params than the key declares; it must not invent new ones,
+        # because the Python caller only supplies the params it computes — a new $foo would render as
+        # the literal text "$foo" into the prompt.
+        allowed = required_vars if required_vars is not None else base.required_vars
+        validate(key, body, engine, allowed, contract=base.contract, forbids=base.forbids)
+        required = declared_vars(body)          # persist what THIS body actually uses
         eng = _engine()
         if eng is None:
             raise RuntimeError("no database configured — cannot publish prompts")

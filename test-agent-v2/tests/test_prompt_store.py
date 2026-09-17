@@ -277,3 +277,24 @@ def test_a_db_row_that_violates_its_contract_is_dropped_not_served():
     with pytest.raises(ValueError):
         validate(templates.SCENARIOS, "Return ONLY a JSON array.", NONE, (),
                  contract=base.contract, forbids=base.forbids)
+
+
+async def test_publish_rejects_an_undeclared_placeholder(monkeypatch):
+    """Regression for a hole the LIVE P5.3 drill found: publish() derived the allowed parameter set
+    from the submitted body, so every placeholder counted as declared and the undeclared check could
+    never fire. The allowed set must come from the KEY'S definition."""
+    from common.prompts import PgPromptStore
+    from common.prompts import stores as st
+
+    monkeypatch.setattr(st, "_engine", lambda: object())
+    store = PgPromptStore(PyPromptStore(templates.DEFAULTS))
+    body = templates.DEFAULTS[templates.JUDGE_SCENARIOS].body + "\nExtra: $not_declared"
+    with pytest.raises(ValueError, match="undeclared placeholders"):
+        await store.publish(templates.JUDGE_SCENARIOS, body)
+
+
+def test_a_body_using_fewer_params_than_the_key_declares_is_allowed():
+    """The rule is subset, not equality — dropping a parameter is a legitimate edit."""
+    base = templates.DEFAULTS[templates.BRIEF]
+    validate(base.key, "Confidence is '$confidence' only.", NONE, base.required_vars,
+             contract=base.contract, forbids=base.forbids)
