@@ -10,6 +10,8 @@ hand-parsers did (``loads_array`` + ``it.get(k)`` + ``setdefault``) now lives in
 
 from __future__ import annotations
 
+import json
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -17,10 +19,24 @@ def _as_list(v):
     """Coerce a real model's list-field drift into a list — the fix for the deployed generator failing
     schema validation (``list_type``) → silent heuristic fallback. Claude-on-Vertex intermittently
     emits a bare scalar (``source_refs: "jira:X"``) or a single object where the schema wants a list;
-    offline fakes always return clean lists, so this only bit in prod. None → [], scalar/dict → [it]."""
+    offline fakes always return clean lists, so this only bit in prod. None → [], scalar/dict → [it].
+
+    It also DOUBLE-ENCODES the payload — ``{"items": "{\\"items\\": [...]}"}``, the whole document
+    re-serialised as a string. Unwrap that here: as a ``mode="before"`` validator this runs INSIDE
+    ADK's own ``model_validate_json``, so it stops ADK raising before it yields the event (which is
+    why the failure surfaced as a bogus "0 chars" — the raw text was never captured) and equally
+    covers our ``Scenarios(**data)`` recovery path. A plain scalar still parses as non-JSON → [v]."""
     if v is None:
         return []
-    if isinstance(v, (str, bytes, dict)):
+    if isinstance(v, (str, bytes)):
+        try:
+            inner = json.loads(v)
+        except (ValueError, TypeError):
+            return [v]  # an ordinary scalar like "jira:X"
+        if isinstance(inner, dict):
+            inner = inner.get("items")
+        return inner if isinstance(inner, list) else [v]
+    if isinstance(v, dict):
         return [v]
     return v  # already a list (or a genuinely wrong type → let pydantic reject it)
 

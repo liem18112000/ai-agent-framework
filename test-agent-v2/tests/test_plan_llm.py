@@ -192,6 +192,25 @@ def test_scenarios_prompt_injects_scope_boundary():
     assert "Agentic-Framework self-check" in body  # out-of-scope items named for the model to exclude
 
 
+def test_scenarios_unwraps_double_encoded_items():
+    """Prod bug: Claude-on-Vertex returns {"items": "<the whole {items:[...]} doc as a STRING>"}.
+    Pydantic then failed at items.0 INSIDE ADK's model_validate_json, which raises before the event is
+    yielded — so run_json_agent captured no text and logged a misleading 'raw text unparseable
+    (0 chars)'. `_as_list` must unwrap the re-serialised payload so the real records validate."""
+    from common.testplan.llm.schemas import Scenarios
+
+    inner = '{"items": [{"id": "scenario:run-x:1", "title": "A", "kind": "happy", ' \
+            '"source_refs": ["jira:LUZ-158230"]}]}'
+    assert len(Scenarios(items=inner).items) == 1                       # double-encoded object
+    assert Scenarios(items=inner).items[0].source_refs == ["jira:LUZ-158230"]
+    assert len(Scenarios(items='[{"id": "a"}, {"id": "b"}]').items) == 2  # double-encoded bare array
+    assert len(Scenarios(items=[{"id": "a"}]).items) == 1                # normal list still works
+    # a genuine scalar must NOT be treated as JSON — it stays a one-element list
+    from common.testplan.llm.schemas import ScenarioItem
+
+    assert ScenarioItem(source_refs="jira:LUZ-1").source_refs == ["jira:LUZ-1"]
+
+
 def test_generator_prompts_request_the_object_schema_not_a_bare_array():
     """Regression: the run_json_agent generators output `{items:[...]}` schemas, so their prompts MUST
     ask for a JSON OBJECT. A bare-array ask makes Claude emit `[...]`, whose largest brace span is a
