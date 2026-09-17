@@ -369,8 +369,8 @@ Last updated **2026-09-17**. Branch `feature/test-agent/v2-adk`.
 |---|---|---|---|
 | **P0** | Port + `PyPromptStore` + ADK adapter + `store_for()` | ✅ **Done** | `common/prompts/{port,stores,adk,__init__}.py`; 11 tests |
 | **P1** | 7 testplan bodies behind keys; `prompts.py` renders through the store | ✅ **Done** | `common/testplan/llm/templates.py`; `prompts.py::_render` |
-| **P2** | `PgPromptStore` on the shared Cloud SQL engine | ⚠️ **Built, unverified live** | `stores.py::PgPromptStore`; no live round-trip yet |
-| **P3** | Admin MCP surface (list/get/publish/rollback/history) | ⚠️ **Built, unverified live** | `common/admin/prompts.py`; 5 tools on the ADMIN group |
+| **P2** | `PgPromptStore` on the shared Cloud SQL engine | ✅ **Verified live** | 12/12 prompts served from Cloud SQL after `prompt_seed` |
+| **P3** | Admin surface (seed/list/get/publish/rollback/history) | ✅ **Verified live** | 6 tools; publish/rollback round-trip + 4 failure drills pass |
 | **P4** | Refresh-once-per-run pinning + provenance on the run log | ✅ **Done** | `refresh_store()`; `TestPlanRun.prompt_versions` |
 | **P6** | Widen coverage: engine prompts + the 3 KGA planner instructions behind keys | ✅ **Done** | `common/llm/templates.py`, `…/planners/templates.py` |
 | **P7** | Attributable scores — `compare_runs` surfaces prompt versions + assured delta | ✅ **Done** | `runs._prompt_section`; `prompts.json` per run |
@@ -525,3 +525,98 @@ Everything else is exercised by the suite. P5 is unchanged from §10 and is now 
 risk: close the schema-contract gap at the write boundary (P5.1, offline), then one live
 publish/rollback round-trip and the failure drills (P5.2/P5.3). The open design question stands —
 **version 0 is the image default, not a DB row, so `prompt_rollback <key> 0` has no expression yet.**
+
+
+---
+
+## 12. P5 — VERIFIED (2026-09-17)
+
+Deployed `cfc13ff` → `32d3e82` to klara-nonprod and ran the round-trip against the live admin agent.
+**The database path is now trustworthy.** P5 was worth doing exactly as argued: it found a bug the
+581-test offline suite could not.
+
+### P5.1 — the contract moved to the write boundary
+
+`PromptTemplate` gained `contract` (required substrings) and `forbids` (forbidden ones), so the rail
+travels with the key's definition and the store enforces it without importing a domain module.
+`publish()` rejects a violating body before the write; `refresh()` revalidates every DB row, so a row
+written before this rail — or out of band — is dropped and the image body keeps serving.
+
+Both directions are needed because **the contract is per key and sometimes inverted**: the testplan
+generators must never say *"Return ONLY a JSON array"*, while `engine.questions` **must** (it is parsed
+by `loads_array`, not an object wrapper).
+
+### The bug the live drill caught
+
+Offline, everything passed. Live, publishing a body containing `$not_declared` was **accepted**:
+
+```python
+required = required_vars if required_vars is not None else declared_vars(body)
+```
+
+When the admin path omitted `required_vars` — it always does — the allowed set was derived **from the
+body being published**, so every placeholder the author typed counted as "declared" and the check
+could never fire. A typo'd `$foo` would have rendered as the literal text `$foo` into the prompt,
+which the model reads as an instruction.
+
+The offline test missed it because it called `validate()` directly with an explicit set, never through
+`publish()`'s derivation. Fixed in `cfc13ff`: the allowed set comes from the **key's definition**. A
+published body may use *fewer* params than the key declares (dropping one is a legitimate edit) but
+cannot invent new ones. Both paths are now covered by tests.
+
+> Generalisable lesson: a validation rail that derives its own expectations from the input it is
+> validating is not a rail. The offline test proved the *checker*; only the live call exercised the
+> *caller*.
+
+### The gap you spotted: nothing was in Postgres
+
+The store made the image body version 0 and only wrote a row on publish, so a fresh deploy had **empty
+tables** — every key read "image default" and there was nothing to inspect or edit. Safe, but not
+operable. Two fixes:
+
+- **`prompt_seed`** — the *data* migration. Copies each in-use body into Postgres as its first
+  version. Idempotent (keys already in the DB are skipped, so a post-deploy re-run only picks up new
+  keys); `force=True` republishes from the current image after an upgrade. It is deliberately
+  **explicit, not automatic on boot**: auto-seeding would let a rolled-back image silently overwrite
+  rows someone had edited.
+- **The admin surface walked only the testplan registry.** P6 added `engine.*` and `kga.*` to the
+  store, but `store_for` caches one store per `DEFAULTS` mapping, so the admin code has to walk all
+  three — otherwise the P6 prompts look like they do not exist. `prompt_list` now reports an
+  `N/total served from the database` count and says to seed when rows are missing.
+
+**Two kinds of migration, worth keeping distinct:**
+
+| | How it runs | Caveat |
+|---|---|---|
+| Schema (create tables) | Implicit — `CREATE TABLE IF NOT EXISTS` on every refresh/publish | **No versioned migration framework.** `IF NOT EXISTS` will not ALTER an existing table, so a future column change needs real migration handling. Also needs DDL rights at runtime (confirmed present). |
+| Data (backfill bodies) | Explicit — `prompt_seed`, re-runnable | Must stay manual so a rollback cannot clobber edited rows |
+
+### Live results
+
+```
+prompt-seed   -> seeded 12 keys (7 tpd.*, 2 engine.*, 3 kga.*)
+prompt-list   -> 12/12 served from the database
+drill 1  undeclared $placeholder      -> Rejected (undeclared placeholders ['not_declared'])
+drill 2  forbidden wording            -> Rejected (this key's parser expects the opposite shape)
+drill 3  unknown key                  -> Rejected
+drill 4  rollback to 0 / forward to 3 -> image default, then database v3
+```
+
+`prompt_rollback <key> 0` works as the design answer intended: the pointer moves to 0, the join matches
+nothing, and `get()` falls through to the image body. Published versions stay in `prompt_version` for
+audit — rolling back and then forward again recovered v3 intact.
+
+### Acceptance — met
+
+A prompt edit reaches a deployed run **without a rebuild**, and a bad edit is **provably rejected**.
+The §2.1 cost — Cloud Build + terraform + full re-run for a one-line text fix — is eliminated.
+
+### What remains
+
+- **No versioned schema migration.** The table shape is fixed by `CREATE TABLE IF NOT EXISTS`; changing
+  it later needs a real migration path. Worth addressing before the schema evolves.
+- **The MCP tool list is cached per session.** The new `prompt_*` tools were unreachable through the
+  gateway in the session that added them — verification went direct to the admin agent's A2A endpoint.
+  Reconnect the MCP server to pick them up.
+- **P7's A/B loop is still one-observation.** Nothing automates repeated runs, so a score delta between
+  prompt versions remains suggestive, not conclusive.
