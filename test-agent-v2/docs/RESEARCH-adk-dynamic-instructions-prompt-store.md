@@ -303,7 +303,7 @@ constraint that makes the ADK instruction a closure today rather than a raw stri
 
 **2. `CachedPromptStore` is gone; the snapshot replaced it.** The port's `get` had to stay **sync** —
 `question_prompt`/`brief_prompt` are called from sync define paths while the Cloud SQL engine is
-async, so a store that hит the DB per call could not serve both. `PgPromptStore` therefore serves a
+async, so a store that hit the DB per call could not serve both. `PgPromptStore` therefore serves a
 process-local snapshot and only `refresh()` (async) touches the DB. That removed the need for a
 separate TTL decorator — caching is inherent — and collapsed two components into one.
 
