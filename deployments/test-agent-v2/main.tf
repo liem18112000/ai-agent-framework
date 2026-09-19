@@ -14,6 +14,7 @@ resource "google_project_service" "apis" {
     "artifactregistry.googleapis.com",
     "cloudbuild.googleapis.com",
     "sqladmin.googleapis.com",
+    "pubsub.googleapis.com", # Phase C distributed generation (topic/sub/DLQ) — no-op if workers off
   ])
   project            = var.project_id
   service            = each.value

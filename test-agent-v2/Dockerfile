@@ -14,6 +14,8 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY src ./src
 COPY main.py ./
+# Phase C push-subscription worker entrypoint (uvicorn worker:app)
+COPY worker.py ./
 RUN pip install ".[bridge,gcp]"
 
 # Run as non-root.

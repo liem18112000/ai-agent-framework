@@ -8,7 +8,7 @@ from mcp.server.mcpserver import MCPServer
 
 from admin_agent.bridge.mcp_server import register_tools as register_admin
 from common.bridge import BridgeSession, build_http_app
-from common.bridge.prompts import TRIGGER_INSTRUCTIONS, test_prompt
+from common.bridge.prompts import server_instructions, test_prompt, trigger_instructions
 from common.learn.config import _on
 from knowledge_gathering.bridge.mcp_server import register_tools as register_kga
 from test_evaluation.bridge.mcp_server import register_tools as register_tev
@@ -19,27 +19,6 @@ KGA_URL = os.environ.get("KGA_A2A_URL", "http://localhost:8081/")
 TPD_URL = os.environ.get("TPD_A2A_URL", "http://localhost:8082/")
 TEV_URL = os.environ.get("TEV_A2A_URL", "http://localhost:8083/")
 ADMIN_URL = os.environ.get("ADMIN_A2A_URL", "http://localhost:8084/")
-
-INSTRUCTIONS = (
-    "Single MCP gateway for the Testing Agent — ONE endpoint fronting three A2A agents "
-    "(knowledge-gathering, test-plan-definition, test-evaluation). Pipeline: gather_knowledge -> "
-    "refine -> approve -> [evaluate_pack] -> define_plan -> approve_plan -> implement_plan -> "
-    "get_scenarios -> [evaluate_plan]. BENCHMARK group (read-only, over past runs): benchmark_run "
-    "(one run's cached PQS/TPS scorecard — computed & saved if missing; auto-computed when a run "
-    "finishes), compare_benchmarks (2+ runs side by side), summarize_benchmarks (the K<10 latest). "
-    "Reuse the one context_id gather_knowledge returns for every "
-    "later call. YOU (the client) own the confirm gates: before starting refine, approve, "
-    "define_plan, approve_plan, and implement_plan, ask the user Yes/No yourself and call the tool "
-    "only on yes. evaluate_pack / evaluate_plan are read-only quality gates and never block. "
-    "implement_plan is MULTI-TURN (chunked to stay under the idle timeout): if its reply starts "
-    "'[state: in_progress]', call implement_plan(context_id) again — no new args — until "
-    "'[state: done]', then get_scenarios. "
-    "ADMIN / utility group (list_runs, get_run, compare_runs, view_memory, backup_memory, "
-    "list_backups, wipe_all) "
-    "is an operator surface, NOT part of gather -> ... -> implement — never call it as a pipeline "
-    "step. wipe_all is DESTRUCTIVE and needs a confirm token (the GCS bucket name, or 'WIPE' when "
-    "unset); ask the user Yes/No first, same client-owned-gate convention as the pipeline."
-)
 
 kga_session = BridgeSession(KGA_URL, TOKEN)
 tpd_session = BridgeSession(TPD_URL, TOKEN)
@@ -54,7 +33,7 @@ async def _benchmark_on_finish(context_id: str) -> None:
 
 mcp = MCPServer(
     "testing-agent-gateway", version="0.1.0",
-    instructions=INSTRUCTIONS + "\n\n" + TRIGGER_INSTRUCTIONS,
+    instructions=server_instructions() + "\n\n" + trigger_instructions(),
 )
 
 _tools = {

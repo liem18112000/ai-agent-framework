@@ -4,9 +4,11 @@
 Usage:
     python tools/build_report.py <context_id> [out.html]
 
-Reads scenarios/steps/plan/test-data/benchmark from the memory bank (STORE_BACKEND/GCS_BUCKET env, same
-as the agents) and writes one self-contained HTML page with the Scenarios / Feature files / Test data /
-Benchmark / Test-case-workflow tabs. Publish the file as the deliverable artifact."""
+Reads plan/decisions/scenarios/steps/test-data/coverage/benchmark from the memory bank
+(STORE_BACKEND/GCS_BUCKET env, same as the agents) and writes one self-contained, printable HTML page
+with the 10 canonical QA/QC sections (summary & environment, architecture, scope decisions, methodology,
+BDD scenarios + downloadable fixtures, coverage matrix, spec gaps, out-of-scope, PQS/TPS benchmarks,
+deliverables). Publish the file as the deliverable artifact."""
 import pathlib
 import sys
 

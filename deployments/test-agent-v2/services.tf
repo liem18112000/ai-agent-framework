@@ -152,6 +152,8 @@ module "tpd" {
           { name = "VERTEX_MODEL", value = var.vertex_model },
         ],
         var.tpd_llm_detail ? [{ name = "TPD_LLM_DETAIL", value = "1" }] : [],
+        # Phase C TPD_GEN_MODE/TPD_WORKER_TOPIC are injected via local.perf_env (below) when
+        # var.deploy_workers — no need to duplicate them here.
         [
           { name = "A2A_BEARER_TOKEN", secret = google_secret_manager_secret.a2a_bearer.secret_id },
           { name = "TPD_CAPTURE_LESSONS", value = "1" },

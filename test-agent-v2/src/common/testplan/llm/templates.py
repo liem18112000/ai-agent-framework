@@ -21,6 +21,7 @@ SCENARIOS = "tpd.scenarios"
 TESTDATA = "tpd.testdata"
 JUDGE_SCENARIOS = "tpd.judge_scenarios"
 STEPS = "tpd.steps"
+REPORT = "tpd.report"      # optional final step: publish the 10-section QA/QC test-plan report
 
 _QUESTIONS_BODY = """You are the QA Testing Agent DEFINING A TEST PLAN, running the '$round_name' round.
 Focus: $focus
@@ -120,6 +121,23 @@ $listing
 Return ONLY a JSON object {"items": [ ... ]} — each item: {scenario_id, steps:[{order, keyword (Given|When|Then|And), action, expected}]}."""
 
 
+_REPORT_BODY = """You are the QA Testing Agent PUBLISHING THE FINAL TEST-PLAN REPORT for run $context_id. This is the OPTIONAL last step of test-plan definition, run after get_scenarios succeeds — skip it only if the user does not want a published report.
+
+Prefer the deterministic renderer: run `python tools/build_report.py $context_id report.html` (test-agent-v2 repo; same STORE_BACKEND / GCS_BUCKET env as the agents), then publish report.html with the Artifact tool. It reads the persisted run and emits ONE self-contained, printable page. Only if that tool is unreachable, author the SAME structure yourself from get_scenarios / get_plan / get_coverage / benchmark_run — never downgrade to a plain scenario list.
+
+The report MUST have these 10 QA/QC sections, in order:
+1. Summary & test environment — system + requirement summary, Test Scope, Test Service / methodology, and the test environment: the ticket link, attachments and every source resource as a clickable link or a download.
+2. Architecture — a diagram (default: mermaid) of the system under test, the requirements that drive it, and the oracle each scenario checks against.
+3. Confirmed scope decisions — every scope call, with what was chosen, why, what was rejected, and its provenance.
+4. Methodology & test-design — how the system is exercised and how each case is derived (methodology, test-design techniques, metrics, kinds).
+5. Test scenarios — each in BDD (Given/When/Then) form with detailed steps and its oracle, plus the prepared test data as a downloadable fixture.
+6. Coverage matrix — requirement x test-kind traceability + how much of the reachable code the scenarios name.
+7. Spec gaps & dev-confirmation items — each open or ambiguous point a developer must confirm, with an explanation and a diagram.
+8. Out of scope — what is deliberately excluded and why, with an explanation and a boundary diagram.
+9. Benchmarks — "Scores from the Test-Evaluation agent (read-only quality gate). PQS grades the knowledge pack; TPS grades the test plan & suite. Both are 0-1, weighted from the components below." Show every component category (each metric) with its weight, its score, and what it measures.
+10. Deliverables & next steps — the deliverables produced + the next actions."""
+
+
 #: P5.1 — the output contract enforced at the WRITE boundary: (required substrings, forbidden ones).
 #: The ADK ``output_schema`` for these generators is an object wrapper, so a body asking for a bare
 #: array parses to a single element and the batch silently degrades — the defect that cost three
@@ -151,6 +169,7 @@ DEFAULTS = {t.key: t for t in (
     _t(TESTDATA, _TESTDATA_BODY),
     _t(JUDGE_SCENARIOS, _JUDGE_BODY),
     _t(STEPS, _STEPS_BODY),
+    _t(REPORT, _REPORT_BODY),
 )}
 
 #: Derived view kept for readability/tests — the single source of truth is ``_CONTRACTS`` above.
