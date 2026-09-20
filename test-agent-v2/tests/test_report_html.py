@@ -86,3 +86,16 @@ def test_report_survives_empty_run(monkeypatch):
     for sid in _SECTION_IDS:                       # skeleton still shows every section
         assert f'id="{sid}"' in html
     assert "Scores from the Test-Evaluation agent" in html   # §9 rubric renders even unscored
+
+
+def test_gherkin_emits_then_for_oracle_on_a_keyword_step():
+    """TPL-01: the oracle in `expected` must reach the .feature even when the step already carries a
+    keyword (When/Given) and there is no separate Then step — else the executable Gherkin is oracle-less."""
+    from common.testplan.report.html import _gherkin_one
+
+    sc = TestScenario(id="s1", plan_id="p", title="Do X")
+    sts = [TestStep(id="s1#s1", scenario_id="s1", order=1, keyword="When",
+                    action="the import job completes", expected="documents exist in the eArchive")]
+    out = _gherkin_one(sc, sts)
+    assert "When the import job completes" in out
+    assert "Then documents exist in the eArchive" in out

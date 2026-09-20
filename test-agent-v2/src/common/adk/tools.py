@@ -16,11 +16,11 @@ async def search_memory(query: str = "") -> str:
 
 
 async def get_note(note_id: str) -> str:
-    """Return one distilled note from the memory bank by id."""
+    """Return one distilled note from the memory bank by id (exact index lookup, backend-independent)."""
     bank = build_bank()
-    nodes = await retrieve.search_nodes(bank, note_id)
-    match = next((n for n in nodes if n.get("id") == note_id), None)
-    node_type = (match or {}).get("type")
+    graph, _ = bank.load_index()  # MEM-01: resolve id->type via the O(1) index, not fuzzy search
+    node = graph.nodes.get(note_id)
+    node_type = node.get("type") if node else None
     if node_type and (md := bank.read_note_md(note_id, node_type)):
         return md
     return f"No note found for id {note_id!r}."

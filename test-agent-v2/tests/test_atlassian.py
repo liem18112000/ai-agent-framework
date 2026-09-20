@@ -204,3 +204,52 @@ async def test_get_bitbucket_src_returns_raw_text():
     src = await c.get_bitbucket_src("acme", "luz-docs", "FileUtil.java")
     assert "class FileUtil" in src
     await c.aclose()
+
+
+# --- download_bytes: SSRF guard (CLD-01) + streaming byte cap (CLD-02) ------------------------
+
+async def test_download_bytes_blocks_ssrf_to_internal_literal():
+    """CLD-01: a link-local/private attachment URL is refused BEFORE any connection."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("must not connect to a blocked host")
+
+    c = _client(handler)
+    with pytest.raises(ValueError, match="non-public"):
+        await c.download_bytes("http://169.254.169.254/latest/meta-data/")
+    await c.aclose()
+
+
+async def test_download_bytes_blocks_ssrf_on_redirect_hop():
+    """CLD-01: a public URL that 302-redirects to an internal host is caught on the hop."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "93.184.216.34"  # only the first (public) hop is ever attempted
+        return httpx.Response(302, headers={"location": "http://10.0.0.1/internal"})
+
+    c = _client(handler)
+    with pytest.raises(ValueError, match="non-public"):
+        await c.download_bytes("http://93.184.216.34/file")
+    await c.aclose()
+
+
+async def test_download_bytes_rejects_oversize_via_content_length():
+    """CLD-02: the cap fires up-front on Content-Length, before the body is buffered."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"0123456789", headers={"content-type": "application/pdf"})
+
+    c = _client(handler)
+    with pytest.raises(ValueError, match="exceeds"):
+        await c.download_bytes("http://93.184.216.34/big.pdf", max_bytes=4)
+    await c.aclose()
+
+
+async def test_download_bytes_streams_bytes_ctype_and_filename():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "93.184.216.34"
+        return httpx.Response(200, content=b"hello world", headers={
+            "content-type": "text/plain; charset=utf-8",
+            "content-disposition": 'attachment; filename="notes.txt"'})
+
+    c = _client(handler)
+    data, ctype, filename = await c.download_bytes("http://93.184.216.34/notes.txt")
+    assert data == b"hello world" and ctype == "text/plain" and filename == "notes.txt"
+    await c.aclose()

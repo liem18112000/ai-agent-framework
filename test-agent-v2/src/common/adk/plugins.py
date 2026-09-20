@@ -38,16 +38,3 @@ class LearnDrainPlugin(BasePlugin):
             await maybe_drain_index(bank)
         except Exception:
             log.debug("index drain skipped", exc_info=True)
-
-
-class LessonRecallPlugin(BasePlugin):
-    def __init__(self) -> None:
-        super().__init__(name="lesson_recall")
-
-    async def before_model_callback(self, *, callback_context, llm_request):
-        try:
-            prefix = _agent_prefix(getattr(callback_context, "_invocation_context", callback_context))
-            if not learn.recall_enabled(prefix):
-                return
-        except Exception:
-            log.debug("lesson recall skipped", exc_info=True)

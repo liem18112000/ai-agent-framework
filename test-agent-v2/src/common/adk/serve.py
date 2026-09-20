@@ -18,6 +18,9 @@ from starlette.routing import Route
 
 from common.adk.auth import BearerAuthMiddleware
 from common.adk.services import build_runner, build_task_store
+from common.monitoring import get_logger
+
+log = get_logger("adk.serve")
 
 
 def _health_routes(name: str, required: tuple[str, ...]) -> list[Route]:
@@ -27,7 +30,9 @@ def _health_routes(name: str, required: tuple[str, ...]) -> list[Route]:
     async def readyz(_: Request) -> JSONResponse:
         missing = [k for k in required if not os.environ.get(k)]
         if missing:
-            return JSONResponse({"status": "not-ready", "missing": missing}, status_code=503)
+            # ADK-06/GW-09a: never disclose the missing var NAMES on this unauthenticated route.
+            log.error("readiness check failed for %s — missing env: %s", name, ", ".join(missing))
+            return JSONResponse({"status": "not-ready"}, status_code=503)
         return JSONResponse({"status": "ready", "agent": name})
 
     return [Route("/livez", livez, methods=["GET"]), Route("/readyz", readyz, methods=["GET"])]

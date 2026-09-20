@@ -66,22 +66,22 @@ async def _raw(session: BridgeSession, text: str, context_id: str | None, task_i
             f"[task_id: {res.task_id}]\n{res.text}")
 
 
-@mcp.tool()
-async def send_raw_kga(text: str, context_id: str | None = None, task_id: str | None = None) -> str:
-    """Escape hatch: send a raw message to the knowledge-gathering agent; return reply + ids + state."""
-    return await _raw(kga_session, text, context_id, task_id)
+def _make_send_raw(session: BridgeSession):
+    async def send_raw(text: str, context_id: str | None = None, task_id: str | None = None) -> str:
+        return await _raw(session, text, context_id, task_id)
+    return send_raw
 
 
-@mcp.tool()
-async def send_raw_tpd(text: str, context_id: str | None = None, task_id: str | None = None) -> str:
-    """Escape hatch: send a raw message to the test-plan-definition agent; return reply + ids + state."""
-    return await _raw(tpd_session, text, context_id, task_id)
-
-
-@mcp.tool()
-async def send_raw_tev(text: str, context_id: str | None = None, task_id: str | None = None) -> str:
-    """Escape hatch: send a raw message to the test-evaluation agent; return reply + ids + state."""
-    return await _raw(tev_session, text, context_id, task_id)
+# GW-06: one escape-hatch tool per agent, registered in a loop (identical bodies, distinct sessions).
+for _agent, (_session, _label) in {
+    "kga": (kga_session, "knowledge-gathering"),
+    "tpd": (tpd_session, "test-plan-definition"),
+    "tev": (tev_session, "test-evaluation"),
+}.items():
+    mcp.tool(
+        name=f"send_raw_{_agent}",
+        description=f"Escape hatch: send a raw message to the {_label} agent; return reply + ids + state.",
+    )(_make_send_raw(_session))
 
 
 @mcp.prompt()

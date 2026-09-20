@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from common.interrogate.pack import Pack
-from common.interrogate.round import RoundQuestions
+from common.interrogate.round import REGISTRY
 from common.llm.questions import claude_questions
 from common.models import Question
 from common.monitoring import get_logger
@@ -75,7 +75,7 @@ def make_generator() -> Generator:
 
 
 def build_round_questions(pack: Pack, round_name: str, *, id_prefix: str) -> list[Question]:
-    """Dispatch to the registered RoundQuestions strategy with a q-factory that stamps ids."""
+    """Dispatch to the round's `build_*` function (REGISTRY lookup) with a q-factory that stamps ids."""
     primary = pack.grounded[0] if pack.grounded else None
     title = primary.title if primary else (pack.seed or pack.context_id)
     n = 0
@@ -87,8 +87,8 @@ def build_round_questions(pack: Pack, round_name: str, *, id_prefix: str) -> lis
         kw.setdefault("round", round_name)
         return Question(**kw)
 
-    strategy = RoundQuestions.registry.get(round_name)
-    return strategy.build(pack, primary, title, q) if strategy else []
+    builder = REGISTRY.get(round_name)
+    return builder(pack, primary, title, q) if builder else []
 
 
 def heuristic_questions(pack: Pack, round_name: str) -> list[Question]:

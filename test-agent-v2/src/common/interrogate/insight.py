@@ -17,9 +17,16 @@ def _statement(question: Question, chosen: str) -> str:
     return f"{question.question.rstrip('?')} → {chosen}"
 
 
+def _rejected(question: Question, chosen_option: str) -> list[str]:
+    # INT-05: only an option pick rejects the others; a free-text/option-less answer rejects nothing.
+    if not chosen_option:
+        return []
+    return [o["label"] for o in question.options if o.get("label") and o["label"] != chosen_option]
+
+
 def distill_answer(answer: Answer, question: Question, pack: Pack, *, run_id: str = "", now: str = "") -> Insight:
     chosen = answer.chosen_option or answer.text
-    rejected = [o["label"] for o in question.options if o.get("label") and o["label"] != answer.chosen_option]
+    rejected = _rejected(question, answer.chosen_option)
     return Insight(
         id=f"insight:{pack.context_id}:{question.id}", kind=GAP_SEED if answer.new_seed else DECISION,
         context_id=pack.context_id, question_id=question.id, statement=_statement(question, chosen),

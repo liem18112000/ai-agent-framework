@@ -150,8 +150,11 @@ async def test_view_memory_working_needs_context():
 # --- F3: wipe-all ----------------------------------------------------------------------------------
 
 async def test_wipe_all_refuses_without_token():
-    out = await admin.wipe_all(_bank(), None, "", required_token="WIPE")
-    assert "REFUSED" in out and "'WIPE'" in out
+    # ADM-04: the refusal must NOT echo the required token — in prod it is the GCS bucket name.
+    out = await admin.wipe_all(_bank(), None, "", required_token="secret-prod-bucket")
+    assert "REFUSED" in out
+    assert "secret-prod-bucket" not in out   # the bucket name / token is never disclosed
+    assert "bucket name" in out              # but the operator is told what to provide
 
 
 async def test_wipe_all_clears_bank_but_keeps_backups_and_is_idempotent():
@@ -195,6 +198,23 @@ def test_two_backups_are_distinct_versions_listed_newest_first():
     assert out.index("second") < out.index("first")  # newest first
 
 
+def test_backup_skips_blob_deleted_mid_snapshot():
+    """ADM-05: a blob listed then deleted before copy is skipped, not an AttributeError that aborts."""
+    bank = _bank()
+    _seed_run(bank, "run-a", seed="LUZ-1", now="2026-01-01T00-00-00Z", understanding="brief")
+    store = bank._bucket
+    live = sorted(b.name for b in store.iter_blobs("memory/"))
+    victim = live[0]
+    real_get = store.get_blob
+    store.get_blob = lambda name: None if name == victim else real_get(name)  # concurrent delete
+    out = admin.backup_memory(bank, "snap", now=datetime.datetime(2026, 1, 2, tzinfo=datetime.UTC))
+    assert "Backed up" in out
+    version = "2026-01-02T00-00-00Z_snap"
+    assert f"memory-backups/{version}/{victim}" not in store.store       # the vanished blob was skipped
+    manifest = json.loads(store.store[f"memory-backups/{version}/MANIFEST.json"])
+    assert manifest["blob_count"] == len(live) - 1                       # survivors counted, not the victim
+
+
 # --- F5: memory-graph HTML visualisation -----------------------------------------------------------
 async def test_memory_graph_html_renders_nodes_edges_from_index_fallback():
     """No DB → reads the GCS index; emits a self-contained force-directed page with the node + a legend."""
@@ -213,6 +233,18 @@ async def test_memory_graph_html_renders_nodes_edges_from_index_fallback():
     assert "__DATA__" not in html                               # all tokens substituted
     # safe <script> embedding — no raw closing tag can break out of the DATA literal
     assert "</script>" not in html.split("const DATA=")[1].split("</script>", 1)[0]
+
+
+def test_memory_graph_html_escapes_tooltip_fields_against_stored_xss():
+    """ADM-03: a crawled node label like `<img onerror=...>` must not reach innerHTML raw. The tooltip
+    routes label/type/syn through the esc() helper, so a stored payload can't run as inline JS."""
+    from common.admin.graph_html import build_memory_graph_html
+
+    nodes = [{"id": "n1", "type": "jira-issue",
+              "title": "<img src=x onerror=alert(1)>", "synopsis": "<b>x</b>"}]
+    html = build_memory_graph_html(nodes, [])
+    assert "esc(n.label)" in html and "esc(n.type)" in html and "esc(n.syn)" in html
+    assert "+n.label+" not in html and "+n.type+" not in html   # no raw innerHTML concat remains
 
 
 def test_wipe_all_preserves_schema_metadata_and_config_tables():

@@ -48,7 +48,7 @@ class PyPromptStore:
     def __init__(self, defaults: Mapping[str, PromptTemplate]):
         self._defaults = dict(defaults)
 
-    def get(self, key: str, *, version: int | None = None) -> PromptTemplate:
+    def get(self, key: str) -> PromptTemplate:
         try:
             return self._defaults[key]
         except KeyError:
@@ -101,7 +101,7 @@ class PgPromptStore:
         self._loaded_at = 0.0
 
     # --- read path (sync, snapshot-only) ---------------------------------------------------------
-    def get(self, key: str, *, version: int | None = None) -> PromptTemplate:
+    def get(self, key: str) -> PromptTemplate:
         tpl = self._snapshot.get(key)
         if tpl is None:
             return self._fallback.get(key)       # unpublished / not refreshed yet
@@ -195,13 +195,24 @@ class PgPromptStore:
         async with eng.begin() as conn:
             for ddl in _DDL:
                 await conn.execute(text(ddl))
-            nxt = (await conn.execute(
-                text("SELECT COALESCE(MAX(version), 0) + 1 FROM prompt_version WHERE key = :k"),
-                {"k": key})).scalar_one()
-            await conn.execute(
-                text("""INSERT INTO prompt_version (key, version, body, required_vars, created_by, note)
-                        VALUES (:k, :v, :b, :r, :c, :n)"""),
-                {"k": key, "v": nxt, "b": body, "r": ",".join(required), "c": created_by, "n": note})
+            # Assign the next version atomically: the SELECT MAX+1 runs inside the INSERT (no app-level
+            # read-modify-write window). ON CONFLICT guards the rare concurrent publish of one key — a
+            # losing racer inserts 0 rows (no PK error), so we recompute against the now-committed MAX
+            # and retry. Append-only + monotonic preserved.
+            insert = text(
+                """INSERT INTO prompt_version (key, version, body, required_vars, created_by, note)
+                   SELECT :k, COALESCE(MAX(version), 0) + 1, :b, :r, :c, :n
+                   FROM prompt_version WHERE key = :k
+                   ON CONFLICT (key, version) DO NOTHING
+                   RETURNING version""")
+            params = {"k": key, "b": body, "r": ",".join(required), "c": created_by, "n": note}
+            nxt = None
+            for _ in range(5):
+                nxt = (await conn.execute(insert, params)).scalar_one_or_none()
+                if nxt is not None:
+                    break
+            if nxt is None:
+                raise RuntimeError(f"prompt {key!r}: could not assign a version (concurrent publishes)")
             await conn.execute(
                 text("""INSERT INTO prompt_template (key, engine, current_version)
                         VALUES (:k, :e, :v)

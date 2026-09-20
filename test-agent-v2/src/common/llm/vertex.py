@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
-import asyncio
 import os
+import random
+import time
 from functools import cache
 from typing import Any
 
+from common.monitoring import get_logger
+
+log = get_logger("llm.vertex")
+
 _ENV_KEYS = ("VERTEX_PROJECT", "VERTEX_LOCATION", "VERTEX_MODEL")
+
+# Transient HTTP statuses worth retrying (429 rate-limit, 5xx incl. 529 overloaded).
+_RETRY_STATUS = frozenset({429, 500, 502, 503, 529})
+_MAX_ATTEMPTS = 3
+_BASE_BACKOFF = 0.5  # seconds; exp backoff 0.5s, 1s (+jitter)
 
 
 @cache  # one (project, location) per process — client setup is not free
@@ -16,7 +26,34 @@ def _client(project: str, location: str):
     is built for concurrent use); reused so we don't redo credential/transport setup on every call."""
     from anthropic import AnthropicVertex
 
-    return AnthropicVertex(project_id=project, region=location)
+    # Explicit max_retries/timeout: the SDK retries connection blips before our app-level loop even
+    # sees them; timeout is generous for long define/implement generations.
+    return AnthropicVertex(project_id=project, region=location, max_retries=2, timeout=600.0)
+
+
+def _is_transient(exc: Exception) -> bool:
+    """True for retryable Vertex/Anthropic failures: connection drops, 429/5xx, overloaded."""
+    from anthropic import APIConnectionError, APIStatusError
+
+    if isinstance(exc, APIConnectionError):
+        return True
+    if isinstance(exc, APIStatusError) and getattr(exc, "status_code", None) in _RETRY_STATUS:
+        return True
+    return "overloaded" in str(exc).lower()  # mid-stream overloaded_error not tied to a status
+
+
+def _with_retry(run):
+    """Call `run()` with bounded exp-backoff retry on transient errors; re-raise 4xx/auth immediately."""
+    for attempt in range(1, _MAX_ATTEMPTS + 1):
+        try:
+            return run()
+        except Exception as exc:  # re-raised below unless transient with attempts left
+            if attempt >= _MAX_ATTEMPTS or not _is_transient(exc):
+                raise
+            delay = _BASE_BACKOFF * 2 ** (attempt - 1) + random.uniform(0, 0.1)
+            log.warning("vertex call failed (attempt %d/%d), retrying in %.1fs: %s",
+                        attempt, _MAX_ATTEMPTS, delay, exc)
+            time.sleep(delay)
 
 
 def vertex_config() -> tuple[str, str, str] | None:
@@ -54,17 +91,14 @@ def complete(prompt: str, *, project: str, location: str, model: str, max_tokens
         "model": model, "max_tokens": max_tokens, "thinking": {"type": "disabled"},
         "messages": [{"role": "user", "content": _user_content(prompt, cache_prefix)}],
     }
-    if stream:
-        with client.messages.stream(**kwargs) as s:
+
+    def _stream_once() -> str:
+        with client.messages.stream(**kwargs) as s:  # inside retry: a mid-stream drop re-runs the call
             return first_text(s.get_final_message())
-    return first_text(client.messages.create(**kwargs))
 
-
-async def agenerate(prompt: str, *, project: str, location: str, model: str, max_tokens: int,
-                    cache_prefix: str | None = None, stream: bool = True) -> str:
-    """Non-blocking `complete()` — run the blocking Vertex call in a worker thread."""
-    return await asyncio.to_thread(complete, prompt, project=project, location=location, model=model,
-                                   max_tokens=max_tokens, cache_prefix=cache_prefix, stream=stream)
+    if stream:
+        return _with_retry(_stream_once)
+    return _with_retry(lambda: first_text(client.messages.create(**kwargs)))
 
 
 _OCR_PROMPT = (

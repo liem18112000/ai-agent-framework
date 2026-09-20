@@ -28,16 +28,26 @@ class PgMemoryStore:
     def __init__(self, engine) -> None:
         self._engine = engine
         self._ready = False
+        self._lock = None
 
     async def _ensure(self) -> None:
-        """Apply the schema once per process (idempotent CREATE … IF NOT EXISTS statements)."""
+        """Apply the schema once per process (idempotent CREATE … IF NOT EXISTS statements).
+        Serialised by a lock so concurrent first callers don't race the CREATE EXTENSION/INDEX
+        (which would raise `tuple concurrently updated` and silently degrade recall — MEM-02)."""
         if self._ready:
             return
+        import asyncio
+
         from sqlalchemy import text
-        async with self._engine.begin() as conn:
-            for stmt in (s.strip() for s in SCHEMA_SQL.split(";") if s.strip()):
-                await conn.execute(text(stmt))
-        self._ready = True
+        if self._lock is None:  # no await before assignment → safe under cooperative asyncio
+            self._lock = asyncio.Lock()
+        async with self._lock:
+            if self._ready:
+                return
+            async with self._engine.begin() as conn:
+                for stmt in (s.strip() for s in SCHEMA_SQL.split(";") if s.strip()):
+                    await conn.execute(text(stmt))
+            self._ready = True
 
     async def upsert_node(self, node: dict) -> None:
         """INSERT … ON CONFLICT (id) DO UPDATE — a note/insight projection (no embedding here)."""
@@ -105,10 +115,12 @@ class PgMemoryStore:
         """Hybrid recall (M4): vector-nearest `embedding <=> q` ∪ full-text `tsv @@ q`, RRF-fused."""
         await self._ensure()
         scopes = scopes or ["context", "shared"]
+        if not q_text and q_embed is None:
+            return await self._recent(types, scopes, k)  # MEM-03: browse only on an EMPTY query
         vec_ids = await self._vector_ids(q_embed, types, scopes, k) if q_embed else []
         lex_ids = await self._lexical_ids(q_text, types, scopes, k) if q_text else []
         if not vec_ids and not lex_ids:
-            return await self._recent(types, scopes, k)
+            return []  # MEM-03: a real query that matched nothing → no false-positive recent nodes
         return await self._hydrate(rrf_fuse(vec_ids, lex_ids, limit=k))
 
     @staticmethod
@@ -123,7 +135,10 @@ class PgMemoryStore:
         from sqlalchemy import text
         params = {"scopes": scopes, "k": k, "q": _vec_literal(q_embed)}
         where = self._scope_type_where(types, params)
+        # MEM-03: drop non-positive-similarity hits. `<=>` is cosine distance in [0,2]; < 1.0 keeps
+        # only cosine sim > 0 (orthogonal/opposite vectors are never a real semantic match).
         sql = text(f"SELECT id FROM memory_node WHERE {where} AND embedding IS NOT NULL "
+                   f"AND (embedding <=> CAST(:q AS vector)) < 1.0 "
                    f"ORDER BY embedding <=> CAST(:q AS vector) LIMIT :k")
         async with self._engine.connect() as conn:
             return [r[0] for r in (await conn.execute(sql, params)).all()]
@@ -193,9 +208,3 @@ class PgMemoryStore:
                     if syn and rid not in seen:
                         seen.add(rid); out.append(syn)
         return out[:limit]
-
-
-# The pgvector ADAPTER behind the `common.memory.vector_store.VectorStore` port. `PgMemoryStore`
-# already conforms structurally (Protocol = duck-typed); this alias names it as such for call sites
-# that read against the port. The historical `PgMemoryStore` name stays the canonical export.
-PgVectorStore = PgMemoryStore

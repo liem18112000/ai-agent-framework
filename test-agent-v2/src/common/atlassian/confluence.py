@@ -11,8 +11,7 @@ class ConfluenceMixin:
         """Content/page IDs matching `cql` (first page only, capped at limit)."""
         data = await self._get("/wiki/rest/api/search", {"cql": cql, "limit": limit})
         results = data.get("results", []) if isinstance(data, dict) else []
-        ids = [cid for r in results if (cid := (r.get("content") or {}).get("id"))]
-        return ids[:limit]
+        return [cid for r in results if (cid := (r.get("content") or {}).get("id"))]
 
     async def get_page_children(self, page_id: str) -> dict:
         return await self._get(f"/wiki/api/v2/pages/{page_id}/children")

@@ -14,11 +14,11 @@ log = get_logger("cache.redis")
 
 class RedisCache:
     def __init__(self, host: str | None = None, port: int = 6379, *,
-                 default_ttl: int | None = None, client=None, **kw) -> None:
+                 default_ttl: int | None = None, client=None) -> None:
         if client is None:
             import redis  # lazy — only prod pulls the dependency
 
-            client = redis.Redis(host=host, port=port, decode_responses=True, socket_timeout=2, **kw)
+            client = redis.Redis(host=host, port=port, decode_responses=True, socket_timeout=2)
         self._r = client
         self._default_ttl = default_ttl
 

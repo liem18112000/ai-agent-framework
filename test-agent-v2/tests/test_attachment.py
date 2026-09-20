@@ -107,6 +107,16 @@ def test_image_without_vertex_degrades_to_placeholder(monkeypatch):
     assert "image attachment" in out and "shot.png" in out  # recorded, never raises, no fabricated text
 
 
+def test_oversized_image_is_capped_before_decode(monkeypatch):
+    """INT-07: a raw image blob over the decode ceiling degrades to a placeholder — never PIL-decoded."""
+    from common.extract.attachment import _MAX_DECODE_BYTES
+
+    for k in ("VERTEX_PROJECT", "VERTEX_LOCATION", "VERTEX_MODEL"):
+        monkeypatch.delenv(k, raising=False)
+    out = attachment_text(b"\x00" * (_MAX_DECODE_BYTES + 1), "image/png", "huge.png")
+    assert "too large" in out and "huge.png" in out  # bounded before Image.open, never raises
+
+
 def test_unsupported_type_raises_so_crawl_records_a_gap():
     with pytest.raises(ValueError):
         attachment_text(b"PK\x03\x04", "application/zip", "a.zip")

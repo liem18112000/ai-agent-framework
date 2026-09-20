@@ -98,6 +98,27 @@ def test_note_upsert_merges_links():
     assert canons == {"confluence:49662787598", "https://bitbucket.org/x"}
 
 
+def test_upsert_note_cas_retries_on_conflict(monkeypatch):
+    # MEM-04: the note json sidecar is written under if_generation_match; a concurrent write landing
+    # between read and put triggers one retry with a fresh read-merge — no lost update.
+    bank = MemoryBank(FakeBucket())
+    bank.upsert_note(_note())                                   # v1
+    real_put, hit = bank._put, {"conflict": False}
+
+    def flaky(path, data, ctype, **kw):
+        if not hit["conflict"] and path.endswith(".json") and "if_generation_match" in kw:
+            hit["conflict"] = True
+            raise CASConflict("concurrent write")               # fail the first CAS put once
+        return real_put(path, data, ctype, **kw)
+
+    monkeypatch.setattr(bank, "_put", flaky)
+    updated = _note()
+    updated.title = "v2"
+    path = bank.upsert_note(updated)
+    assert hit["conflict"] and path.endswith(".md")
+    assert bank.read_note("jira:LUZ-158390", "jira-issue").title == "v2"  # retried and persisted
+
+
 def test_index_cas_roundtrip():
     bank = MemoryBank(FakeBucket())
     bank.update_index(lambda g: g.add_note(_note()))

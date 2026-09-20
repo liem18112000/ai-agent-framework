@@ -8,16 +8,12 @@ from common.store.object_store import ObjectStore
 
 
 def build_object_store() -> ObjectStore:
-    """Select by STORE_BACKEND: `gcs` (default) | `local` (needs STORE_LOCAL_ROOT) | `memory`."""
+    """Select by STORE_BACKEND: `gcs` (default) | `memory`."""
     backend = os.environ.get("STORE_BACKEND", "gcs").lower()
     if backend == "memory":
         from common.store.memory import InMemoryObjectStore
 
         return InMemoryObjectStore()
-    if backend == "local":
-        from common.store.local import LocalObjectStore
-
-        return LocalObjectStore(os.environ["STORE_LOCAL_ROOT"])
     if backend == "gcs":
         from common.store.gcs import GcsObjectStore
 

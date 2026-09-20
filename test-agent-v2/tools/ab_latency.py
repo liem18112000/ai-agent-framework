@@ -85,21 +85,17 @@ def main() -> int:
         b.gens = dict(base.gens)
         return MemoryBank(b)
 
-    # arms = (name, turbo, model_fast, batch_mode). AB_MODE=batch compares the deployed config (turbo,
-    # sync generation) vs turbo + Phase-B Vertex batch API; default = the 2x2 turbo/fast decomposition.
-    if os.environ.get("AB_MODE") == "batch":
-        arms = [("turbo (sync)", True, None, False), ("turbo + B (batch)", True, None, True)]
-    else:
-        arms = [("baseline", False, None, False), ("fast-only", False, model_fast, False),
-                ("turbo-only", True, None, False), ("turbo+fast", True, model_fast, False)]
+    # arms = (name, turbo, model_fast): the 2x2 turbo/fast decomposition.
+    arms = [("baseline", False, None), ("fast-only", False, model_fast),
+            ("turbo-only", True, None), ("turbo+fast", True, model_fast)]
     results = []
-    for name, turbo, mf, bmode in arms:
-        _set_env(turbo=turbo, model_fast=mf, batch_mode=bmode)
+    for name, turbo, mf in arms:
+        _set_env(turbo=turbo, model_fast=mf)
         bank = clone()
         timings = {}
-        for stage, fn in (("refine", lambda: run_refine_offline(bank, ctx, seed=f"jira:{ticket}")),
-                          ("define", lambda: run_define_offline(bank, ctx, seed=f"jira:{ticket}")),
-                          ("implement", lambda: run_implement_offline(bank, ctx))):
+        for stage, fn in (("refine", lambda bank=bank: run_refine_offline(bank, ctx, seed=f"jira:{ticket}")),
+                          ("define", lambda bank=bank: run_define_offline(bank, ctx, seed=f"jira:{ticket}")),
+                          ("implement", lambda bank=bank: run_implement_offline(bank, ctx))):
             t = _clock()
             out = fn()
             timings[stage] = round(_clock() - t, 1)

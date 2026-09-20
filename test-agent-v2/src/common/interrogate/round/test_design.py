@@ -4,9 +4,13 @@ notes/insights + confirmed understanding); the human accepts, changes, or adds m
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from common.interrogate.pack import Pack
-from common.interrogate.round.base import QFactory, RoundQuestions
 from common.models import Note, Question
+
+if TYPE_CHECKING:
+    from common.interrogate.round import QFactory
 
 # The canonical test-design methods offered as options (label -> one-line implication).
 METHOD_OPTIONS = [
@@ -43,18 +47,15 @@ def recommend_methods(pack: Pack) -> list[str]:
     return list(dict.fromkeys([_DEFAULT_METHOD, *matched]))
 
 
-class TestDesignRound(RoundQuestions):
-    round = "test-design"
-
-    def build(self, pack: Pack, primary: Note | None, title: str, q: QFactory) -> list[Question]:
-        recommended = recommend_methods(pack)
-        return [q(
-            question=f"Which test-design method(s) should drive the cases for '{title}'? "
-                     "(accept, change, or ADD any the pack can't infer)",
-            why="The method decides how cases are enumerated toward 100% coverage; it is chosen from "
-                "the feature's shape and the earlier methodology/scope/metrics decisions.",
-            options=[{"label": m, "implication": impl} for m, impl in METHOD_OPTIONS],
-            recommendation=" + ".join(recommended)
-            + " — inferred from the pack; add security/performance/etc. if this feature needs them.",
-            applies_to=primary.id if primary else pack.seed,
-        )]
+def build_test_design(pack: Pack, primary: Note | None, title: str, q: QFactory) -> list[Question]:
+    recommended = recommend_methods(pack)
+    return [q(
+        question=f"Which test-design method(s) should drive the cases for '{title}'? "
+                 "(accept, change, or ADD any the pack can't infer)",
+        why="The method decides how cases are enumerated toward 100% coverage; it is chosen from "
+            "the feature's shape and the earlier methodology/scope/metrics decisions.",
+        options=[{"label": m, "implication": impl} for m, impl in METHOD_OPTIONS],
+        recommendation=" + ".join(recommended)
+        + " — inferred from the pack; add security/performance/etc. if this feature needs them.",
+        applies_to=primary.id if primary else pack.seed,
+    )]

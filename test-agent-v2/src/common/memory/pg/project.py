@@ -108,9 +108,9 @@ async def _flush_embeds(store, embedder, queued: list[tuple]) -> list[str]:
     out: list[str] = []
     for (job_id, node_id, _syn, emb_hash), vec in zip(queued, vecs):
         try:
-            if vec:
+            if vec:  # MEM-06: only dequeue a job once its embedding actually landed
                 await store.set_embedding(node_id, vec, emb_hash=emb_hash)
-            out.append(job_id)
+                out.append(job_id)
         except Exception as exc:  # noqa: BLE001 — one set_embedding failure retries just that node
             log.warning("memory: set_embedding %s failed (%s); left for retry", node_id, exc)
     return out

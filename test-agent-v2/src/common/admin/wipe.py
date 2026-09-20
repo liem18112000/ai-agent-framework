@@ -38,8 +38,9 @@ async def wipe_all(bank, engine, confirm: str, *, required_token: str | None = N
     reports zero. pgvector/task/session tables are TRUNCATEd (not dropped) so the schema survives."""
     required = required_token or wipe_required_token()
     if not confirm or confirm != required:
-        return (f"REFUSED — wipe_all is destructive. Re-call with confirm={required!r} "
-                f"(the exact token required to proceed).")
+        # ADM-04: never echo the required token — it is the prod GCS bucket name. Describe it instead.
+        return ("REFUSED — wipe_all is destructive. Re-call with confirm set to the GCS bucket name "
+                "($GCS_BUCKET), or the literal token 'WIPE' when GCS_BUCKET is unset.")
 
     report = ["# Wipe-all report"]
 
@@ -143,12 +144,18 @@ async def _forget_preview(bank, engine, pg_tables: list[str], required: str) -> 
 
 
 async def _truncate(conn, text, tables: list[str]) -> int:
-    """Count then TRUNCATE `tables` (CASCADE, one statement — FK-safe); return rows removed."""
+    """Count then TRUNCATE `tables` in ONE statement — no CASCADE (ADM-02).
+
+    Postgres truncates a set of mutually-FK'd tables together in a single `TRUNCATE a, b, ...`, so the
+    co-dependent allowlist stays FK-safe without CASCADE. Dropping CASCADE is the point: CASCADE would
+    truncate ANY table holding an FK into this set regardless of the allowlist — the exact silent-wipe
+    hole the allowlist exists to close. Without it, an unlisted FK-linked table makes TRUNCATE raise
+    loudly instead of being silently destroyed. Returns rows removed."""
     if not tables:
         return 0
     total = 0
     for t in tables:
         total += (await conn.execute(text(f'SELECT count(*) FROM "{t}"'))).scalar() or 0
     quoted = ", ".join(f'"{t}"' for t in tables)
-    await conn.execute(text(f"TRUNCATE TABLE {quoted} CASCADE"))
+    await conn.execute(text(f"TRUNCATE TABLE {quoted}"))
     return total

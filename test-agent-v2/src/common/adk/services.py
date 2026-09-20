@@ -48,7 +48,7 @@ def build_runner(agent, *, app_name: str):
     from google.adk.artifacts import GcsArtifactService, InMemoryArtifactService
     from google.adk.runners import Runner
 
-    from common.adk.plugins import LearnDrainPlugin, LessonRecallPlugin
+    from common.adk.plugins import LearnDrainPlugin
 
     bucket = os.environ.get("GCS_BUCKET")
     artifacts = GcsArtifactService(bucket_name=bucket) if bucket else InMemoryArtifactService()
@@ -57,5 +57,5 @@ def build_runner(agent, *, app_name: str):
         agent=agent,
         session_service=build_session_service(),
         artifact_service=artifacts,
-        plugins=[LearnDrainPlugin(), LessonRecallPlugin()],
+        plugins=[LearnDrainPlugin()],
     )

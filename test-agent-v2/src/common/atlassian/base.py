@@ -9,10 +9,13 @@ from typing import Any
 import httpx
 
 from common.monitoring import get_logger
+from common.net import BlockedHostError, host_blocked
 
 log = get_logger("atlassian")
 
 _DISPOSITION_FILENAME = re.compile(r"filename\*?=(?:UTF-8'')?\"?([^\";]+)", re.IGNORECASE)
+_MAX_REDIRECTS = 5
+_REDIRECT_CODES = frozenset({301, 302, 303, 307, 308})
 
 
 def _filename_from_disposition(disposition: str) -> str:
@@ -73,17 +76,44 @@ class BaseClient:
         return resp.json()
 
     async def download_bytes(self, url: str, *, max_bytes: int = 25 * 1024 * 1024) -> tuple[bytes, str, str]:
-        """Authenticated GET of an attachment `url` → (bytes, content_type, filename). Follows the
-        redirect Jira/Confluence attachment endpoints issue to a (pre-signed) media URL — httpx drops
-        the Basic-auth header on the cross-origin hop, which is exactly right for a signed URL. Raises
-        on a body over `max_bytes` (→ the crawl records a gap instead of loading a huge blob)."""
-        resp = await self._request(url, auth=self._auth, accept="*/*", follow_redirects=True)
-        data = resp.content
-        if len(data) > max_bytes:
-            raise ValueError(f"attachment exceeds {max_bytes} bytes: {url}")
-        ctype = resp.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-        filename = _filename_from_disposition(resp.headers.get("content-disposition", ""))
-        return data, ctype, filename
+        """Authenticated GET of an attachment `url` → (bytes, content_type, filename).
+
+        SSRF-guarded (root cause #1): the initial URL and every redirect hop are rejected via
+        `common.net.host_blocked` before any connection — the `url` comes from a Jira/Confluence
+        attachment record inside the ticket under test, so it is untrusted. Redirects are followed
+        manually (follow_redirects off) so each hop is checked; Basic-auth is re-sent only while still
+        on the original host (dropped cross-origin, which is right for a pre-signed media URL).
+
+        Streams the body with an up-front Content-Length check and a cumulative byte cap, so a body
+        over `max_bytes` is refused without being buffered into RAM (→ the crawl records a gap instead
+        of OOMing on a huge/attacker-sized blob)."""
+        current = url
+        origin = httpx.URL(url).host
+        for _ in range(_MAX_REDIRECTS + 1):
+            if host_blocked(httpx.URL(current).host):
+                raise BlockedHostError(f"blocked non-public address: {current}")
+            auth = self._auth if httpx.URL(current).host == origin else None
+            async with self._client.stream(
+                "GET", current, auth=auth, headers={"Accept": "*/*"}, follow_redirects=False,
+            ) as resp:
+                if resp.status_code in _REDIRECT_CODES and resp.headers.get("location"):
+                    current = str(resp.url.join(resp.headers["location"]))
+                    continue
+                resp.raise_for_status()
+                declared = resp.headers.get("content-length")
+                if declared and declared.isdigit() and int(declared) > max_bytes:
+                    raise ValueError(f"attachment exceeds {max_bytes} bytes: {url}")
+                chunks: list[bytes] = []
+                total = 0
+                async for chunk in resp.aiter_bytes():
+                    total += len(chunk)
+                    if total > max_bytes:
+                        raise ValueError(f"attachment exceeds {max_bytes} bytes: {url}")
+                    chunks.append(chunk)
+                ctype = resp.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+                filename = _filename_from_disposition(resp.headers.get("content-disposition", ""))
+                return b"".join(chunks), ctype, filename
+        raise ValueError(f"too many redirects (> {_MAX_REDIRECTS}): {url}")
 
     async def aclose(self) -> None:
         await self._client.aclose()

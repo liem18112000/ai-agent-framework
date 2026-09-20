@@ -7,7 +7,6 @@ from google.genai import types
 from common.adk import (
     InterrogationAgent,
     LearnDrainPlugin,
-    LessonRecallPlugin,
     build_session_service,
 )
 from common.memory import MemoryBank
@@ -35,7 +34,6 @@ def test_task_store_none_without_db(monkeypatch):
 
 def test_plugins_construct_with_callbacks():
     assert hasattr(LearnDrainPlugin(), "before_run_callback")
-    assert hasattr(LessonRecallPlugin(), "before_model_callback")
 
 
 async def test_interrogation_agent_pauses_and_resumes_over_real_engine(monkeypatch, pack_bucket):

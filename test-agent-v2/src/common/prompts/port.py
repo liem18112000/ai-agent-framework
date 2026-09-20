@@ -14,7 +14,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from string import Template
-from typing import Protocol, runtime_checkable
+from typing import Protocol
 
 #: The only rendering mode: ``$name`` substitution here, literal braces preserved. Kept as a stored
 #: column so a future mode is additive, but every template uses this one — do not add a second until
@@ -70,7 +70,6 @@ class PromptTemplate:
         return Template(self.body).safe_substitute(p)
 
 
-@runtime_checkable
 class PromptStore(Protocol):
     """Where prompt bodies come from.
 
@@ -81,7 +80,7 @@ class PromptStore(Protocol):
     touches the backing source. That also gives P4 version pinning for free: every ``get`` inside one
     run reads the same snapshot, so a mid-run publish cannot make round 3 incomparable to round 1."""
 
-    def get(self, key: str, *, version: int | None = None) -> PromptTemplate: ...
+    def get(self, key: str) -> PromptTemplate: ...
 
     async def refresh(self) -> None: ...
 

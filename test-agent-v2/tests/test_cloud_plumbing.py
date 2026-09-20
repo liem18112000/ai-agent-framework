@@ -6,7 +6,6 @@ from __future__ import annotations
 import json
 
 from common.cloud import (
-    CloudProvider,
     GcpCloudProvider,
     cloud_configured,
     cloud_max_services,
@@ -55,7 +54,7 @@ def test_cloudsvc_fetcher_registered_and_neutral_kinds():
 def test_registry_default_is_gcp():
     providers = cloud_providers()
     assert set(providers) == {"gcp"}
-    assert isinstance(providers["gcp"], CloudProvider)   # runtime_checkable Protocol
+    assert isinstance(providers["gcp"], GcpCloudProvider)
     assert providers["gcp"].name == "gcp"
 
 

@@ -161,12 +161,6 @@ variable "ingress" {
   default     = "INGRESS_TRAFFIC_ALL"
 }
 
-variable "allow_unauthenticated" {
-  type        = bool
-  description = "If true, grants run.invoker to allUsers; the app's A2A bearer token is then the only gate. If false, callers must present a Google identity token."
-  default     = false
-}
-
 # ---------------------------------------------------------------------------
 # knowledge-gathering bridge (see services.tf → module.kga_bridge)
 # ---------------------------------------------------------------------------

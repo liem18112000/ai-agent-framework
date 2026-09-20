@@ -155,7 +155,7 @@ class GcpCloudProvider:
             resource = getattr(r, "name", "") or ""
             out.append(ServiceRef(
                 provider="gcp", env=env_key, platform=platform,
-                name=_name_of(resource, getattr(r, "display_name", "")), resource_path=resource,
+                name=getattr(r, "display_name", "") or _short(resource), resource_path=resource,
                 live=_recency_live(getattr(r, "update_time", None))))
         return out
 
@@ -260,10 +260,6 @@ def _container_client():
 
 
 # --- pure helpers (no google import) --------------------------------------------------------------
-def _name_of(resource: str, display_name: str = "") -> str:
-    return display_name or _short(resource)
-
-
 def _short(resource: str) -> str:
     return resource.rstrip("/").rsplit("/", 1)[-1] if resource else resource
 

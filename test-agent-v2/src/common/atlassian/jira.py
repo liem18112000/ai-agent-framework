@@ -16,7 +16,7 @@ class JiraMixin:
             {"jql": jql, "maxResults": max_results, "fields": "key"},
         )
         issues = data.get("issues", []) if isinstance(data, dict) else []
-        return [k for i in issues if (k := i.get("key"))][:max_results]
+        return [k for i in issues if (k := i.get("key"))]
 
     async def get_issue_remote_links(self, key: str) -> list[dict]:
         return await self._get(f"/rest/api/3/issue/{key}/remotelink")

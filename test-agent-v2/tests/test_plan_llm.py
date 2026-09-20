@@ -344,3 +344,20 @@ async def test_adk_generator_caches_pack_in_system_task_in_user():
     assert seen["system"].startswith("Context pack:")   # the cacheable shared prefix
     assert "TEST SCENARIOS" in seen["user"]              # the per-call task went to the user turn
     assert "Context pack:" not in seen["user"]           # pack not duplicated into the task
+
+
+def test_steps_list_coerces_string_order_and_sorts():
+    """TPL-03: Claude-on-Vertex drift can emit `order` as a string on some steps; to_steps must
+    int-coerce it so the later `sorted(key=lambda s: s.order)` doesn't raise TypeError AFTER the LLM
+    call is already spent. An unparseable value falls back to the enumerate index."""
+    from common.testplan.llm.schemas import StepsList
+
+    payload = {"items": [{"scenario_id": "s1", "steps": [
+        {"order": "2", "action": "assert outcome", "expected": "ok"},   # str → 2
+        {"order": 1, "action": "send request"},                          # int → 1
+        {"order": "oops", "action": "cleanup"},                          # unparseable → index (3)
+    ]}]}
+    by_id = StepsList(**payload).to_steps(test_data=[])
+    steps = sorted(by_id["s1"], key=lambda s: s.order)   # the real sort that used to raise TypeError
+    assert [s.order for s in steps] == [1, 2, 3]
+    assert all(isinstance(s.order, int) for s in steps)

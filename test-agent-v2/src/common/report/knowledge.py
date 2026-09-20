@@ -12,6 +12,8 @@ render helper + the stylesheet with the test-plan report via `common.report.util
 
 from __future__ import annotations
 
+from collections import defaultdict
+
 from common.interrogate.pack import load_pack
 from common.models.graph import (
     ATTACHMENT,
@@ -90,7 +92,6 @@ def _sec_map(pack) -> str:
     ids = {n.id: f"N{i}" for i, n in enumerate(shown)}
     lines = ["flowchart LR", "  SEED([" + ru.mlabel(pack.seed or pack.context_id) + "])"]
     # group nodes by kind into subgraphs, hub-linked from the seed
-    from collections import defaultdict
     by_kind: dict = defaultdict(list)
     for n in shown:
         by_kind[_kind(n)[1]].append(n)
@@ -162,7 +163,6 @@ def _sec_sources(pack) -> str:
     grounded = pack.grounded
     if not grounded:
         return "<p class='muted'>No sources recorded for this run.</p>"
-    from collections import defaultdict
     by_kind: dict = defaultdict(list)
     for n in grounded:
         by_kind[_kind(n)[1]].append(n)

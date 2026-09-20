@@ -10,6 +10,7 @@ gap rather than fabricating text."""
 from __future__ import annotations
 
 import io
+from itertools import islice
 
 _TEXT_MIME_EXACT = frozenset({
     "application/json", "application/xml", "application/csv", "application/x-ndjson",
@@ -21,6 +22,10 @@ _IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".t
 # Anthropic vision accepts these media types directly; anything else we convert to PNG (Pillow).
 _VISION_MIME = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
 _MAX_IMAGE_BYTES = 5 * 1024 * 1024  # Anthropic per-image ceiling; larger → downscaled to PNG
+# INT-07 — resource bounds on untrusted attachment decode (normal inputs sit well under these):
+_MAX_DECODE_BYTES = 25 * 1024 * 1024  # refuse to PIL-decode a raw image blob larger than this
+_MAX_IMAGE_PIXELS = 64_000_000        # decompression-bomb guard (Pillow raises past this on decode)
+_MAX_PDF_PAGES = 200                   # cap pages read from an untrusted PDF
 
 
 def _kind(mime: str | None, filename: str | None) -> str:
@@ -55,7 +60,8 @@ def attachment_text(data: bytes, mime: str | None, filename: str | None = "") ->
         from pypdf import PdfReader  # lazy — keeps the base import light + offline tests fast
 
         reader = PdfReader(io.BytesIO(data))
-        return "\n".join((page.extract_text() or "") for page in reader.pages).strip()
+        pages = islice(reader.pages, _MAX_PDF_PAGES)  # INT-07: bound pages read from an untrusted PDF
+        return "\n".join((page.extract_text() or "") for page in pages).strip()
     if kind == "docx":
         return _docx_text(data)
     if kind == "xlsx":
@@ -103,15 +109,17 @@ def _image_text(data: bytes, mime: str | None, filename: str | None) -> str:
     from common.llm.vertex import describe_image, vertex_config
 
     label = filename or mime or "image"
+    if len(data) > _MAX_DECODE_BYTES:  # INT-07: bound raw bytes before ANY decode (both vision branches)
+        return f"[image attachment: {label} — too large to transcribe ({len(data)} bytes)]"
     cfg = vertex_config()
     if not cfg:
         return f"[image attachment: {label} — vision transcription unavailable (Vertex not configured)]"
     project, location, model = cfg
-    media_type, payload = _vision_payload(data, mime)
     try:
+        media_type, payload = _vision_payload(data, mime)  # inside try: a decode/bomb error degrades too
         text = describe_image(payload, media_type=media_type, project=project, location=location,
                               model=model, max_tokens=1500)
-    except Exception as exc:  # noqa: BLE001 — vision is best-effort; record the image, don't fail the crawl
+    except Exception as exc:  # noqa: BLE001 — vision/decode is best-effort; record the image, don't fail the crawl
         return f"[image attachment: {label} — transcription failed: {exc}]"
     return text.strip() or f"[image attachment: {label} — no text detected]"
 
@@ -124,6 +132,7 @@ def _vision_payload(data: bytes, mime: str | None) -> tuple[str, bytes]:
         return mt, data
     from PIL import Image
 
+    Image.MAX_IMAGE_PIXELS = _MAX_IMAGE_PIXELS  # INT-07: decompression-bomb guard on the convert path
     img = Image.open(io.BytesIO(data))
     if img.mode not in ("RGB", "L"):
         img = img.convert("RGB")

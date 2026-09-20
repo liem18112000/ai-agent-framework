@@ -94,6 +94,24 @@ async def test_turn_sends_answer_after_completed_state():
     assert session.get_client().sent == ["refine run-x", "Q-bus-1: yes"]
 
 
+async def test_ask_raises_on_failed_state_even_when_text_empty():
+    """GW-04: a failed A2A task must surface as an error, not return as success with empty text
+    (the observed 'malformed / empty response' symptom). All read-only tools route through `ask`."""
+    import pytest
+
+    from common.bridge import BridgeSession
+    from common.models import A2AResult
+
+    class _FailingClient:
+        async def send(self, text, *, context_id=None, task_id=None, **kw) -> A2AResult:
+            return A2AResult(text="", context_id=context_id, task_id="t-1", state="failed", kind="task")
+
+    session = BridgeSession("http://agent.test/", None)
+    session.set_client(_FailingClient())
+    with pytest.raises(RuntimeError, match="agent task failed with no detail"):
+        await session.ask("gather run-x", context_id="run-x")
+
+
 async def _ok_app(scope, receive, send):
     await send({"type": "http.response.start", "status": 200, "headers": []})
     await send({"type": "http.response.body", "body": b"ok"})

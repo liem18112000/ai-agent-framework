@@ -4,26 +4,33 @@ from __future__ import annotations
 
 import os
 
+from common.adk.auth import bearer_ok, is_open_path
+
 
 class _BearerASGIMiddleware:
-    """Open `/livez` health + optional inbound-bearer gate for a bridge's Streamable-HTTP endpoint."""
+    """Open `/livez` health + fail-CLOSED inbound-bearer gate for a bridge's Streamable-HTTP endpoint.
+
+    Same semantics as `common.adk.auth` (SEC-1/ADK-04): token set → constant-time compare; token
+    unset/empty → 401 unless `ALLOW_INSECURE=1`."""
 
     def __init__(self, app, token: str | None) -> None:
         self.app, self.token = app, token
 
     async def __call__(self, scope, receive, send) -> None:
         if scope["type"] == "http":
-            if scope.get("path", "") == "/livez":
+            path = scope.get("path", "")
+            if path == "/livez":
                 await send({"type": "http.response.start", "status": 200,
                             "headers": [(b"content-type", b"application/json")]})
                 await send({"type": "http.response.body", "body": b'{"status":"ok"}'})
                 return
-            got = dict(scope["headers"]).get(b"authorization", b"").decode()
-            if self.token and got != f"Bearer {self.token}":
-                await send({"type": "http.response.start", "status": 401,
-                            "headers": [(b"content-type", b"application/json")]})
-                await send({"type": "http.response.body", "body": b'{"error":"unauthorized"}'})
-                return
+            if not is_open_path(path):
+                got = dict(scope["headers"]).get(b"authorization", b"").decode()
+                if not bearer_ok(self.token, got):
+                    await send({"type": "http.response.start", "status": 401,
+                                "headers": [(b"content-type", b"application/json")]})
+                    await send({"type": "http.response.body", "body": b'{"error":"unauthorized"}'})
+                    return
         await self.app(scope, receive, send)
 
 

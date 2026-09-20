@@ -8,16 +8,15 @@ from datetime import UTC, datetime
 from common.admin._shared import _BACKUPS_ROOT, ROOT, _slug, _store
 
 
-def _copy_blob(store, src: str, dst: str) -> int:
-    """Copy one blob src→dst through the port (read+write); return its byte size.
+def _copy_blob(store, src: str, dst: str) -> int | None:
+    """Copy one blob src→dst through the port (read+write); return its byte size, or None if the
+    source vanished between listing and copy (concurrent delete → skip it, don't abort the snapshot).
 
-    ponytail: read+write is uniform across GCS/in-memory and the bank blobs are small text; a
-    server-side copy is used only if the store exposes copy_blob (no adapter does today)."""
-    if hasattr(store, "copy_blob"):
-        store.copy_blob(src, dst)
-        blob = store.get_blob(src)
-        return len(blob.download_as_text().encode("utf-8")) if blob else 0
-    data = store.get_blob(src).download_as_text()
+    ponytail: read+write is uniform across GCS/in-memory and the bank blobs are small text."""
+    blob = store.get_blob(src)
+    if blob is None:  # ADM-05: listed then deleted mid-snapshot — skip rather than AttributeError
+        return None
+    data = blob.download_as_text()
     store.blob(dst).upload_from_string(data, content_type="application/octet-stream")
     return len(data.encode("utf-8"))
 
@@ -32,7 +31,10 @@ def backup_memory(bank, summary: str, *, now: datetime | None = None) -> str:
     blob_count = 0
     byte_size = 0
     for blob in list(store.iter_blobs(f"{ROOT}/")):
-        byte_size += _copy_blob(store, blob.name, f"{dest_root}/{blob.name}")
+        size = _copy_blob(store, blob.name, f"{dest_root}/{blob.name}")
+        if size is None:  # ADM-05: concurrent delete — skip this blob, keep snapshotting the rest
+            continue
+        byte_size += size
         blob_count += 1
     manifest = {"datetime": dt.isoformat(), "summary": summary, "blob_count": blob_count,
                 "byte_size": byte_size, "source_prefix": f"{ROOT}/"}

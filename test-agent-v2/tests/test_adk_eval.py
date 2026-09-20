@@ -94,7 +94,6 @@ def test_default_scorer_makes_zero_llm_calls(monkeypatch):
         return f
 
     monkeypatch.setattr(vx, "complete", _spy("vertex.complete"))
-    monkeypatch.setattr(vx, "agenerate", _spy("vertex.agenerate"))
     monkeypatch.setattr(model_mod, "agent_model", _spy("agent_model"))
     monkeypatch.setattr(rj, "judge", _spy("ragas_judge.judge"))
 

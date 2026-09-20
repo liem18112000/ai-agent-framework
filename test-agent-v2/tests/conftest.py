@@ -49,6 +49,19 @@ def _offline_default_no_vertex():
         os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _allow_insecure_offline():
+    """Offline hygiene (session-wide). Auth now fails CLOSED when no bearer is set (SEC-1): a service
+    with an unset `A2A_BEARER_TOKEN`/bridge token 401s every non-open route unless `ALLOW_INSECURE=1`.
+    Most offline tests build an app and hit routes with no token, so opt into the local/dev escape hatch
+    for the whole session. Tests that assert the fail-CLOSED behaviour itself (test_auth) delete
+    ALLOW_INSECURE within their own function-scoped monkeypatch, which reverts after the test."""
+    saved = os.environ.get("ALLOW_INSECURE")
+    os.environ["ALLOW_INSECURE"] = "1"
+    yield
+    os.environ.pop("ALLOW_INSECURE", None) if saved is None else os.environ.__setitem__("ALLOW_INSECURE", saved)
+
+
 class FakeBlob:
     def __init__(self, bucket, name):
         self._b, self.name = bucket, name

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from common.memory.pg import PgMemoryStore, PgVectorStore
+from common.memory.pg import PgMemoryStore
 from common.memory.vector_factory import build_vector_store
 from common.memory.vector_memory import InMemoryVectorStore
 from common.memory.vector_store import VectorStore
@@ -30,7 +30,6 @@ def _node(nid: str, **kw) -> dict:
 def test_both_adapters_satisfy_the_protocol():
     assert isinstance(InMemoryVectorStore(), VectorStore)
     assert isinstance(PgMemoryStore(None), VectorStore)      # duck-typed; ctor never touches the DB
-    assert PgVectorStore is PgMemoryStore                    # the adapter alias names the same class
     assert not isinstance(object(), VectorStore)             # a non-conforming object is rejected
 
 
@@ -92,6 +91,16 @@ async def test_search_empty_query_returns_recent():
     await store.upsert_node(_node("new", title="second"))
     rows = await store.search(k=5)                                   # no query → created_at DESC
     assert [r["id"] for r in rows] == ["new", "old"]
+
+
+async def test_search_nonmatching_real_query_returns_empty_not_recent():
+    # MEM-03: a real query that matches nothing must NOT fall back to recent nodes (false positive);
+    # only the empty-query browse case returns recent.
+    store = InMemoryVectorStore()
+    await store.upsert_node(_node("a", title="dunning reminder", synopsis="credit card"))
+    await store.upsert_node(_node("b", title="health archive", synopsis="zip import"))
+    assert await store.search(q_text="nonexistent-xyz", k=5) == []   # no lex/vec hit → []
+    assert {r["id"] for r in await store.search(k=5)} == {"a", "b"}   # empty query still browses recent
 
 
 # --- embedding freshness -------------------------------------------------- #

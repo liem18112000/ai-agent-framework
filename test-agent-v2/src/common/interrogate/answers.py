@@ -15,13 +15,16 @@ def parse_raw_answers(raw) -> dict:
     """Normalize any accepted input to `{question_id: value}` (value = str or dict)."""
     if isinstance(raw, dict):
         if isinstance(raw.get("answers"), list):
-            return {a["question_id"]: a for a in raw["answers"]}
+            return {a["question_id"]: a for a in raw["answers"] if isinstance(a, dict) and "question_id" in a}
         return dict(raw)
     if isinstance(raw, list):
-        return {a["question_id"]: a for a in raw}
+        return {a["question_id"]: a for a in raw if isinstance(a, dict) and "question_id" in a}
     text = str(raw).strip()
     if text.startswith(("{", "[")):
-        return parse_raw_answers(json.loads(text))
+        try:
+            return parse_raw_answers(json.loads(text))
+        except (json.JSONDecodeError, ValueError, TypeError):
+            pass  # leading brace but not valid JSON — degrade to the line-partition parser
     return {
         key.strip(): val.strip()
         for line in text.splitlines()
@@ -43,6 +46,8 @@ def _coerce(value) -> tuple[str, str, str | None]:
 
 
 def _match_option(text: str, options: list[dict]) -> str:
+    if not text.strip():  # INT-04: a blank answer matches an empty regex against every label — don't fabricate
+        return ""
     low = text.lower()
 
     def present(label: str) -> bool:

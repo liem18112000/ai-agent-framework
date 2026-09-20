@@ -28,7 +28,3 @@ class ModelProvider(Protocol):
         identical to a plain completion. ``tier="fast"`` MAY route to a cheaper model (see
         ``llm_agent_model``). Providers that can't cache / have no fast tier ignore these."""
         ...
-
-    async def agenerate(self, prompt: str, *, max_tokens: int) -> str:
-        """Async single-shot completion (engine text path; optional to route now — Option A)."""
-        ...

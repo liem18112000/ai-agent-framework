@@ -98,6 +98,7 @@ _SHELL = """<title>__TITLE__</title>
 <div class="stage"><canvas id="c"></canvas><div id="tip"></div></div>
 <script>
 const DATA=__DATA__;
+const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');  // ADM-03: escape before innerHTML
 const cv=document.getElementById('c'),ctx=cv.getContext('2d'),tip=document.getElementById('tip');
 let W=0,H=0,DPR=Math.max(1,window.devicePixelRatio||1);
 const idx=new Map(DATA.nodes.map((n,i)=>[n.id,i]));
@@ -135,7 +136,7 @@ function pos(ev){const r=cv.getBoundingClientRect();return[ev.clientX-r.left,ev.
 cv.addEventListener('mousemove',ev=>{const[mx,my]=pos(ev);
   if(drag){drag.x=mx;drag.y=my;drag.vx=drag.vy=0;frame=Math.min(frame,300);return;}
   const n=at(mx,my);
-  if(n){tip.innerHTML='<b>'+n.label+'</b>'+n.type+(n.syn?'<br>'+n.syn.replace(/</g,'&lt;'):'');
+  if(n){tip.innerHTML='<b>'+esc(n.label)+'</b>'+esc(n.type)+(n.syn?'<br>'+esc(n.syn):'');
     tip.style.left=(mx+12)+'px';tip.style.top=(my+12)+'px';tip.style.opacity=1;cv.style.cursor='pointer';}
   else{tip.style.opacity=0;cv.style.cursor='grab';}});
 cv.addEventListener('mousedown',ev=>{const[mx,my]=pos(ev);drag=at(mx,my);if(drag)cv.style.cursor='grabbing';});

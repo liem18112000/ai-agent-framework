@@ -172,11 +172,16 @@ class StepsList(BaseModel):
         for it in self.items:
             if not it.scenario_id:
                 continue
-            steps = [TestStep(id=f"{it.scenario_id}#s{(order := s.get('order', i))}",
-                              scenario_id=it.scenario_id, order=order, action=s.get("action", ""),
-                              expected=s.get("expected", ""), keyword=s.get("keyword", ""),
-                              data_refs=data_refs)
-                     for i, s in enumerate(it.steps or [], start=1)]
+            steps = []
+            for i, s in enumerate(it.steps or [], start=1):
+                try:  # TPL-03: model drift can emit `order` as a str → int() before the later sort
+                    order = int(s.get("order", i) or i)
+                except (TypeError, ValueError):
+                    order = i
+                steps.append(TestStep(id=f"{it.scenario_id}#s{order}",
+                                      scenario_id=it.scenario_id, order=order, action=s.get("action", ""),
+                                      expected=s.get("expected", ""), keyword=s.get("keyword", ""),
+                                      data_refs=data_refs))
             if steps:
                 by_id[it.scenario_id] = steps
         return by_id

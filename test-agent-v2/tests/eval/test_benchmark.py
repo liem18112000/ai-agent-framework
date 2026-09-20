@@ -178,22 +178,3 @@ async def test_finish_hook_skips_in_progress_chunk():
 
 async def test_finish_hook_fires_on_error_even_though_it_raised():
     assert await _run_implement(raises=True) == ["run-1"]  # failed run still benchmarked
-
-
-def test_latency_accumulates_and_reads_back(monkeypatch):
-    """add_latency sums per-run server time; read_latency returns it (miss/None → None). Needs a
-    non-Null shared cache — force InMemory so the get-then-set round-trips (default NullCache = no-op).
-    get_cache is lru_cached, so clear it after switching CACHE_BACKEND and again on teardown."""
-    from common.benchmark.store import add_latency, read_latency
-    from common.cache import get_cache
-
-    monkeypatch.setenv("CACHE_BACKEND", "memory")
-    get_cache.cache_clear()
-    try:
-        add_latency("run-lat", 120.5)
-        add_latency("run-lat", 80.0)
-        assert read_latency("run-lat") == 200.5
-        assert read_latency("never-seen") is None
-        add_latency(None, 5.0)  # no context_id → ignored, no crash
-    finally:
-        get_cache.cache_clear()  # don't leak the InMemory backend into other tests

@@ -2,10 +2,9 @@
 
 from common.llm.questions import claude_questions
 from common.llm.understanding import claude_understanding
-from common.llm.vertex import agenerate, complete, first_text, vertex_config
+from common.llm.vertex import complete, first_text, vertex_config
 
 __all__ = [
-    "agenerate",
     "claude_questions",
     "claude_understanding",
     "complete",

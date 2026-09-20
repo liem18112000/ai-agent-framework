@@ -28,16 +28,36 @@ async def _req(app, path, method="GET", **kw):
         return await c.request(method, path, **kw)
 
 
-async def test_bearer_enforced_when_set(monkeypatch):
+async def test_token_set_correct_bearer_passes(monkeypatch):
     monkeypatch.setenv("A2A_BEARER_TOKEN", "secret")
-    app = _app()
-    assert (await _req(app, "/.well-known/agent-card.json")).status_code == 200
-    assert (await _req(app, "/livez")).status_code == 200
-    assert (await _req(app, "/", "POST")).status_code == 401
-    ok = await _req(app, "/", "POST", headers={"Authorization": "Bearer secret"})
+    ok = await _req(_app(), "/", "POST", headers={"Authorization": "Bearer secret"})
     assert ok.status_code != 401
 
 
-async def test_no_enforcement_when_unset(monkeypatch):
+async def test_token_set_wrong_bearer_401(monkeypatch):
+    monkeypatch.setenv("A2A_BEARER_TOKEN", "secret")
+    app = _app()
+    assert (await _req(app, "/", "POST")).status_code == 401  # missing header
+    assert (await _req(app, "/", "POST", headers={"Authorization": "Bearer nope"})).status_code == 401
+
+
+async def test_fail_closed_when_token_unset_and_not_insecure(monkeypatch):
+    """SEC-1: no expected token AND no ALLOW_INSECURE escape hatch → refuse every non-open route."""
     monkeypatch.delenv("A2A_BEARER_TOKEN", raising=False)
+    monkeypatch.delenv("ALLOW_INSECURE", raising=False)  # override the conftest session default
+    assert (await _req(_app(), "/", "POST")).status_code == 401
+
+
+async def test_permissive_when_token_unset_and_insecure_opt_in(monkeypatch):
+    """No expected token but ALLOW_INSECURE=1 → local/dev passes through."""
+    monkeypatch.delenv("A2A_BEARER_TOKEN", raising=False)
+    monkeypatch.setenv("ALLOW_INSECURE", "1")
     assert (await _req(_app(), "/", "POST")).status_code != 401
+
+
+async def test_open_paths_never_gated(monkeypatch):
+    """Health + agent-card discovery stay open even fail-closed (token unset, no ALLOW_INSECURE)."""
+    monkeypatch.delenv("A2A_BEARER_TOKEN", raising=False)
+    monkeypatch.delenv("ALLOW_INSECURE", raising=False)
+    assert (await _req(_app(), "/livez")).status_code == 200
+    assert (await _req(_app(), "/.well-known/agent-card.json")).status_code == 200

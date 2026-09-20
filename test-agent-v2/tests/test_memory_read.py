@@ -40,6 +40,16 @@ async def test_get_note_returns_the_note(seeded):
     assert "No note" not in out and "Login bug" in out
 
 
+async def test_get_note_resolves_by_index_not_search(seeded, monkeypatch):
+    """MEM-01: get_note finds a note by exact id via the graph index even when semantic search
+    would miss it (the pg top-k bug — the id 'jira:LUZ-1' is absent from title/synopsis)."""
+    async def _search_misses(*a, **k):  # simulate a corpus > top-k: the node isn't returned
+        return []
+    monkeypatch.setattr(tools.retrieve, "search_nodes", _search_misses)
+    out = await tools.get_note("jira:LUZ-1")
+    assert "No note" not in out and "Login bug" in out
+
+
 async def test_get_note_unknown_id_is_helpful(seeded):
     assert "No note found" in await tools.get_note("jira:NOPE")
 

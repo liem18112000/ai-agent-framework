@@ -7,7 +7,7 @@ Provider-neutral modalities: platform is one of serverless / k8s / managed — n
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol, runtime_checkable
+from typing import Protocol
 
 # Neutral platform categories (GCP Cloud Run·GKE·Cloud SQL == AWS Lambda·EKS·RDS == Azure Fn·AKS·SQL).
 SERVERLESS = "serverless"
@@ -44,7 +44,6 @@ class LogEntry:
     labels: list[str] = field(default_factory=list)
 
 
-@runtime_checkable
 class CloudProvider(Protocol):
     """Read-only reach into one cloud estate. All construction of vendor SDK clients lives in the
     adapter (lazy), so this port is import-safe offline. Mirrors the ModelProvider/ObjectStore ports."""

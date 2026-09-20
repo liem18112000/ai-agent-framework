@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 
 from common.adk.config import get_config
-from common.llm.vertex import agenerate as _vertex_agenerate
 from common.llm.vertex import complete as _vertex_complete
 from common.llm.vertex import vertex_config
 
@@ -71,10 +70,6 @@ class VertexClaudeProvider:
         return _vertex_complete(prompt, project=project, location=location,
                                 model=self._tier_model(model, tier),
                                 max_tokens=self._cap_max_tokens(max_tokens, tier), cache_prefix=cache_prefix)
-
-    async def agenerate(self, prompt: str, *, max_tokens: int) -> str:
-        project, location, model = self._require_config()
-        return await _vertex_agenerate(prompt, project=project, location=location, model=model, max_tokens=max_tokens)
 
     @staticmethod
     def _require_config() -> tuple[str, str, str]:

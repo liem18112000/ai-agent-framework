@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 
 from common.memory.graph_index import match_index_nodes
@@ -21,7 +22,9 @@ def backend() -> str:
 
 def _graph_search(bank, query: str) -> list[dict]:
     graph, _ = bank.load_index()
-    return match_index_nodes(graph, query)
+    # MEM-10: project to the same {id,type,title} shape the pg arm returns (shared result contract).
+    return [{"id": n.get("id", ""), "type": n.get("type", ""), "title": n.get("title") or ""}
+            for n in match_index_nodes(graph, query)]
 
 
 async def search_nodes(bank, query: str, *, store: VectorStore | None = None) -> list[dict]:
@@ -52,7 +55,9 @@ async def recall_lessons(bank, *, seed_refs: set[str], query_text: str = "", lim
                 log.warning("memory.retrieve: pg recall failed (%s); using graph", exc)
     from common.learn import recall_lessons as _graph_recall
 
-    return _graph_recall(bank, seed_refs=seed_refs, limit=limit)
+    # INT-03: the GCS recall does blocking bucket round-trips (iter_lessons reads each lesson sidecar);
+    # run it off the event loop so a RECALL_LESSONS-on turn can't stall Cloud Run's request loop.
+    return await asyncio.to_thread(_graph_recall, bank, seed_refs=seed_refs, limit=limit)
 
 
 def _build_store() -> VectorStore | None:

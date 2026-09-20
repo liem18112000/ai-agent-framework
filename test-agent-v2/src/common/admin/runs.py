@@ -330,8 +330,8 @@ def compare_runs(bank, context_a: str, context_b: str) -> str:
     body += _prompt_section(bank, context_a, context_b)
 
     head = [f"# Compare runs: {context_a} vs {context_b}", "",
-            f"**Consensus {agree_sum}/{union_sum} ({_pct(agree_sum, union_sum)})** — higher = more "
-            "stable across runs; divergence flags drift or model variance to review."]
+            (f"**Consensus {agree_sum}/{union_sum} ({_pct(agree_sum, union_sum)})** — higher = more "
+             "stable across runs; divergence flags drift or model variance to review.")]
     report = "\n".join(head + body)
     if len(report) > _TOTAL_CAP:
         report = report[:_TOTAL_CAP] + f"\n\n… [compare-runs report capped at {_TOTAL_CAP} chars]"

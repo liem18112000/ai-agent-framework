@@ -118,6 +118,7 @@ class InMemoryVectorStore:
             for nid, node in self._nodes.items()
             if self._emb.get(nid) is not None and self._passes(node, types, scopes)
         ]
+        scored = [s for s in scored if s[0] > 0.0]  # MEM-03: drop non-positive-similarity hits
         scored.sort(key=lambda s: (-s[0], s[1]))  # similarity desc, id asc (deterministic tie-break)
         return [nid for _, nid in scored[:k]]
 
@@ -158,10 +159,12 @@ class InMemoryVectorStore:
     ) -> list[dict]:
         """Hybrid recall: vector-nearest ∪ lexical, RRF-fused (empty query → most-recent), pg-shape rows."""
         scopes = scopes or list(_DEFAULT_SCOPES)
+        if not q_text and q_embed is None:
+            return self._recent(types, scopes, k)  # MEM-03: browse only on an EMPTY query
         vec_ids = self._vector_ids(q_embed, types, scopes, k) if q_embed else []
         lex_ids = self._lexical_ids(q_text, types, scopes, k) if q_text else []
         if not vec_ids and not lex_ids:
-            return self._recent(types, scopes, k)
+            return []  # MEM-03: a real query that matched nothing → no false-positive recent nodes
         return self._hydrate(rrf_fuse(vec_ids, lex_ids, limit=k))
 
     async def grounded(self, candidate: str, anchors: set[str]) -> bool:

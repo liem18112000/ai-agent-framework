@@ -18,7 +18,7 @@ from common.learn import (
     veto_lesson,
 )
 from common.memory import MemoryBank
-from common.models import CORRECTION
+from common.models import CORRECTION, GOTCHA
 from tests.conftest import FakeBucket
 
 
@@ -113,6 +113,16 @@ def test_recall_lessons_grounded_to_seed():
     assert recall_lessons(bank, seed_refs={"jira:LUZ-1"}) == ["lesson about LUZ-1"]
     assert recall_lessons(bank, seed_refs={"jira:OTHER"}) == []
     assert recall_lessons(bank, seed_refs=set()) == []
+
+
+def test_recall_returns_newest_first_so_corrections_win():
+    # INT-02: an old GOTCHA then a newer CORRECTION (both non-"high"); limit=1 must surface the newer.
+    bank = _bank_with_node("jira:LUZ-1")
+    capture_lessons(bank, context_id="run-1", now="2026-01-01T00:00:00Z", signals=[
+        LessonSignal(statement="old gotcha", kind=GOTCHA, source_refs=["jira:LUZ-1"])])
+    capture_lessons(bank, context_id="run-1", now="2026-06-01T00:00:00Z", signals=[
+        LessonSignal(statement="newer correction", kind=CORRECTION, source_refs=["jira:LUZ-1"])])
+    assert recall_lessons(bank, seed_refs={"jira:LUZ-1"}, limit=1) == ["newer correction"]
 
 
 def test_search_and_veto_lessons():

@@ -18,6 +18,7 @@ _FIELDS = (
     "id", "round", "question", "why", "options", "recommendation",
     "depends_on", "applies_to", "status", "confidence",
 )
+_REQUIRED = ("id", "round", "question")  # Question has no default for these
 
 
 def claude_questions(pack: Pack, round_name: str) -> list[Question]:
@@ -37,8 +38,21 @@ def _parse(raw: str, round_name: str) -> list[Question]:
     if items is None:
         log.warning("round %s: could not parse generator output as JSON", round_name)
         return []
+    out: list[Question] = []
     for it in items:
+        if not isinstance(it, dict):
+            log.warning("round %s: skipping non-object question item: %r", round_name, it)
+            continue
         it.setdefault("round", round_name)
         if "applies_to" in it:
             it["applies_to"] = coerce_str(it["applies_to"])
-    return [Question(**{k: it.get(k) for k in _FIELDS if k in it}) for it in items]
+        if any(not it.get(k) for k in _REQUIRED):
+            log.warning("round %s: skipping question missing required field(s): %r", round_name, it)
+            continue
+        # Drop None-valued optionals so `"options": null` can't override default_factory=list.
+        fields = {k: it[k] for k in _FIELDS if k in it and it[k] is not None}
+        try:
+            out.append(Question(**fields))
+        except TypeError:  # unexpected shape drift — skip this item, keep the round
+            log.warning("round %s: skipping malformed question item: %r", round_name, it)
+    return out

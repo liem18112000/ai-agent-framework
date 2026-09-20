@@ -41,12 +41,26 @@ def test_ingest_short_label_not_matched_midword():
     assert res2.answers[0].chosen_option == "API"                  # a real token still maps
 
 
+def test_ingest_blank_answer_does_not_fabricate_option():
+    """INT-04: a blank answer text matches an empty regex against every label — must NOT pick one."""
+    res = ingest([_q()], [{"question_id": "Q-biz-1", "text": ""}])
+    assert res.answers[0].chosen_option == ""   # blank ≠ the first option ("Accepted")
+
+
 def test_ingest_json_list_and_new_seed():
     qs = [_q("Q-biz-1"), _q("Q-biz-2")]
     raw = '[{"question_id": "Q-biz-1", "text": "read it", "new_seed": "confluence:999"}]'
     res = ingest(qs, raw)
     assert res.answers[0].new_seed == "confluence:999"
     assert [q.id for q in res.carried] == ["Q-biz-2"]
+
+
+def test_parse_raw_answers_degrades_on_brace_like_non_json():
+    """INT-01: a reply that merely starts with `{`/`[` but isn't valid JSON (or is JSON whose
+    `answers` are non-dicts) must parse without raising — not hard-fail the refine/define turn."""
+    from common.interrogate.answers import parse_raw_answers
+    assert parse_raw_answers("{Q-bus-1: yes}") == {"{Q-bus-1": "yes}"}   # invalid JSON → line parser
+    assert parse_raw_answers('{"answers":["yes"]}') == {}                # list of non-dicts → skipped
 
 
 def test_ingest_seed_marker_in_line():
@@ -81,6 +95,14 @@ def test_distill_human_answer_is_high_confidence_decision(pack_bucket):
     assert ins.source_refs == ["jira:LUZ-158390"]
     assert "Materialized" in ins.statement
     assert "Accepted" in ins.rejected
+
+
+def test_distill_free_text_answer_rejects_nothing(pack_bucket):
+    """INT-05: an option-less (free-text) answer must not mark every option rejected."""
+    pack = _pack(pack_bucket)
+    ans = Answer(question_id="Q-biz-1", answered_by="human", text="just some free text", chosen_option="")
+    ins = distill_answer(ans, _q(), pack, run_id="r")
+    assert ins.rejected == []
 
 
 def test_distill_new_seed_answer_is_gap_seed(pack_bucket):
@@ -123,6 +145,20 @@ def test_refine_session_files_and_run_log(fake_bucket):
 
     bank.write_understanding("run-6f2a", "## Understanding\nok")
     assert "Understanding" in bank.read_understanding("run-6f2a")
+
+
+def test_append_answers_routes_through_cas(fake_bucket, monkeypatch):
+    # MEM-04: append is a CAS read-modify-write (mutate_json), not a blind _put, so a concurrent
+    # append can't drop an answer.
+    bank = MemoryBank(fake_bucket)
+    seen: list[str] = []
+    real = bank.mutate_json
+    monkeypatch.setattr(bank, "mutate_json",
+                        lambda path, mutate, **kw: (seen.append(path), real(path, mutate, **kw))[1])
+    bank.append_answers("run-x", [Answer(question_id="q1", text="a1")])
+    bank.append_answers("run-x", [Answer(question_id="q2", text="a2")])
+    assert seen and all(p.endswith("answers.json") for p in seen)
+    assert [a.question_id for a in bank.read_answers("run-x")] == ["q1", "q2"]
 
     path = bank.append_refine_run_log(RefinementRun(
         run_id="9c1b", context_id="run-6f2a", seed="LUZ-158390",

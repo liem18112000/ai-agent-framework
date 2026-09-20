@@ -228,7 +228,7 @@ def _gherkin_one(sc, sts) -> str:
     if sts:
         for st in sts:
             lines.append(f"  {st.keyword or 'When'} {st.action}")
-            if st.expected and not st.keyword:
+            if st.expected:  # TPL-01: emit the oracle even on a keyword-bearing step (worst case: a redundant Then)
                 lines.append(f"  Then {st.expected}")
     else:
         for p in sc.preconditions:

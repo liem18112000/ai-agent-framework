@@ -103,14 +103,24 @@ class MemoryBank:
         blob = self._bucket.get_blob(self._note_md(note_type, note_id))
         return blob.download_as_text() if blob else None
 
-    def upsert_note(self, note: Note) -> str:
-        existing = self.read_note(note.id, note.type)
-        merged = merge_notes(existing, note) if existing else note
-        self._put(self._note_json(note.type, note.id), json.dumps(asdict(merged), indent=1, ensure_ascii=False), "application/json")
-        path = self._note_md(note.type, note.id)
-        self._put(path, self._redact(render_note_md(merged)), "text/markdown")
-        self._fire_on_write(merged.id, merged.type, "")
-        return path
+    def upsert_note(self, note: Note, *, max_retries: int = 5) -> str:
+        """CAS the note's json sidecar (MEM-04: read-merge-write under if_generation_match, mirroring
+        update_index) so two branches upserting one id can't clobber each other's merged links."""
+        json_path = self._note_json(note.type, note.id)
+        for _ in range(max_retries):
+            blob = self._bucket.get_blob(json_path)
+            existing = note_from_dict(json.loads(blob.download_as_text())) if blob else None
+            generation = blob.generation if blob else 0
+            merged = merge_notes(existing, note) if existing else note
+            try:
+                self._put(json_path, json.dumps(asdict(merged), indent=1, ensure_ascii=False), "application/json", if_generation_match=generation)
+            except CASConflict:
+                continue
+            path = self._note_md(note.type, note.id)
+            self._put(path, self._redact(render_note_md(merged)), "text/markdown")
+            self._fire_on_write(merged.id, merged.type, "")
+            return path
+        raise RuntimeError(f"upsert_note CAS retries exhausted for {note.id}")
 
     def load_index(self) -> tuple[Graph, int]:
         blob = self._bucket.get_blob(INDEX_JSON)
@@ -176,9 +186,8 @@ class MemoryBank:
 
     def append_answers(self, context_id: str, answers: list[Answer]) -> str:
         path = f"{self._refine_dir(context_id)}/answers.json"
-        existing = self._read_json(path, [])
-        existing.extend(asdict(a) for a in answers)
-        self._put(path, json.dumps(existing, indent=1, ensure_ascii=False), "application/json")
+        # MEM-04: CAS the read-modify-write so a concurrent append can't drop an answer.
+        self.mutate_json(path, lambda cur: [*cur, *(asdict(a) for a in answers)], default=[])
         return path
 
     def read_answers(self, context_id: str) -> list[Answer]:
