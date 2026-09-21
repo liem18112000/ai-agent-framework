@@ -28,6 +28,15 @@ def register_tools(mcp: MCPServer, session: BridgeSession) -> dict:
         return (await session.ask(f"get-run {context_id}", context_id=context_id)).text
 
     @mcp.tool()
+    async def record_artifact(context_id: str, kind: str, url: str, title: str = "") -> str:
+        """[ADMIN — not part of the testing pipeline] Record a published report artifact URL against a
+        run so it can be retrieved later via get_run. Reports are published client-side, so the agent
+        never sees the URL unless this records it. `kind` is a free label (knowledge/plan/report);
+        the registry is append-only and deduplicated on url."""
+        arg = f"record-artifact {context_id} {kind} {url} {title}".rstrip()
+        return (await session.ask(arg, context_id=context_id)).text
+
+    @mcp.tool()
     async def compare_runs(context_a: str, context_b: str) -> str:
         """[ADMIN — not part of the testing pipeline] Diff two runs of the same ticket into COMMON
         (stable across runs — trust it) vs DIVERGENT (only in one — drift / model variance to review),
@@ -121,7 +130,7 @@ def register_tools(mcp: MCPServer, session: BridgeSession) -> dict:
         return (await session.ask(f"wipe-all {confirm}")).text
 
     return {
-        "list_runs": list_runs, "get_run": get_run, "compare_runs": compare_runs,
-        "view_memory": view_memory, "backup_memory": backup_memory,
+        "list_runs": list_runs, "get_run": get_run, "record_artifact": record_artifact,
+        "compare_runs": compare_runs, "view_memory": view_memory, "backup_memory": backup_memory,
         "list_backups": list_backups, "publish_memory_graph": publish_memory_graph, "wipe_all": wipe_all,
     }

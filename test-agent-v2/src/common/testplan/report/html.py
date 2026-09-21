@@ -14,6 +14,7 @@ the stylesheet and the page shell) are shared with the knowledge report in `comm
 from __future__ import annotations
 
 import json
+from collections import Counter
 
 from common.report.util import PQS_META as _PQS_META
 from common.report.util import TPS_META as _TPS_META
@@ -489,7 +490,10 @@ def build_report_html(bank, context_id: str) -> str:
     }
 
     nav, secs = _nav_and_sections(_SECTIONS, bodies)
-    ticket = keys[0] if keys else context_id
+    # Title by the ticket the scenarios actually cover (the plan's subject), not the first key that
+    # happens to appear in plan/decision source_refs — that may be an out-of-scope reference.
+    covered = Counter(k for s in scenarios for k in _all_jira_keys(s.source_refs))
+    ticket = covered.most_common(1)[0][0] if covered else (keys[0] if keys else context_id)
     header = (
         '<header><div class="eyebrow">Testing Agent &middot; QA/QC Test Plan</div>'
         f'<h1>Test plan &mdash; {_e(ticket)}</h1>'

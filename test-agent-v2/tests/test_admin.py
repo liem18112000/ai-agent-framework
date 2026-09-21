@@ -91,6 +91,36 @@ def test_get_run_unknown_context_is_clean_message():
     assert "No such run" in out and "run-nope" in out
 
 
+def test_record_artifact_persists_dedupes_and_surfaces_in_get_run():
+    bank = _bank()
+    ctx = "run-art"
+    _seed_run(bank, ctx, seed="LUZ-7", now="2026-01-01T00-00-00Z", understanding="brief")
+
+    admin.record_artifact(bank, ctx, "knowledge", "https://x/knowledge", title="Knowledge report")
+    admin.record_artifact(bank, ctx, "plan", "https://x/plan", title="Test plan")
+
+    arts = admin.get_artifacts(bank, ctx)
+    assert [a["url"] for a in arts] == ["https://x/plan", "https://x/knowledge"]  # newest first
+    assert arts[0]["kind"] == "plan" and arts[0]["ts"]                            # fields + ts stamped
+
+    # dedupe on url — re-recording the same url is a no-op, not a second entry
+    admin.record_artifact(bank, ctx, "plan", "https://x/plan", title="dup")
+    assert [a["url"] for a in admin.get_artifacts(bank, ctx)] == ["https://x/plan", "https://x/knowledge"]
+
+    out = admin.get_run(bank, ctx)
+    assert "https://x/knowledge" in out and "https://x/plan" in out
+    assert "Artifacts (2)" in out
+
+
+def test_list_runs_shows_artifact_count():
+    bank = _bank()
+    _seed_run(bank, "run-art", seed="LUZ-7", now="2026-01-01T00-00-00Z")
+    admin.record_artifact(bank, "run-art", "report", "https://x/r")
+    out = admin.list_runs(bank)
+    assert "artifacts" in out              # column header present
+    assert out.rstrip().endswith("| 1 |")  # this run's artifact count
+
+
 def test_compare_runs_splits_common_and_divergent():
     """Two runs of the same ticket → shared understanding bullets land in COMMON, unique ones in the
     per-run buckets, plus a consensus header."""

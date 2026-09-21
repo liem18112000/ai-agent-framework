@@ -99,3 +99,66 @@ def test_gherkin_emits_then_for_oracle_on_a_keyword_step():
     out = _gherkin_one(sc, sts)
     assert "When the import job completes" in out
     assert "Then documents exist in the eArchive" in out
+
+
+def test_report_title_is_the_covered_ticket_not_first_source_ref(monkeypatch):
+    """Regression: the title must name the ticket the scenarios cover, not the first Jira key in
+    plan/decision source_refs — which can be an out-of-scope reference (e.g. LUZ-158243 here)."""
+    bank = _bank(monkeypatch)
+    ctx = "run-title"
+    # plan.source_refs lists the out-of-scope key FIRST, the real one second
+    store.write_plan(bank, TestPlan(
+        id="plan:1", context_id=ctx, methodology=["api"], status="confirmed",
+        source_refs=["jira:LUZ-158243", "jira:LUZ-158230"]))
+    store.write_scenarios(bank, ctx, [
+        TestScenario(id=f"scenario:{ctx}:1", plan_id="plan:1", title="Import lands",
+                     source_refs=["jira:LUZ-158230"]),
+        TestScenario(id=f"scenario:{ctx}:2", plan_id="plan:1", title="Metadata maps",
+                     source_refs=["jira:LUZ-158230"]),
+    ])
+    html = build_report_html(bank, ctx)
+    assert "Test plan &mdash; LUZ-158230" in html
+    assert "&mdash; LUZ-158243" not in html
+
+
+def test_plan_preview_renders_plan_stage_only_and_titles_by_subject_ticket(monkeypatch):
+    """The dedicated plan preview (before approve_plan): plan-stage sections only (no scenarios),
+    titled by the run's SUBJECT ticket (the pack's grounded Jira node) — NOT the out-of-scope key that
+    dominates the plan/decision source_refs."""
+    from common.models.graph import JIRA_ISSUE, Note
+    from common.report.plan_preview import build_plan_preview_html
+
+    bank = _bank(monkeypatch)
+    ctx = "run-planprev"
+    # the gathered subject ticket (what the plan is about)
+    subject = Note(id="jira:LUZ-158230", type=JIRA_ISSUE, title="ZIP import of health docs", run_id=ctx,
+                   source_url="https://example.atlassian.net/browse/LUZ-158230", synopsis="ticket under test")
+    bank.upsert_note(subject)
+    bank.update_index(lambda g: g.add_note(subject))
+    store.write_plan(bank, TestPlan(
+        id="plan:1", context_id=ctx, methodology=["api"], scope=["import a valid zip lands docs"],
+        out_of_scope=["sender authorization"], metrics=["end-state"], test_design=["EP"],
+        test_kinds=["happy"], status="confirmed",
+        source_refs=["jira:LUZ-158243", "jira:LUZ-158230"]))  # out-of-scope key listed FIRST
+    store.write_plan_brief(bank, ctx, "# System\nePost ZIP import.\n\n## Requirement\nImport lands docs.")
+    store.write_decisions(bank, ctx, [
+        PlanDecision(id="d1", kind="decision", context_id=ctx, question_id="q1", round="scope",
+                     statement="Test the import job end-to-end", chosen="e2e", rationale="core path",
+                     rejected=["unit only"], source_refs=["jira:LUZ-158230"]),
+        PlanDecision(id="d2", kind="decision", context_id=ctx, question_id="q2", round="methodology",
+                     statement="API-weighted", chosen="api", source_refs=["jira:LUZ-158230"])])
+    store.write_questions(bank, ctx, [
+        Question(id="q1", round="scope", question="answered", status=""),
+        Question(id="q9", round="scope", question="Which tenant is canonical?",
+                 why="affects fixtures", status="open")])
+    store.write_answers(bank, ctx, [Answer(question_id="q1", text="e2e")])
+
+    html = build_plan_preview_html(bank, ctx)
+
+    assert "Plan preview &mdash; LUZ-158230" in html          # dominant ticket, NOT LUZ-158243
+    assert "&mdash; LUZ-158243" not in html
+    assert 'id="p-summary"' in html and 'id="p-decisions"' in html and 'id="p-open"' in html
+    assert "Test the import job end-to-end" in html          # decision surfaced
+    assert "sender authorization" in html                    # out-of-scope surfaced
+    assert "Which tenant is canonical?" in html              # open question surfaced
+    assert 'id="s-scenarios"' not in html                    # NO scenarios at the plan stage

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 from common.admin._shared import (
@@ -43,11 +44,13 @@ class RunSummary:
     pack_nodes: int = 0
     understanding: bool = False
     lessons: int = 0
+    artifacts: int = 0
 
     def row(self) -> str:
         return (f"| {self.context_id} | {self.seed or '-'} | {self.started or '-'} | "
                 f"{'yes' if self.refine_done else 'no'} | {self.answered}/{self.questions} | "
-                f"{self.pack_nodes} | {'yes' if self.understanding else 'no'} | {self.lessons} |")
+                f"{self.pack_nodes} | {'yes' if self.understanding else 'no'} | {self.lessons} | "
+                f"{self.artifacts} |")
 
 
 @dataclass
@@ -66,6 +69,7 @@ class RunDetail:
     coverage_md: str = ""
     run_logs: list = None  # list[str]
     lessons: list = None  # list[dict]
+    artifacts: list = None  # list[dict] — recorded published-report URLs, newest first
 
     def md(self) -> str:
         qs, ans = self.questions or [], self.answers or []
@@ -104,6 +108,13 @@ class RunDetail:
         out.extend(f"- [{lsn['kind']}] {lsn['statement']}" for lsn in (self.lessons or []))
         if not self.lessons:
             out.append("_none_")
+        out.append("")
+        out.append(f"## Artifacts ({len(self.artifacts or [])})")
+        for a in (self.artifacts or []):
+            title = f" — {a['title']}" if a.get("title") else ""
+            out.append(f"- [{a.get('kind', '')}]{title} — {a.get('url', '')}")
+        if not self.artifacts:
+            out.append("_no artifacts recorded_")
         out.append("")
         out.append("_Eval scores are computed on demand via evaluate_pack / evaluate_plan; not stored._")
         report = "\n".join(out)
@@ -151,14 +162,14 @@ def list_runs(bank, limit: int = 50) -> str:
             context_id=ctx, seed=state.get("seed", ""), started=state.get("now", ""),
             refine_done=bool(state.get("done")), questions=len(qs), answered=len(answers),
             pack_nodes=packs.get(ctx, 0), understanding=bank.read_understanding(ctx) is not None,
-            lessons=lessons.get(ctx, 0),
+            lessons=lessons.get(ctx, 0), artifacts=len(_read_artifacts(bank, ctx)),
         ))
     summaries.sort(key=lambda s: s.started, reverse=True)
     summaries = summaries[:limit]
     if not summaries:
         return "No runs found (memory/refine/ is empty)."
-    head = ("| context_id | seed | started | refine? | answered/asked | pack | brief? | lessons |\n"
-            "|---|---|---|---|---|---|---|---|")
+    head = ("| context_id | seed | started | refine? | answered/asked | pack | brief? | lessons | artifacts |\n"
+            "|---|---|---|---|---|---|---|---|---|")
     return f"# Runs ({len(summaries)})\n\n{head}\n" + "\n".join(s.row() for s in summaries)
 
 
@@ -178,7 +189,8 @@ def get_run(bank, context_id: str) -> str:
     if not known:
         return (f"No such run: {context_id!r}. Nothing under {_REFINE_PREFIX}{_slug(context_id)}/ "
                 f"— check `list-runs` for known ids.")
-    run_logs = [b.name for b in _store(bank).iter_blobs(_RUNS_PREFIX) if context_id in b.name]
+    run_logs = [b.name for b in _store(bank).iter_blobs(_RUNS_PREFIX)
+                if context_id in b.name and b.name.endswith(".md")]
     lessons = [{"kind": i.kind, "statement": i.statement}
                for i in iter_lessons(bank) if i.context_id == context_id]
     detail = RunDetail(
@@ -189,8 +201,51 @@ def get_run(bank, context_id: str) -> str:
         scenarios_md=tpd_store.read_scenarios_md(bank, context_id) or "",
         coverage_md=tpd_store.read_coverage_md(bank, context_id) or "",
         run_logs=sorted(run_logs), lessons=lessons,
+        artifacts=get_artifacts(bank, context_id),
     )
     return detail.md()
+
+
+# --- per-run artifact registry (published-report URLs, recorded client-side) -----------------------
+
+def _artifacts_path(context_id: str) -> str:
+    return f"{_RUNS_PREFIX}{_slug(context_id)}/artifacts.json"
+
+
+def _read_artifacts(bank, context_id: str) -> list[dict]:
+    """The raw append-order list (oldest first). Missing or corrupt blob → empty (never raises)."""
+    blob = _store(bank).get_blob(_artifacts_path(context_id))
+    if blob is None:
+        return []
+    try:
+        items = json.loads(blob.download_as_text())
+    except (ValueError, TypeError):
+        return []
+    return items if isinstance(items, list) else []
+
+
+def get_artifacts(bank, context_id: str) -> list[dict]:
+    """Recorded report artifacts for a run, newest first (missing/corrupt → [])."""
+    return list(reversed(_read_artifacts(bank, context_id)))
+
+
+def record_artifact(bank, context_id: str, kind: str, url: str, title: str = "") -> str:
+    """Append {kind,url,title,ts} to the run's append-only artifact registry; dedupe on url.
+
+    Reports are published client-side (a separate Artifact tool), so the agent never sees the URL
+    unless a tool records it here — this is that tool. Retrieve later via `get_run` / `get_artifacts`.
+    """
+    from common.adk.events import now  # lazy: keep this admin module framework-neutral / offline
+
+    if not context_id or not url:
+        return "record-artifact: need a context_id and a url."
+    items = _read_artifacts(bank, context_id)
+    if any(a.get("url") == url for a in items):
+        return f"Artifact already recorded for {context_id}: {url}"
+    items.append({"kind": kind or "report", "url": url, "title": title or "", "ts": now()})
+    _store(bank).blob(_artifacts_path(context_id)).upload_from_string(
+        json.dumps(items, ensure_ascii=False), "application/json")
+    return f"Recorded {kind or 'report'} artifact for {context_id} ({len(items)} total): {url}"
 
 
 # --- F3: cross-run comparison (COMMON vs DIVERGENT) ------------------------------------------------

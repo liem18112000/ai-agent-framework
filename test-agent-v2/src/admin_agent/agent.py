@@ -31,6 +31,7 @@ class AdminRouter(RouterAgent):
         return {
             "list-runs": (self._list_runs, "list-runs [limit]"),
             "get-run": (self._get_run, "get-run <ctx>"),
+            "record-artifact": (self._record_artifact, "record-artifact <ctx> <kind> <url> [title...]"),
             "compare-runs": (self._compare_runs, "compare-runs <ctx-a> <ctx-b>"),
             "prompt-list": (self._prompt_list, "prompt-list"),
             "prompt-seed": (self._prompt_seed, "prompt-seed [force]"),
@@ -83,6 +84,14 @@ class AdminRouter(RouterAgent):
         if not rest:
             return "Provide a context id: get-run <ctx>."
         return await self._bank_call(lambda b: admin.get_run(b, rest))
+
+    async def _record_artifact(self, rest: str) -> str:
+        parts = rest.split(maxsplit=3)
+        if len(parts) < 3:
+            return "Usage: record-artifact <ctx> <kind> <url> [title...]."
+        ctx, kind, url = parts[0], parts[1], parts[2]
+        title = parts[3] if len(parts) > 3 else ""
+        return await self._bank_call(lambda b: admin.record_artifact(b, ctx, kind, url, title))
 
     async def _compare_runs(self, rest: str) -> str:
         parts = rest.split()
