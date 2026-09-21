@@ -135,11 +135,13 @@ def test_build_diagrams_is_grounded_and_mermaid():
     from common.testplan.diagrams import build_diagrams
     from common.testplan.models import TestPlan
 
-    plan = TestPlan(id="p", context_id="c", methodology=["api"], metrics=["end-state"],
-                    scope=["import lands"], out_of_scope=["auth"])
+    plan = TestPlan(id="p", context_id="c", methodology=["api", "api", "ui", "api"],
+                    metrics=["end-state"], scope=["import lands"], out_of_scope=["auth"])
     cov = {"units": [{"id": "ep:/import", "category": "endpoint", "title": "POST /import"}],
            "gaps": [{"id": "r1", "title": "req", "missing": ["negative"]}]}
     d = build_diagrams(plan, cov)
     assert set(d) == {"architecture", "scope", "gaps"}
     assert "POST /import" in d["architecture"] and "excluded" in d["scope"]
-    assert set(build_diagrams(plan, {})) == {"architecture", "scope"}     # gaps drop when none
+    nocov = build_diagrams(plan, {})
+    assert set(nocov) == {"architecture", "scope"}                        # gaps drop when none
+    assert "api, ui surface" in nocov["architecture"]                     # methodology deduped, no "api, api"

@@ -32,7 +32,7 @@ def architecture_mmd(plan, cov: dict | None) -> str:
             lines.append(f'    C{j}[{_label(tag + ": " + (u.get("title") or u.get("id") or ""))}]')
         lines.append("  end")
     else:
-        method = ", ".join(plan.methodology) if plan and plan.methodology else "test"
+        method = ", ".join(dict.fromkeys(plan.methodology)) if plan and plan.methodology else "test"
         lines += ["  subgraph SUT [System under test]", f'    C0[{_label(method + " surface")}]', "  end"]
     for j, u in enumerate(reqs):
         lines.append(f'  R{j}[{_label("req: " + (u.get("title") or u.get("id") or ""))}] -.-> SUT')
