@@ -161,4 +161,5 @@ def test_plan_preview_renders_plan_stage_only_and_titles_by_subject_ticket(monke
     assert "Test the import job end-to-end" in html          # decision surfaced
     assert "sender authorization" in html                    # out-of-scope surfaced
     assert "Which tenant is canonical?" in html              # open question surfaced
+    assert "<details" in html                                # decisions are collapsible (scannable)
     assert 'id="s-scenarios"' not in html                    # NO scenarios at the plan stage

@@ -172,9 +172,9 @@ def _sec_sources(pack) -> str:
         rows = "".join(
             f'<tr><td>{_note_link(n)}</td><td class="cell-desc">{ru.e(n.synopsis or "&mdash;")}</td></tr>'
             for n in notes)
-        out.append(f"<h3>{ru.e(label)} ({len(notes)})</h3>"
-                   f'<div class="tblwrap"><table><thead><tr><th>Source</th><th>What it contributes</th>'
-                   f"</tr></thead><tbody>{rows}</tbody></table></div>")
+        table = (f'<div class="tblwrap"><table><thead><tr><th>Source</th><th>What it contributes</th>'
+                 f"</tr></thead><tbody>{rows}</tbody></table></div>")
+        out.append(ru.details(f"{ru.e(label)} ({len(notes)})", table))
     return "\n".join(out)
 
 

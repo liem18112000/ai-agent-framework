@@ -88,7 +88,7 @@ def build_plan_preview_html(bank, context_id: str) -> str:
 
     bodies = {
         "p-summary": _sec_summary(plan, brief, keys),
-        "p-decisions": _sec_decisions(decisions),
+        "p-decisions": _sec_decisions(decisions, collapsible=True),
         "p-method": _sec_method(plan),
         "p-scope": _sec_scope(plan),
         "p-open": _sec_open(open_q),

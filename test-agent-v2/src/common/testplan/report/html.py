@@ -22,6 +22,9 @@ from common.report.util import (
     all_jira_keys as _all_jira_keys,
 )
 from common.report.util import (
+    details as _details,
+)
+from common.report.util import (
     download as _download,
 )
 from common.report.util import (
@@ -180,7 +183,7 @@ def _sec_arch(cov, plan) -> str:
             + _arch_mermaid(cov, plan))
 
 
-def _sec_decisions(decisions) -> str:
+def _sec_decisions(decisions, *, collapsible: bool = False) -> str:
     if not decisions:
         return "<p class='muted'>No scope decisions were recorded for this run.</p>"
     from collections import defaultdict
@@ -201,10 +204,11 @@ def _sec_decisions(decisions) -> str:
             why = f'<div class="d-why"><b>Why:</b> {_e(d.rationale)}</div>' if d.rationale else ""
             prov = (" · ".join(_resource(r) for r in d.source_refs)) if d.source_refs else ""
             prov_html = f'<div class="d-prov">{prov}</div>' if prov else ""
-            out.append(
-                f'<div class="dcard"><div class="d-head"><span class="pill {_e(d.confidence)}">'
-                f'{_e(d.confidence)}</span><span class="d-stmt">{_e(d.statement)}</span></div>'
-                f'{chosen}{why}{rejected}{prov_html}</div>')
+            head = (f'<span class="pill {_e(d.confidence)}">{_e(d.confidence)}</span>'
+                    f'<span class="d-stmt">{_e(d.statement)}</span>')
+            body = f"{chosen}{why}{rejected}{prov_html}"
+            out.append(_details(head, body) if collapsible
+                       else f'<div class="dcard"><div class="d-head">{head}</div>{body}</div>')
     return "\n".join(out)
 
 

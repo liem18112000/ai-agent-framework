@@ -184,6 +184,11 @@ def mermaid(code: str) -> str:
     return f'<pre class="mermaid">{e(code)}</pre>'
 
 
+def details(summary: str, body: str, *, open: bool = False) -> str:
+    """A native collapsible block — scannable summary, detail on demand. No JS, renders everywhere."""
+    return f'<details class="det"{" open" if open else ""}><summary>{summary}</summary>{body}</details>'
+
+
 # ---- page shell (numbered sticky-nav sections + mermaid loader) -------------------------------------
 def nav_and_sections(sections: list[tuple[str, str]], bodies: dict[str, str]) -> tuple[str, str]:
     """(nav, sections) HTML from ``[(id, label)]`` + ``{id: body_html}`` — numbered 1..N."""
@@ -267,6 +272,9 @@ section{scroll-margin-top:64px}
 .chip.web{color:var(--k-perf);background:var(--k-perf-bg)}.chip.attachment{color:var(--k-negative);background:var(--k-negative-bg)}
 .dcard,.gapcard{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:9px;padding:11px 14px;margin:9px 0}
 .gapcard{border-left-color:var(--warn)}
+.det{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:9px;padding:6px 14px;margin:8px 0}
+.det>summary{cursor:pointer;font-weight:600;color:var(--ink);list-style-position:outside}
+.det[open]>summary{margin-bottom:8px}
 .d-head{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}.d-stmt{font-size:14px;font-weight:600}
 .d-chosen{font-size:13.5px;color:var(--ink-2);margin:.35em 0}.d-why{font-size:13px;color:var(--muted);margin:.25em 0}
 .d-rej{font-size:12.5px;color:var(--bad);margin:.25em 0}.d-prov{font-size:12px;color:var(--muted);margin-top:.35em}
