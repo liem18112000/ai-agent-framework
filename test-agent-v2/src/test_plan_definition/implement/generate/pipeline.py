@@ -74,6 +74,7 @@ async def implement_plan(bank, context_id: str, *, run_id: str = "implement", no
     bank.update_index(lambda g: _add_provenance(g, plan, scenarios))
     _project_nodes(bank, plan, scenarios)
     coverage = _build_coverage(bank, context_id, plan, plan_pack, scenarios)
+    _build_diagrams(bank, context_id, plan)
 
     run = TestPlanRun(
         run_id=run_id, context_id=context_id, plan_id=plan.id,
@@ -117,6 +118,18 @@ def export_features(bank, context_id: str) -> str | None:
     text = render_feature(scenarios[0].title.split(" — ")[0], scenarios, store.read_steps(bank, context_id))
     store.write_feature(bank, context_id, context_id, text)
     return text
+
+
+def _build_diagrams(bank, context_id: str, plan) -> None:
+    """Persist diagram-as-code (mermaid) from the plan + persisted coverage, so the client can render
+    and download them. Best-effort — a diagram failure never breaks implement."""
+    try:
+        from common.testplan.diagrams import build_diagrams
+        diagrams = build_diagrams(plan, store.read_coverage(bank, context_id))
+        if diagrams:
+            store.write_diagrams(bank, context_id, diagrams)
+    except Exception as exc:  # noqa: BLE001 — diagrams are a best-effort overlay, never break implement
+        log.warning("implement: diagrams skipped (%s)", exc)
 
 
 def _build_coverage(bank, context_id: str, plan, plan_pack, scenarios) -> str:

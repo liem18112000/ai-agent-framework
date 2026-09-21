@@ -76,6 +76,14 @@ def register_tools(mcp: MCPServer, session: BridgeSession,
         with a code-unit (endpoints/hubs) reached count. Read-only; run implement first."""
         return (await session.ask(f"get-coverage {context_id}", context_id=context_id)).text
 
+    @mcp.tool()
+    async def get_deliverables(context_id: str) -> str:
+        """Return the downloadable deliverable payloads for a run — the persisted .feature, the
+        test-data fixtures (JSON), and every diagram-as-code (mermaid) — each in its own fenced block
+        so the client can render them and offer each as a downloadable file. Read-only; run implement
+        first."""
+        return (await session.ask(f"get-deliverables {context_id}", context_id=context_id)).text
+
     return {"define_plan": define_plan, "get_plan": get_plan, "approve_plan": approve_plan,
            "implement_plan": implement_plan, "get_scenarios": get_scenarios,
-           "get_coverage": get_coverage}
+           "get_coverage": get_coverage, "get_deliverables": get_deliverables}

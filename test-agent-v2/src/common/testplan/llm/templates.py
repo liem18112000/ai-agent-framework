@@ -123,7 +123,7 @@ Return ONLY a JSON object {"items": [ ... ]} — each item: {scenario_id, steps:
 
 _REPORT_BODY = """You are the QA Testing Agent PUBLISHING THE FINAL TEST-PLAN REPORT for run $context_id. This is the OPTIONAL last step of test-plan definition, run after get_scenarios succeeds — skip it only if the user does not want a published report.
 
-Prefer the deterministic renderer: run `python tools/build_report.py $context_id report.html` (test-agent-v2 repo; same STORE_BACKEND / GCS_BUCKET env as the agents), then publish report.html with the Artifact tool. It reads the persisted run and emits ONE self-contained, printable page. Only if that tool is unreachable, author the SAME structure yourself from get_scenarios / get_plan / get_coverage / benchmark_run — never downgrade to a plain scenario list.
+The agent STORES the full run — it does not emit HTML. Assemble the full data yourself from get_scenarios / get_plan / get_coverage / benchmark_run, then render it with an appropriate client rendering skill. If you have no suitable rendering skill available, ASK THE USER how they want it presented (e.g. an HTML artifact, a Claude Doc, or Markdown) and render in that form. Whatever the format, include the FULL information below — never downgrade to a plain scenario list.
 
 The report MUST have these 10 QA/QC sections, in order:
 1. Summary & test environment — system + requirement summary, Test Scope, Test Service / methodology, and the test environment: the ticket link, attachments and every source resource as a clickable link or a download.

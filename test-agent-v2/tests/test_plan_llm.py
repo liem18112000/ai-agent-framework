@@ -361,3 +361,23 @@ def test_steps_list_coerces_string_order_and_sorts():
     steps = sorted(by_id["s1"], key=lambda s: s.order)   # the real sort that used to raise TypeError
     assert [s.order for s in steps] == [1, 2, 3]
     assert all(isinstance(s.order, int) for s in steps)
+
+
+def test_assemble_plan_dedupes_methodology_and_uses_word_boundaries():
+    """Root-cause guard: methodology must be deduped (one decision per tier) and matched on word
+    boundaries so 'ui' doesn't get picked out of words like 'build'/'require' in the chosen text."""
+    from common.testplan.models import PlanDecision
+    from test_plan_definition.define.plan import assemble_plan
+
+    pack = PlanPack(pack=Pack(context_id="run-x", seed="LUZ-1"), understanding="X.")
+    decisions = [
+        PlanDecision(id="d1", kind="decision", context_id="run-x", question_id="q1",
+                     round="methodology", chosen="API-level tests for the bulk", statement="m1"),
+        PlanDecision(id="d2", kind="decision", context_id="run-x", question_id="q2",
+                     round="methodology", chosen="api again, plus one e2e smoke and a ui check",
+                     statement="m2"),
+        PlanDecision(id="d3", kind="decision", context_id="run-x", question_id="q3",
+                     round="methodology", chosen="we build and require these", statement="m3"),
+    ]
+    plan = assemble_plan(pack, decisions, conf="medium")
+    assert plan.methodology == ["api", "e2e", "ui"]   # deduped, order-preserved, no 'ui' from 'build'

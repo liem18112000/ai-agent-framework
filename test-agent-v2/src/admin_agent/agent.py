@@ -9,6 +9,7 @@ SQLAlchemy run off the event loop (`_bank_call` for the sync handlers; the DB ha
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Awaitable, Callable
 
 from common import admin
@@ -86,11 +87,21 @@ class AdminRouter(RouterAgent):
         return await self._bank_call(lambda b: admin.get_run(b, rest))
 
     async def _record_artifact(self, rest: str) -> str:
-        parts = rest.split(maxsplit=3)
-        if len(parts) < 3:
+        rest = rest.strip()
+        if rest.startswith("{"):  # structured payload from the bridge — spaces in fields are safe
+            try:
+                d = json.loads(rest)
+            except ValueError:
+                return "record-artifact: bad JSON payload."
+            ctx, kind, url, title = d.get("ctx", ""), d.get("kind", ""), d.get("url", ""), d.get("title", "")
+        else:  # backward-compat / manual send_raw: positional (kind + url must be space-free)
+            parts = rest.split(maxsplit=3)
+            if len(parts) < 3:
+                return "Usage: record-artifact <ctx> <kind> <url> [title...]."
+            ctx, kind, url = parts[0], parts[1], parts[2]
+            title = parts[3] if len(parts) > 3 else ""
+        if not (ctx and url):
             return "Usage: record-artifact <ctx> <kind> <url> [title...]."
-        ctx, kind, url = parts[0], parts[1], parts[2]
-        title = parts[3] if len(parts) > 3 else ""
         return await self._bank_call(lambda b: admin.record_artifact(b, ctx, kind, url, title))
 
     async def _compare_runs(self, rest: str) -> str:

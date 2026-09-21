@@ -43,7 +43,7 @@ Return ONLY JSON: {"priority_services":[...],"clusters":[[...]]}.
 
 _REPORT_BODY = """You are the QA Testing Agent PUBLISHING THE KNOWLEDGE-PREVIEW REPORT for run $context_id. This is an OPTIONAL step run AFTER refine and BEFORE the user approves the pack: a preview so the user can see what the agent understands, the gaps, and the hard concepts (with diagrams) before deciding whether to approve.
 
-Prefer the deterministic renderer: run `python tools/build_knowledge_report.py $context_id knowledge.html` (test-agent-v2 repo; same STORE_BACKEND / GCS_BUCKET env as the agents), then publish knowledge.html with the Artifact tool. It reads the persisted pack + understanding + open questions (+ optional PQS). Only if that tool is unreachable, author the SAME sections yourself from get_understanding / get_questions / search_memory / get_note.
+The agent STORES the full pack — it does not emit HTML. Assemble the full data yourself from get_understanding / get_questions / search_memory / get_note (+ the Pack Quality Score if evaluate_pack ran), then render it with an appropriate client rendering skill. If you have no suitable rendering skill available, ASK THE USER how they want it presented (e.g. an HTML artifact, a Claude Doc, or Markdown) and render in that form. Whatever the format, include the FULL information below.
 
 The report summarizes & visualizes how the agent understands the testing, with these 6 sections:
 1. Understanding & summary — the ticket + what the agent now understands is to be tested (from the confirmed understanding); clickable ticket / source links.

@@ -19,7 +19,7 @@ class TpdRouter(RouterAgent):
     async def _run_async_impl(self, ctx):
         text = self.read(ctx).strip()
         low = text.lower()
-        if low.startswith(("get-test-plan", "get-scenarios", "get-coverage")):
+        if low.startswith(("get-test-plan", "get-scenarios", "get-coverage", "get-deliverables")):
             yield self.reply(await asyncio.to_thread(self._read_helper, text))
             return
         if low.startswith("approve"):
@@ -50,7 +50,8 @@ class TpdRouter(RouterAgent):
             return {}, {}
 
     def _read_helper(self, text: str) -> str:
-        ctx_id = present.extract_ctx(text, ("get-test-plan", "get-scenarios", "get-coverage"))
+        ctx_id = present.extract_ctx(
+            text, ("get-test-plan", "get-scenarios", "get-coverage", "get-deliverables"))
         if not ctx_id:
             return "Provide a context id."
         bank = build_bank()
@@ -60,7 +61,32 @@ class TpdRouter(RouterAgent):
         if low.startswith("get-coverage"):
             return store.read_coverage_md(bank, ctx_id) or \
                 f"No coverage matrix yet for {ctx_id} — run implement first."
+        if low.startswith("get-deliverables"):
+            return self._deliverables(bank, ctx_id)
         return store.read_scenarios_md(bank, ctx_id) or f"No scenarios yet for {ctx_id} — run implement first."
+
+    def _deliverables(self, bank, ctx_id: str) -> str:
+        """The downloadable deliverable payloads for a run — the persisted .feature, the test-data
+        fixtures (JSON), and every diagram-as-code (mermaid) — each in its own fenced block so the
+        client can split them into downloadable files. Read-only; run implement first."""
+        import json
+
+        feature = store.read_feature(bank, ctx_id, ctx_id)
+        test_data = store.read_test_data(bank, ctx_id)
+        diagrams = store.read_diagrams(bank, ctx_id)
+        if not (feature or test_data or diagrams):
+            return f"No deliverables yet for {ctx_id} — run implement first."
+        out = [f"# Deliverables — {ctx_id}",
+               "Each block below is a downloadable file (filename in the heading)."]
+        if feature:
+            out += [f"\n## {ctx_id}.feature", "```gherkin", feature.rstrip(), "```"]
+        if test_data:
+            fixtures = {td.id.split(":")[-1]: td.spec for td in test_data}
+            out += [f"\n## {ctx_id}-testdata.json", "```json",
+                    json.dumps(fixtures, ensure_ascii=False, indent=2), "```"]
+        for name, mmd in diagrams.items():
+            out += [f"\n## {name}.mmd", "```mermaid", mmd.rstrip(), "```"]
+        return "\n".join(out)
 
     def _approve(self, ctx, text: str) -> str:
         ctx_id = present.extract_ctx(text, ("approve",)) or ctx.session.id

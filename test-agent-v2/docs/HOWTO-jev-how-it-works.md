@@ -75,6 +75,14 @@ The distinction from Choice is the whole point of having a separate primitive: *
 
 **Noul** answers a yes/no question — but it does **not** hand you a boolean. It returns a **single calibrated probability that the statement is true**, in `0..1`. In the example, the statement *"This needs attention now"* over a state of *"deploy failed 2x; customers seeing 500s"* comes back as **`P(true) = 0.93`**.
 
+### What "Noul" actually is
+
+"Noul" is simply **TypeSafe's name for JEV's third question primitive** — the two others being `Choice` and `Score`. It is a coined product term (the public docs don't spell out an etymology, so don't read meaning into the letters); what matters is the *kind of thing* it denotes:
+
+- **A probabilistic boolean.** A Noul question is one binary *proposition* — a statement that is either true or false — and the answer is the **probability that it's true**, not the truth value itself. Think of it as `Noul(statement) ≈ P(statement is true | state)`: you supply the statement, JEV supplies the probability, you supply the threshold. It's the Bernoulli (`0..1`) cousin of `Choice` (a distribution over discrete options) and `Score` (a magnitude on an ordered scale).
+- **One number, and that number *is* the confidence.** Unlike `Choice`/`Score`, a Noul verdict has **no separate `confidence` field** — the response is just `{ "noul": 0.93 }`. For a binary truth claim the probability already carries the certainty: a value near `0.5` means "genuinely unsure", and distance from `0.5` toward `0` or `1` *is* how confident the model is. (Because it's calibrated — §6 — a `0.93` really does mean right ~93% of the time.)
+- **When to reach for it.** Use `Noul` when the decision is a **single true/false proposition** and you want to keep the uncertainty and own the cut-off — guardrails, "is this risky/urgent/complete?" checks, semantic yes/no judges. Reach for `Choice` instead when there are three-plus mutually-exclusive options, and for `Score` when the answer is an ordered magnitude rather than a truth claim.
+
 The **threshold is yours**, not the model's. You draw the line — say `0.80` — and everything at or above it is TRUE, everything below is FALSE. `0.93 ≥ 0.80`, so this one fires: act on it.
 
 This is the difference the diagram argues on the left: an **LLM emits `true` / `false`** (or a made-up "confident" boolean), and you *cannot tell a 0.51 call from a 0.99 one* — the uncertainty is thrown away before you see it. Noul returns the probability, so **you own the risk tolerance** per call site (a guardrail might gate at 0.99; a cheap pre-filter at 0.5), and — crucially — the number is **calibrated**, which is what makes that threshold trustworthy. That is the next section. Noul is the primitive behind the semantic yes/no judges and the "enough info, stop asking?" interrogation gates in our system.
