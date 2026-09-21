@@ -184,6 +184,15 @@ def read_coverage(bank, context_id: str) -> dict:
     return bank.get_json(f"{_dir(context_id)}/coverage.json", {})
 
 
+def write_diagrams(bank, context_id: str, diagrams: dict) -> str:
+    """Persist diagram-as-code (mermaid) for the run: ``{name: mermaid_source}``."""
+    return bank.put_json(f"{_dir(context_id)}/diagrams.json", diagrams)
+
+
+def read_diagrams(bank, context_id: str) -> dict:
+    return bank.get_json(f"{_dir(context_id)}/diagrams.json", {})
+
+
 def link_session(bank, a2a_context_id: str, pack_context_id: str) -> str:
     return bank.put_json(f"{ROOT}/test-plan/_sessions/{_slug(a2a_context_id)}.json",
                          {"pack_context_id": pack_context_id})

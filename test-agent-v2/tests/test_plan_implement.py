@@ -110,3 +110,36 @@ async def test_implement_falls_back_to_heuristic_on_invalid_llm_output(pack_buck
     kinds = {s.kind for s in res.scenarios}
     assert {HAPPY, NEGATIVE, BOUNDARY, ERROR} <= kinds
     assert any("happy path" in s.title for s in res.scenarios)
+
+
+async def test_implement_persists_diagrams_and_deliverables_tool_returns_them(pack_bucket):
+    """The agent persists diagram-as-code (mermaid) and exposes feature + test-data + diagrams as
+    downloadable deliverables via the router's get-deliverables path."""
+    from test_plan_definition.agent import build_root_agent
+
+    bank = MemoryBank(pack_bucket)
+    await _confirmed(bank)
+    await implement_plan(bank, "run-6f2a")
+
+    diagrams = store.read_diagrams(bank, "run-6f2a")
+    assert "architecture" in diagrams and "scope" in diagrams
+    assert all(v.startswith("flowchart") for v in diagrams.values())
+
+    text = build_root_agent()._deliverables(bank, "run-6f2a")
+    assert "run-6f2a.feature" in text and "```gherkin" in text          # feature file, downloadable
+    assert "run-6f2a-testdata.json" in text and "```json" in text        # test-data fixtures
+    assert "architecture.mmd" in text and "```mermaid" in text           # diagram-as-code
+
+
+def test_build_diagrams_is_grounded_and_mermaid():
+    from common.testplan.diagrams import build_diagrams
+    from common.testplan.models import TestPlan
+
+    plan = TestPlan(id="p", context_id="c", methodology=["api"], metrics=["end-state"],
+                    scope=["import lands"], out_of_scope=["auth"])
+    cov = {"units": [{"id": "ep:/import", "category": "endpoint", "title": "POST /import"}],
+           "gaps": [{"id": "r1", "title": "req", "missing": ["negative"]}]}
+    d = build_diagrams(plan, cov)
+    assert set(d) == {"architecture", "scope", "gaps"}
+    assert "POST /import" in d["architecture"] and "excluded" in d["scope"]
+    assert set(build_diagrams(plan, {})) == {"architecture", "scope"}     # gaps drop when none
