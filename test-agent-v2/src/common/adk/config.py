@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,6 +12,10 @@ class Config(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="TESTAGENT_", env_file=".env", extra="ignore")
     model_backend: str = "claude"
     default_max_tokens: int = 128000  # the model's output ceiling; a lower cap truncates mid-JSON
+    # Decision backend for the JEV cascade (get_decision_provider). "" = OFF = existing LLM behaviour.
+    # Aliased so it reads the bare TPD_DECISION_BACKEND env (not the TESTAGENT_ prefix), matching the
+    # other TPD_* runtime flags.
+    decision_backend: str = Field(default="", validation_alias="TPD_DECISION_BACKEND")
 
 
 def get_config() -> Config:

@@ -56,6 +56,21 @@ def build_semantic_judge():
     """A ``judge(question, text) -> bool`` backed by the provider's Claude-on-Vertex, or ``None``
     when unconfigured. Consumed by ``metrics.rubrics.judge_semantic`` in the judged tier ONLY —
     never by ``evaluate_pack`` (V2)."""
+    from common.adk.providers import get_decision_provider
+
+    # JEV cascade (rollout step 1): a configured decision backend serves the yes/no as a typed Noul,
+    # fronting the LLM. Default OFF (TPD_DECISION_BACKEND unset) → None → the exact LLM path below.
+    decision = get_decision_provider()
+    if decision is not None and decision.is_configured():
+        def judge(question: str, text: str) -> bool:
+            verdict = decision.noul(state=text, statement=question)
+            probs = verdict.probs or {}
+            # Accept at P(true) >= 0.5. probs is authoritative when present; else fall back to the bool
+            # value. confidence is advisory here — a bool sink can't carry it (see the assured cascade).
+            p_true = probs.get("true", probs.get("yes", float(bool(verdict.value))))
+            return p_true >= 0.5
+        return judge
+
     if not provider_configured():
         return None
     provider = get_provider()
