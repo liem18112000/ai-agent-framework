@@ -368,3 +368,67 @@ def test_forget_memory_never_targets_session_or_config_tables():
     assert "_RUNTIME_TABLES" not in src               # not sessions/events/tasks
     for forbidden in ("adk_internal_metadata", "prompt_template", "prompt_version"):
         assert forbidden not in src or "does NOT touch" in src or "preserved" in src
+
+
+class _ConflictOnceStore:
+    """Wrap a store so the first upload_from_string raises CASConflict — exercises the retry loop."""
+    def __init__(self, inner):
+        self.inner, self.tripped = inner, False
+
+    def get_blob(self, p):
+        return self.inner.get_blob(p)
+
+    def iter_blobs(self, prefix):
+        return self.inner.iter_blobs(prefix)
+
+    def delete(self, p):
+        return self.inner.delete(p)
+
+    def blob(self, p):
+        real, outer = self.inner.blob(p), self
+
+        class _B:
+            name = real.name
+            download_as_text = real.download_as_text
+            generation = property(lambda self: real.generation)
+
+            def upload_from_string(self, data, content_type=None, if_generation_match=None):
+                if not outer.tripped:
+                    outer.tripped = True
+                    from common.store.object_store import CASConflict
+                    raise CASConflict("injected")
+                return real.upload_from_string(data, content_type, if_generation_match)
+        return _B()
+
+
+def test_record_artifact_retries_on_cas_conflict():
+    bank = MemoryBank(_ConflictOnceStore(InMemoryObjectStore()))
+    msg = admin.record_artifact(bank, "run-cas", "report", "https://x/r", title="T")
+    assert "Recorded" in msg                                   # retry succeeded despite the conflict
+    arts = admin.get_artifacts(bank, "run-cas")
+    assert len(arts) == 1 and arts[0]["url"] == "https://x/r"
+
+
+async def test_record_artifact_router_json_args_preserve_spaces(monkeypatch):
+    import admin_agent.agent as agentmod
+    bank = _bank()
+    monkeypatch.setattr(agentmod, "build_bank", lambda: bank)
+    router = agentmod.build_root_agent()
+    payload = json.dumps({"ctx": "run-json", "kind": "knowledge (ePost)",
+                          "url": "https://x/a b c", "title": "My Title"})
+    out = await router._record_artifact(payload)
+    assert "Recorded" in out
+    arts = admin.get_artifacts(bank, "run-json")
+    assert arts and arts[0]["kind"] == "knowledge (ePost)"     # space in kind survives (was mis-split)
+    assert arts[0]["url"] == "https://x/a b c" and arts[0]["title"] == "My Title"
+
+
+async def test_record_artifact_router_positional_still_works(monkeypatch):
+    import admin_agent.agent as agentmod
+    bank = _bank()
+    monkeypatch.setattr(agentmod, "build_bank", lambda: bank)
+    router = agentmod.build_root_agent()
+    out = await router._record_artifact("run-pos report https://x/p My plan report")
+    assert "Recorded" in out
+    arts = admin.get_artifacts(bank, "run-pos")
+    assert arts[0]["url"] == "https://x/p" and arts[0]["title"] == "My plan report"

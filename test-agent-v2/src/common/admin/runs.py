@@ -212,16 +212,22 @@ def _artifacts_path(context_id: str) -> str:
     return f"{_RUNS_PREFIX}{_slug(context_id)}/artifacts.json"
 
 
-def _read_artifacts(bank, context_id: str) -> list[dict]:
-    """The raw append-order list (oldest first). Missing or corrupt blob → empty (never raises)."""
+def _read_artifacts_with_gen(bank, context_id: str) -> tuple[list[dict], int]:
+    """The raw append-order list (oldest first) plus the blob generation for a CAS write. Missing or
+    corrupt blob → ([], 0)."""
     blob = _store(bank).get_blob(_artifacts_path(context_id))
     if blob is None:
-        return []
+        return [], 0
     try:
         items = json.loads(blob.download_as_text())
     except (ValueError, TypeError):
-        return []
-    return items if isinstance(items, list) else []
+        items = []
+    return (items if isinstance(items, list) else []), blob.generation
+
+
+def _read_artifacts(bank, context_id: str) -> list[dict]:
+    """The raw append-order list (oldest first). Missing or corrupt blob → empty (never raises)."""
+    return _read_artifacts_with_gen(bank, context_id)[0]
 
 
 def get_artifacts(bank, context_id: str) -> list[dict]:
@@ -236,16 +242,23 @@ def record_artifact(bank, context_id: str, kind: str, url: str, title: str = "")
     unless a tool records it here — this is that tool. Retrieve later via `get_run` / `get_artifacts`.
     """
     from common.adk.events import now  # lazy: keep this admin module framework-neutral / offline
+    from common.store.object_store import CASConflict
 
     if not context_id or not url:
         return "record-artifact: need a context_id and a url."
-    items = _read_artifacts(bank, context_id)
-    if any(a.get("url") == url for a in items):
-        return f"Artifact already recorded for {context_id}: {url}"
-    items.append({"kind": kind or "report", "url": url, "title": title or "", "ts": now()})
-    _store(bank).blob(_artifacts_path(context_id)).upload_from_string(
-        json.dumps(items, ensure_ascii=False), "application/json")
-    return f"Recorded {kind or 'report'} artifact for {context_id} ({len(items)} total): {url}"
+    path = _artifacts_path(context_id)
+    for _ in range(6):  # CAS retry: concurrent record_artifact calls must not lost-update the registry
+        items, gen = _read_artifacts_with_gen(bank, context_id)
+        if any(a.get("url") == url for a in items):
+            return f"Artifact already recorded for {context_id}: {url}"
+        items.append({"kind": kind or "report", "url": url, "title": title or "", "ts": now()})
+        try:
+            _store(bank).blob(path).upload_from_string(
+                json.dumps(items, ensure_ascii=False), "application/json", if_generation_match=gen)
+        except CASConflict:
+            continue  # another writer won the race — re-read the current list and retry
+        return f"Recorded {kind or 'report'} artifact for {context_id} ({len(items)} total): {url}"
+    return f"record-artifact: write contended for {context_id}, please retry."
 
 
 # --- F3: cross-run comparison (COMMON vs DIVERGENT) ------------------------------------------------

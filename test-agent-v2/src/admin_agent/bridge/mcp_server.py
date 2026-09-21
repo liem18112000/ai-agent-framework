@@ -33,7 +33,9 @@ def register_tools(mcp: MCPServer, session: BridgeSession) -> dict:
         run so it can be retrieved later via get_run. Reports are published client-side, so the agent
         never sees the URL unless this records it. `kind` is a free label (knowledge/plan/report);
         the registry is append-only and deduplicated on url."""
-        arg = f"record-artifact {context_id} {kind} {url} {title}".rstrip()
+        # JSON-encode the structured args — a space in kind/url/title must not mis-split downstream.
+        arg = "record-artifact " + json.dumps(
+            {"ctx": context_id, "kind": kind, "url": url, "title": title})
         return (await session.ask(arg, context_id=context_id)).text
 
     @mcp.tool()
