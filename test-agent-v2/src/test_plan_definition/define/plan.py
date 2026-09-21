@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 
 from common.adk.model import complete, model_configured
@@ -33,7 +34,8 @@ def assemble_plan(
     for d in decisions:
         ref = d.source_refs[0] if d.source_refs else ""
         if d.round == "methodology":
-            methodology += [m for m in _METHODOLOGIES if m in d.chosen.lower()]
+            # word-boundary match (so "ui" doesn't hit "build"), deduped below across all decisions
+            methodology += [m for m in _METHODOLOGIES if re.search(rf"\b{m}\b", d.chosen.lower())]
         elif d.round == "scope":
             (out_of_scope if d.chosen.lower().startswith("out of") else scope).append(ref or d.chosen)
         elif d.round == "metrics":
@@ -48,7 +50,8 @@ def assemble_plan(
                          | {n.id for n in plan_pack.pack.insights})
     ctx = plan_pack.context_id
     return TestPlan(
-        id=f"plan:{ctx}", context_id=ctx, methodology=methodology or ["api"], scope=scope,
+        id=f"plan:{ctx}", context_id=ctx,
+        methodology=list(dict.fromkeys(methodology)) or ["api"], scope=scope,
         out_of_scope=out_of_scope, metrics=metrics, test_design=test_design, confidence=conf,
         source_refs=source_refs, status=status, created_at=now, run_id=run_id,
     )
