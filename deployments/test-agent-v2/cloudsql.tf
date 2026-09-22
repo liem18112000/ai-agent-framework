@@ -191,6 +191,18 @@ locals {
       { name = "TPD_GEN_MODE", value = "workers" },
       { name = "TPD_WORKER_TOPIC", value = "tpd-gen-batches" },
     ] : [],
+    # Keep ONE implement assured round under the Cloud Run 600s request ceiling (generate + judge).
+    # Untuned, a single round (slow ~10-min sync generate + 3 serial judge samples) blew the timeout and
+    # implement_plan returned 0 scenarios (seen live 2026-09-22). With healthy workers this stays fast +
+    # full quality; on the sync fallback the bounds make generate degrade to the heuristic IN TIME rather
+    # than hang. To trade latency for higher-quality LLM generation, raise the service `timeout` (Cloud
+    # Run max 3600s) AND these together + the client's read timeout.
+    [
+      { name = "TPD_JUDGE_SAMPLES", value = "1" },     # median-of-3 -> single draw: -2 serial judge calls
+      { name = "TPD_ASSURED_MAX_ITERS", value = "1" }, # one generate+judge round per implement
+      { name = "TPD_GEN_TIMEOUT_S", value = "300" },   # per generate call self-bounds -> heuristic fallback
+      { name = "TPD_WORKER_BUDGET_S", value = "300" }, # worker-result poll cap
+    ],
   )
 
   # JEV decision cascade (docs/PLAN-jev-apply-v2.md), injected into TPD (Score gate) + TEV (Noul judge).
