@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LUZ-159312 — Test Plan</title>
+<style>
+  :root {
+    --paper:#ffffff; --ground:#eef0f6; --panel:#f6f7fb; --ink:#191d2e; --ink-soft:#3d4460;
+    --muted:#6a7291; --line:#dde0ec; --line-strong:#c3c8dc;
+    --brand:#4658c4; --brand-weak:#4658c414;
+    --happy:#1f8a5b; --happy-bg:#1f8a5b16;
+    --neg:#b5791a; --neg-bg:#b5791a16;
+    --err:#c0433f; --err-bg:#c0433f14;
+    --perf:#2f7fb5; --perf-bg:#2f7fb515;
+    --integ:#7a4bc0; --integ-bg:#7a4bc015;
+    --code-bg:#f1f2f9; --shadow:0 1px 2px #191d2e0a,0 6px 20px #191d2e0e;
+    --mono:ui-monospace,"SF Mono","Cascadia Code","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){:root{
+    --paper:#141826; --ground:#0c0f18; --panel:#181d2c; --ink:#e6e9f3; --ink-soft:#b6bdd2;
+    --muted:#818aa6; --line:#262c40; --line-strong:#374060;
+    --brand:#8b9cf0; --brand-weak:#8b9cf020;
+    --happy:#48c98c; --happy-bg:#48c98c1c; --neg:#e6a94a; --neg-bg:#e6a94a1c;
+    --err:#e97b78; --err-bg:#e97b781c; --perf:#5cb2e6; --perf-bg:#5cb2e61c;
+    --integ:#b291ea; --integ-bg:#b291ea1c;
+    --code-bg:#0e1320; --shadow:0 1px 2px #0006,0 8px 26px #0004;
+  }}
+  :root[data-theme="light"]{--paper:#ffffff;--ground:#eef0f6;--panel:#f6f7fb;--ink:#191d2e;--ink-soft:#3d4460;--muted:#6a7291;--line:#dde0ec;--line-strong:#c3c8dc;--brand:#4658c4;--brand-weak:#4658c414;--happy:#1f8a5b;--happy-bg:#1f8a5b16;--neg:#b5791a;--neg-bg:#b5791a16;--err:#c0433f;--err-bg:#c0433f14;--perf:#2f7fb5;--perf-bg:#2f7fb515;--integ:#7a4bc0;--integ-bg:#7a4bc015;--code-bg:#f1f2f9;--shadow:0 1px 2px #191d2e0a,0 6px 20px #191d2e0e;}
+  :root[data-theme="dark"]{--paper:#141826;--ground:#0c0f18;--panel:#181d2c;--ink:#e6e9f3;--ink-soft:#b6bdd2;--muted:#818aa6;--line:#262c40;--line-strong:#374060;--brand:#8b9cf0;--brand-weak:#8b9cf020;--happy:#48c98c;--happy-bg:#48c98c1c;--neg:#e6a94a;--neg-bg:#e6a94a1c;--err:#e97b78;--err-bg:#e97b781c;--perf:#5cb2e6;--perf-bg:#5cb2e61c;--integ:#b291ea;--integ-bg:#b291ea1c;--code-bg:#0e1320;--shadow:0 1px 2px #0006,0 8px 26px #0004;}
+
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);line-height:1.6;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1020px;margin:0 auto;padding:0 24px 100px;}
+
+  header{padding:52px 0 26px;border-bottom:1px solid var(--line);}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--brand);font-weight:600;margin:0 0 14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+  .eyebrow .v{color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 9px;letter-spacing:.04em;}
+  h1{font-size:clamp(28px,4.5vw,42px);line-height:1.08;letter-spacing:-.02em;margin:0 0 14px;text-wrap:balance;}
+  h1 .lo{color:var(--muted);font-weight:400;}
+  .lede{font-size:17px;color:var(--ink-soft);max-width:70ch;margin:0 0 22px;}
+  .meta{display:flex;flex-wrap:wrap;gap:8px;font-family:var(--mono);font-size:12.5px;}
+  .meta .m{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 10px;color:var(--ink-soft);}
+  .meta .m b{color:var(--ink);}
+
+  h2{font-size:13px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.15em;color:var(--muted);font-weight:600;margin:56px 0 20px;padding-bottom:10px;border-bottom:1px solid var(--line);}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  @media (max-width:720px){.grid2{grid-template-columns:1fr;}}
+  .panel{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:18px 20px;box-shadow:var(--shadow);}
+  .panel h3{margin:0 0 12px;font-size:15px;display:flex;align-items:center;gap:8px;}
+  .panel h3 .dot{width:9px;height:9px;border-radius:50%;flex:none;}
+  .dot.in{background:var(--happy);} .dot.out{background:var(--err);}
+  ul.tight{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:9px;}
+  ul.tight li{font-size:14px;color:var(--ink-soft);padding-left:18px;position:relative;}
+  ul.tight li::before{content:"";position:absolute;left:0;top:9px;width:6px;height:6px;border-radius:50%;background:var(--line-strong);}
+  ul.tight li b{color:var(--ink);}
+  .tid{font-family:var(--mono);font-size:12.5px;color:var(--brand);}
+  .rationale{font-size:12.5px;color:var(--muted);font-style:italic;}
+
+  .callout{background:var(--brand-weak);border:1px solid var(--brand);border-left-width:3px;border-radius:8px;padding:13px 16px;font-size:13.5px;color:var(--ink-soft);margin-top:16px;}
+  .callout b{color:var(--brand);}
+
+  .strip{display:flex;flex-wrap:wrap;gap:10px;}
+  .strip .item{flex:1 1 220px;background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:14px 16px;box-shadow:var(--shadow);}
+  .strip .item .k{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin-bottom:6px;}
+  .strip .item .val{font-size:14px;color:var(--ink);}
+
+  /* scenario cards */
+  .sec-head{display:flex;align-items:baseline;gap:12px;margin:34px 0 14px;flex-wrap:wrap;}
+  .sec-head h3{font-size:19px;margin:0;letter-spacing:-.01em;}
+  .sec-head .count{font-family:var(--mono);font-size:12px;color:var(--muted);}
+  .cards{display:flex;flex-direction:column;gap:12px;}
+  .sc{background:var(--paper);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;}
+  .sc .top{display:flex;align-items:center;gap:10px;padding:13px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap;}
+  .sc .id{font-family:var(--mono);font-weight:700;font-size:13px;color:var(--ink);}
+  .sc .title{font-size:15px;font-weight:600;flex:1;min-width:180px;}
+  .type{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.04em;padding:2px 9px;border-radius:999px;white-space:nowrap;text-transform:uppercase;}
+  .type.happy{color:var(--happy);background:var(--happy-bg);border:1px solid var(--happy);}
+  .type.neg{color:var(--neg);background:var(--neg-bg);border:1px solid var(--neg);}
+  .type.err{color:var(--err);background:var(--err-bg);border:1px solid var(--err);}
+  .type.perf{color:var(--perf);background:var(--perf-bg);border:1px solid var(--perf);}
+  .type.integ{color:var(--integ);background:var(--integ-bg);border:1px solid var(--integ);}
+  .bdd{padding:14px 18px;display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:14px;}
+  .bdd .kw{font-family:var(--mono);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--brand);padding-top:1px;}
+  .bdd .txt{color:var(--ink-soft);}
+  .bdd .txt code{font-family:var(--mono);font-size:.85em;background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:0 5px;}
+  .pass{margin:0;padding:11px 18px;border-top:1px dashed var(--line);background:var(--happy-bg);font-size:13px;color:var(--ink-soft);display:flex;gap:9px;}
+  .pass b{color:var(--happy);font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;padding-top:1px;}
+  .ref{font-family:var(--mono);font-size:11.5px;color:var(--muted);}
+
+  .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);}
+  table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:560px;background:var(--paper);}
+  th,td{text-align:left;padding:11px 15px;border-bottom:1px solid var(--line);vertical-align:top;}
+  thead th{background:var(--panel);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;}
+  tbody tr:last-child td{border-bottom:0;}
+  td .tid{font-weight:700;}
+
+  .note{font-size:13px;color:var(--muted);margin-top:14px;}
+  .footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted);font-family:var(--mono);}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <p class="eyebrow">Test Plan <span class="v">v1 · 2026-09-04</span> <span class="v">context test-luz159312</span></p>
+  <h1>LUZ-159312 <span class="lo">— Functional &amp; Performance Test Plan</span></h1>
+  <p class="lede">Validation plan for the <b>credit-card-only billing</b> feature for <b>individual</b> ePost clients (parent LUZ-156281): QR-bill fallback removed, +10/+20-day retry &amp; dunning, failed-charge notifications, and second-fail widget deactivation + NSA cancellation. Authored from the approved insight pack, grounded on the <span class="tid">luz_finance</span> code graph.</p>
+  <div class="meta">
+    <span class="m"><b>Feature</b> credit-only billing (individual clients)</span>
+    <span class="m"><b>Codebase</b> axonivy-prod/luz_finance</span>
+    <span class="m"><b>Coverage</b> happy + negative + boundary + error</span>
+    <span class="m"><b>Env</b> staging / sandbox</span>
+  </div>
+</header>
+
+<h2>Scope</h2>
+<div class="grid2">
+  <div class="panel">
+    <h3><span class="dot in"></span> In scope</h3>
+    <ul class="tight">
+      <li><b>Functional</b> — main-flow + feature tickets: <span class="tid">LUZ-159443, LUZ-159860, LUZ-159861, LUZ-159862, LUZ-159498</span></li>
+      <li><b>LUZ-156281 (parent)</b> — <b>full-depth</b> coverage (happy + negative/boundary/error), not just regression — it's a core billing/compliance flow</li>
+      <li><b>Performance</b> — the credit-only <b>invoice-run operation</b>, end-to-end through the real owned downstream services (AccountRestClient, AccountingGroupRestClient …)</li>
+      <li><b>Integration</b> — real owned services (luz_finance / luz_docs / luz_jsonstore); third parties handled by those services in sandbox</li>
+      <li><b>Recorded PRs</b> — inspect the 17 dev-panel PRs/commits to confirm they map to the scoped tickets; supporting evidence only, no new test targets</li>
+    </ul>
+  </div>
+  <div class="panel">
+    <h3><span class="dot out"></span> Out of scope</h3>
+    <ul class="tight">
+      <li><b>Enrichment</b> (LUZ-Docs enricher trigger, <code>enrichmentstatus</code>) — a <b>company-tenant</b> concern, unrelated to this individual-client story. Removed entirely, incl. its API cases, Playwright smoke, and jsonstore dual-verification. <span class="rationale">Correction applied this session.</span></li>
+      <li><b>File-import concurrency</b> — <span class="tid">LUZ-158446 / LUZ-158390</span>: not the performance target (the title is misleading); removed. <span class="rationale">Perf targets the credit-only operation, not file import.</span></li>
+      <li><b>Android dev testing</b> — <span class="tid">LUZ-158824 / LUZ-158241</span>: separate, independently-scheduled QA track; non-blocking.</li>
+    </ul>
+  </div>
+</div>
+<div class="callout"><b>Two corrections</b> drove this scope: (1) the performance work targets the <b>credit-only billing operation processes</b>, not file-import concurrency; (2) enrichment applies only to the <b>company tenant</b>, so it is entirely out of this individual-client plan.</div>
+
+<h2>Methodology &amp; environment</h2>
+<div class="strip">
+  <div class="item"><div class="k">Functional approach</div><div class="val">End-to-end, flow-based — drive real controller chains (Accounting → Banking → Dunning) rather than isolated per-controller tests.</div></div>
+  <div class="item"><div class="k">API / contract</div><div class="val">API-level tests against owned endpoints as the primary regression gate for contract behaviour.</div></div>
+  <div class="item"><div class="k">UI (Playwright)</div><div class="val">Webclient v2.0 UI happy-path / reachability smoke only — <b>advisory/parallel</b> this cycle, not release-blocking (gating next cycle).</div></div>
+  <div class="item"><div class="k">Third parties</div><div class="val">Tests call the owned downstream services for real; those services handle card/notification/ePost calls internally in sandbox.</div></div>
+  <div class="item"><div class="k">Safety</div><div class="val">No real charges/notifications — enforced by sandbox config (test keys, isolated tenant) + a <b>test-mode flag</b> asserted in the response (trust-by-environment).</div></div>
+  <div class="item"><div class="k">Performance bar</div><div class="val">Pass = the invoice-run job completes and produces a job-report (processed/failed counts). No numeric SLA this cycle — "faster than before" is directional/informational.</div></div>
+</div>
+
+<h2>Functional scenarios</h2>
+
+<div class="sec-head"><h3>Happy path</h3><span class="count">FT-01</span></div>
+<div class="cards">
+  <div class="sc">
+    <div class="top"><span class="id">FT-01</span><span class="title">Successful credit-card charge on the invoice run</span><span class="type happy">Happy</span></div>
+    <div class="bdd">
+      <span class="kw">Given</span><span class="txt">an individual client with a valid credit card and an outstanding invoice</span>
+      <span class="kw">When</span><span class="txt">the credit-only invoice run executes end-to-end</span>
+      <span class="kw">Then</span><span class="txt">the card is charged in sandbox, the invoice is marked <code>paid</code>, and no retry / dunning / notification is triggered</span>
+    </div>
+    <p class="pass"><b>Pass</b> invoice status = paid in luz_finance; job-report records it as processed; response carries the sandbox test-mode flag. <span class="ref">LUZ-159443 · 156281</span></p>
+  </div>
+</div>
+
+<div class="sec-head"><h3>Negative — payment failure, retry &amp; dunning</h3><span class="count">FT-02 – FT-04</span></div>
+<div class="cards">
+  <div class="sc">
+    <div class="top"><span class="id">FT-02</span><span class="title">First charge failure schedules a retry and notifies the client</span><span class="type neg">Negative</span></div>
+    <div class="bdd">
+      <span class="kw">Given</span><span class="txt">an individual client whose card charge fails on the invoice run</span>
+      <span class="kw">When</span><span class="txt">the run processes the failure</span>
+      <span class="kw">Then</span><span class="txt">a retry is scheduled at <b>+10 days</b>, the invoice reflects "charge failed / retry pending", and a <b>first-fail email + Post-app push</b> are sent (sandbox)</span>
+    </div>
+    <p class="pass"><b>Pass</b> retry scheduled at +10d; notification records created for both channels (test-mode); no widget deactivation yet. <span class="ref">LUZ-156281 · 159860</span></p>
+  </div>
+  <div class="sc">
+    <div class="top"><span class="id">FT-03</span><span class="title">Second charge failure escalates to dunning + second-fail actions</span><span class="type neg">Negative</span></div>
+    <div class="bdd">
+      <span class="kw">Given</span><span class="txt">a client whose <b>+10-day retry charge also fails</b></span>
+      <span class="kw">When</span><span class="txt">the run processes the second failure</span>
+      <span class="kw">Then</span><span class="txt">the <b>+20-day dunning</b> step is scheduled, the <b>widget is deactivated</b>, and <b>NSA (subscription) cancellation</b> is initiated</span>
+    </div>
+    <p class="pass"><b>Pass</b> dunning at +20d; widget state = deactivated; NSA cancellation request recorded. <span class="ref">LUZ-156281 · 159861/862</span></p>
+  </div>
+  <div class="sc">
+    <div class="top"><span class="id">FT-04</span><span class="title">Successful retry clears the dunning path (recovery)</span><span class="type happy">Happy</span></div>
+    <div class="bdd">
+      <span class="kw">Given</span><span class="txt">a client whose +10-day retry charge <b>succeeds</b></span>
+      <span class="kw">When</span><span class="txt">the run processes the successful retry</span>
+      <span class="kw">Then</span><span class="txt">the invoice is marked <code>paid</code>, the retry/dunning schedule is cleared, and no deactivation or cancellation occurs</span>
+    </div>
+    <p class="pass"><b>Pass</b> invoice paid; no +20d dunning; widget active; no NSA cancellation. <span class="ref">LUZ-156281</span></p>
+  </div>
+</div>
+
+<div class="sec-head"><h3>Boundary — retry/dunning timing</h3><span class="count">FT-05</span></div>
+<div class="cards">
+  <div class="sc">
+    <div class="top"><span class="id">FT-05</span><span class="title">Retry / dunning fire exactly at the +10 and +20 day marks</span><span class="type neg">Boundary</span></div>
+    <div class="bdd">
+      <span class="kw">Given</span><span class="txt">a failed charge with retry at +10d and dunning at +20d</span>
+      <span class="kw">When</span><span class="txt">the scheduler is evaluated at day 9, 10, 11 and day 19, 20, 21</span>
+      <span class="kw">Then</span><span class="txt">the retry fires on day 10 (not 9/11) and dunning on day 20 (not 19/21) — no off-by-one</span>
+    </div>
+    <p class="pass"><b>Pass</b> retry/dunning trigger on the exact boundary day; timezone/DST-safe. <span class="ref">LUZ-156281</span></p>
+  </div>
+</div>
+
+<div class="sec-head"><h3>Error &amp; edge</h3><span class="count">FT-06 – FT-08</span></div>
+<div class="cards">
+  <div class="sc">
+    <div class="top"><span class="id">FT-06</span><span class="title">QR-bill fallback is removed</span><span class="type err">Error/Edge</span></div>
+    <div class="bdd">
+      <span class="kw">Given</span><span class="txt">the credit-only billing feature and a client with a missing/invalid card</span>
+      <span class="kw">When</span><span class="txt">the invoice run cannot charge the card</span>
+      <span class="kw">Then</span><span class="txt">the system does <b>not</b> fall back to a QR-bill; it follows the failure → retry/dunning path instead</span>
+    </div>
+    <p class="pass"><b>Pass</b> no QR-bill artifact generated; failure path taken. <span class="ref">LUZ-156281</span></p>
+  </div>
+  <div class="sc">
+    <div class="top"><span class="id">FT-07</span><span class="title">Processor auth/authorization failure is handled gracefully</span><span class="type err">Error</span></div>
+    <div class="bdd">
+      <span class="kw">Given</span><span class="txt">the payment processor returns an auth/authorization error (sandbox)</span>
+      <span class="kw">When</span><span class="txt">the run processes the response</span>
+      <span class="kw">Then</span><span class="txt">it is handled as a charge failure (retry path) without aborting the whole run; the job-report records it as <code>failed</code></span>
+    </div>
+    <p class="pass"><b>Pass</b> run continues; failure counted in job-report; retry scheduled. <span class="ref">LUZ-159443</span></p>
+  </div>
+  <div class="sc">
+    <div class="top"><span class="id">FT-08</span><span class="title">Tenant scoping — feature applies to individual clients only</span><span class="type err">Edge</span></div>
+    <div class="bdd">
+      <span class="kw">Given</span><span class="txt">a <b>company-tenant</b> client (not individual)</span>
+      <span class="kw">When</span><span class="txt">the credit-only invoice run is evaluated</span>
+      <span class="kw">Then</span><span class="txt">this individual-client feature does not apply; enrichment (a company-tenant concern) is <b>not</b> exercised by this plan</span>
+    </div>
+    <p class="pass"><b>Pass</b> company-tenant clients are excluded from the credit-only individual flow. <span class="ref">tenant correction</span></p>
+  </div>
+</div>
+
+<div class="sec-head"><h3>Notifications &amp; account actions</h3><span class="count">FT-09 – FT-11</span></div>
+<div class="cards">
+  <div class="sc">
+    <div class="top"><span class="id">FT-09</span><span class="title">First-fail notification: email + Post-app push, sent once</span><span class="type neg">Negative</span></div>
+    <div class="bdd">
+      <span class="kw">Given</span><span class="txt">a first charge failure for a client</span>
+      <span class="kw">When</span><span class="txt">the failure and its +10 retry (still pending) are processed</span>
+      <span class="kw">Then</span><span class="txt">exactly one email and one Post-app push are sent on the first failure — not re-sent for the same cycle</span>
+    </div>
+    <p class="pass"><b>Pass</b> one email + one push per failure cycle (test-mode); no duplicate sends. <span class="ref">LUZ-156281 · 159860</span></p>
+  </div>
+  <div class="sc">
+    <div class="top"><span class="id">FT-10</span><span class="title">Second-fail widget deactivation</span><span class="type neg">Negative</span></div>
+    <div class="bdd">
+      <span class="kw">Given</span><span class="txt">a client with two consecutive charge failures</span>
+      <span class="kw">When</span><span class="txt">the second failure is processed</span>
+      <span class="kw">Then</span><span class="txt">the client's widget is deactivated</span>
+    </div>
+    <p class="pass"><b>Pass</b> widget state transitions to deactivated after the 2nd failure. <span class="ref">LUZ-156281 · 159861</span></p>
+  </div>
+  <div class="sc">
+    <div class="top"><span class="id">FT-11</span><span class="title">Second-fail NSA subscription cancellation</span><span class="type neg">Negative</span></div>
+    <div class="bdd">
+      <span class="kw">Given</span><span class="txt">a client with two consecutive charge failures</span>
+      <span class="kw">When</span><span class="txt">the second failure is processed</span>
+      <span class="kw">Then</span><span class="txt">an NSA (subscription) cancellation is initiated for the client</span>
+    </div>
+    <p class="pass"><b>Pass</b> NSA cancellation request recorded/dispatched (sandbox). <span class="ref">LUZ-156281 · 159862</span></p>
+  </div>
+</div>
+
+<h2>Performance scenarios</h2>
+<div class="cards">
+  <div class="sc">
+    <div class="top"><span class="id">PT-01</span><span class="title">Credit-only invoice-run completes and reports under a representative load</span><span class="type perf">Performance</span></div>
+    <div class="bdd">
+      <span class="kw">Given</span><span class="txt">a representative batch of individual-client invoices in staging</span>
+      <span class="kw">When</span><span class="txt">the credit-only invoice run executes end-to-end through the owned downstream services</span>
+      <span class="kw">Then</span><span class="txt">the job runs to completion and produces a job-report with <b>processed vs. failed</b> counts</span>
+    </div>
+    <p class="pass"><b>Pass</b> job completes + report produced (no numeric SLA this cycle). <span class="ref">credit-only operation · run-completed metric</span></p>
+  </div>
+  <div class="sc">
+    <div class="top"><span class="id">PT-02</span><span class="title">Baseline timing capture — "faster than before" (informational)</span><span class="type perf">Performance</span></div>
+    <div class="bdd">
+      <span class="kw">Given</span><span class="txt">the invoice-run executed end-to-end (incl. real cross-service latency via downstream services)</span>
+      <span class="kw">When</span><span class="txt">run duration and dependency-client call timings are captured from the job-report</span>
+      <span class="kw">Then</span><span class="txt">record them as a baseline for a directional "faster than before" comparison — <b>informational, not gated</b> this cycle</span>
+    </div>
+    <p class="pass"><b>Pass</b> baseline captured &amp; logged; flagged informational (convert to a gate once an SLA exists). <span class="ref">metrics decision</span></p>
+  </div>
+</div>
+
+<h2>Integration scenarios</h2>
+<div class="cards">
+  <div class="sc">
+    <div class="top"><span class="id">IT-01</span><span class="title">Downstream services own the third-party calls; no real charge/notification</span><span class="type integ">Integration</span></div>
+    <div class="bdd">
+      <span class="kw">Given</span><span class="txt">tests calling the owned downstream services (luz_finance …) for real in sandbox</span>
+      <span class="kw">When</span><span class="txt">a charge or notification is triggered by the flow</span>
+      <span class="kw">Then</span><span class="txt">the downstream services handle the third-party (processor / notification / ePost) requests, and no real charge/notification occurs</span>
+    </div>
+    <p class="pass"><b>Pass</b> response carries a sandbox/test-mode flag; verified at the owned-service boundary. <span class="ref">trust-by-environment</span></p>
+  </div>
+  <div class="sc">
+    <div class="top"><span class="id">IT-02</span><span class="title">Owned-datastore state is correct after the run</span><span class="type integ">Integration</span></div>
+    <div class="bdd">
+      <span class="kw">Given</span><span class="txt">a completed credit-only run</span>
+      <span class="kw">When</span><span class="txt">the luz_finance datastore is inspected</span>
+      <span class="kw">Then</span><span class="txt">invoice / dunning / retry state is persisted correctly and consistently with the job-report</span>
+    </div>
+    <p class="pass"><b>Pass</b> persisted state matches expected outcomes for each processed invoice. <span class="ref">end-to-end verification</span></p>
+  </div>
+</div>
+
+<h2>Entry / exit criteria &amp; risks</h2>
+<div class="grid2">
+  <div class="panel">
+    <h3>Entry criteria</h3>
+    <ul class="tight">
+      <li>Staging/sandbox env up with <b>test API keys</b> + an isolated test tenant (no live routing)</li>
+      <li>Owned downstream services (luz_finance / luz_docs / luz_jsonstore) deployed to staging</li>
+      <li>Test data: individual clients with valid + invalid cards, outstanding invoices, seed-able retry/dunning states</li>
+      <li>Recorded-PR inspection complete (the 17 dev-panel PRs mapped to scoped tickets)</li>
+    </ul>
+  </div>
+  <div class="panel">
+    <h3>Exit criteria &amp; risks</h3>
+    <ul class="tight">
+      <li><b>Exit:</b> all functional scenarios pass; PT-01 job completes with report; IT-01 confirms no real charges/notifications</li>
+      <li><b>Exit:</b> negative/boundary/error cases green for the billing/compliance flows</li>
+      <li><b>Risk:</b> sandbox uptime / rate limits can make runs slow or flaky; a failure may be ambiguous (our bug vs sandbox)</li>
+      <li><b>Risk:</b> Playwright is advisory only — a red UI run does not gate release this cycle</li>
+    </ul>
+  </div>
+</div>
+
+<h2>Traceability</h2>
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Area</th><th>Scenarios</th><th>Primary tickets</th><th>Pass basis</th></tr></thead>
+  <tbody>
+    <tr><td>Functional — billing flow</td><td class="tid">FT-01, FT-04, FT-06</td><td class="tid">LUZ-159443, 156281</td><td>invoice status + failure/fallback path</td></tr>
+    <tr><td>Retry / dunning</td><td class="tid">FT-02, FT-03, FT-05</td><td class="tid">LUZ-156281, 159860/61/62</td><td>+10/+20 schedule, dunning, boundary</td></tr>
+    <tr><td>Notifications</td><td class="tid">FT-02, FT-09</td><td class="tid">LUZ-156281, 159860</td><td>email + push, sent once (test-mode)</td></tr>
+    <tr><td>Account actions</td><td class="tid">FT-10, FT-11</td><td class="tid">LUZ-156281, 159861/62</td><td>widget deactivation + NSA cancellation</td></tr>
+    <tr><td>Error handling</td><td class="tid">FT-07, FT-08</td><td class="tid">LUZ-159443, tenant</td><td>graceful failure; individual-tenant only</td></tr>
+    <tr><td>Performance</td><td class="tid">PT-01, PT-02</td><td class="tid">credit-only operation</td><td>run-completed + baseline (informational)</td></tr>
+    <tr><td>Integration</td><td class="tid">IT-01, IT-02</td><td class="tid">luz_finance / downstream</td><td>no real charge; datastore state</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="note">14 functional + 2 performance + 2 integration scenarios. Coverage bar: happy + negative + boundary + error, weighted to the billing/compliance-critical paths (retry, dunning, deactivation, cancellation).</p>
+
+<div class="footer">LUZ-159312 test plan · v1 · authored from approved insight pack test-luz159312 · grounded on axonivy-prod/luz_finance · enrichment + file-import + Android out of scope</div>
+</div>
+</body>
+</html>

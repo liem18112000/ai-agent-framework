@@ -1,0 +1,9 @@
+# Store text as LF and check out LF everywhere — Docker/Cloud Build run on Linux,
+# and the shell scripts (*.sh) break if they carry CRLF.
+* text=auto eol=lf
+
+# Binary assets — never normalize.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary

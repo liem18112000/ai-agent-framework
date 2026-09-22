@@ -1,0 +1,26 @@
+{
+  "issues": {
+    "LUZ-601": {
+      "key": "LUZ-601",
+      "fields": {
+        "summary": "Umbrella: trigger enricher regarding document type",
+        "description": {"type": "doc", "version": 1, "content": []},
+        "issuelinks": [],
+        "parent": {"key": "LUZ-600"}
+      }
+    },
+    "LUZ-600": {
+      "key": "LUZ-600",
+      "fields": {
+        "summary": "Epic: document enrichment writes enrichmentstatus to the jsonstore",
+        "description": {"type": "doc", "version": 1, "content": []},
+        "issuelinks": []
+      }
+    }
+  },
+  "remote_links": {},
+  "pages": {},
+  "jql": {},
+  "cql": {},
+  "dev_status": {}
+}

@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agentic QA Evaluation Framework</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #16233d;
+    --ink-soft: #45526b;
+    --paper: #f6f7f4;
+    --panel: #ffffff;
+    --line: #d8dcd2;
+    --verify: #1e7f4f;
+    --signal: #b97b0e;
+    --trace: #2b4a8f;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Instrument Sans", sans-serif;
+    font-size: 16px;
+    line-height: 1.55;
+  }
+  .page { max-width: 860px; margin: 0 auto; padding: 48px 24px 96px; }
+
+  /* Header */
+  header { border-bottom: 3px solid var(--ink); padding-bottom: 28px; margin-bottom: 40px; }
+  .doc-id { font-size: 14px; color: var(--ink-soft); margin-bottom: 14px; }
+  h1 {
+    font-family: "Spectral", serif;
+    font-weight: 600;
+    font-size: clamp(30px, 5.5vw, 46px);
+    line-height: 1.08;
+    letter-spacing: -0.01em;
+    margin-bottom: 14px;
+  }
+  .lede {
+    font-family: "Spectral", serif;
+    font-size: 18px;
+    color: var(--ink-soft);
+    max-width: 60ch;
+  }
+
+  /* Sections */
+  section { margin-bottom: 52px; }
+  h2 {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.005em;
+    margin-bottom: 6px;
+  }
+  .section-note {
+    color: var(--ink-soft);
+    font-size: 15px;
+    margin-bottom: 20px;
+    max-width: 62ch;
+  }
+  h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+
+  /* Three layers */
+  .layers { display: grid; gap: 14px; }
+  .layer {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--trace);
+    padding: 18px 20px;
+  }
+  .layer:nth-child(2) { border-left-color: var(--signal); }
+  .layer:nth-child(3) { border-left-color: var(--verify); }
+  .layer h3 { display: flex; align-items: baseline; gap: 10px; }
+  .layer h3 em { font-style: normal; font-size: 13px; font-weight: 500; color: var(--ink-soft); }
+  .layer ul { list-style: none; margin-top: 10px; }
+  .layer li {
+    padding: 5px 0 5px 18px;
+    position: relative;
+    font-size: 15px;
+    color: var(--ink-soft);
+  }
+  .layer li::before {
+    content: "";
+    position: absolute; left: 0; top: 13px;
+    width: 8px; height: 2px; background: currentColor; opacity: .55;
+  }
+  .layer li strong { color: var(--ink); font-weight: 600; }
+
+  /* Weight bar — the hero of the rubric */
+  .weight-bar {
+    display: flex;
+    height: 58px;
+    border: 1px solid var(--ink);
+    margin: 22px 0 10px;
+    overflow: hidden;
+  }
+  .weight-seg {
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 0 10px;
+    color: #fff;
+    min-width: 0;
+  }
+  .weight-seg span { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .weight-seg b { font-size: 15px; font-weight: 700; }
+  .w-ground { background: #2b4a8f; }
+  .w-cover  { background: #3d5da3; }
+  .w-exec   { background: #1e7f4f; }
+  .w-edge   { background: #3e9a6b; }
+  .w-prio   { background: #b97b0e; }
+  .w-red    { background: #8a6220; }
+  .weight-caption { font-size: 13.5px; color: var(--ink-soft); margin-bottom: 22px; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); font-size: 14.5px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  th { font-size: 13px; font-weight: 600; color: var(--ink-soft); border-bottom: 2px solid var(--ink); }
+  tr:last-child td { border-bottom: none; }
+  td.mode-judge { color: var(--trace); font-weight: 600; }
+  td.mode-compute { color: var(--verify); font-weight: 600; }
+
+  /* Code block */
+  pre {
+    background: var(--ink);
+    color: #dfe6f2;
+    padding: 20px 22px;
+    overflow-x: auto;
+    font-size: 13.5px;
+    line-height: 1.6;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  pre .c { color: #8ea3c7; }
+  pre .k { color: #9fd6b6; }
+
+  /* Two-column dataset decisions */
+  .decisions { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px; }
+  .decision {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 16px 18px;
+  }
+  .decision h3 { font-size: 15px; }
+  .decision p { font-size: 14px; color: var(--ink-soft); margin-top: 6px; }
+
+  /* Calibration — a real sequence, so numbered */
+  ol.protocol { counter-reset: step; list-style: none; margin-top: 16px; }
+  ol.protocol li {
+    counter-increment: step;
+    display: flex; gap: 16px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 15px;
+  }
+  ol.protocol li::before {
+    content: counter(step);
+    flex: 0 0 30px; height: 30px;
+    display: grid; place-items: center;
+    background: var(--ink); color: #fff;
+    font-weight: 700; font-size: 14px;
+    border-radius: 50%;
+  }
+  ol.protocol li:last-child { border-bottom: none; }
+
+  /* Canary callout */
+  .canary {
+    border: 2px solid var(--signal);
+    background: #fdf6e8;
+    padding: 18px 20px;
+    margin-top: 32px;
+  }
+  .canary h3 { color: var(--signal); }
+  .canary p { font-size: 15px; margin-top: 6px; }
+
+  footer { margin-top: 60px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 13.5px; color: var(--ink-soft); }
+
+  @media (max-width: 620px) {
+    .decisions { grid-template-columns: 1fr; }
+    .weight-seg span { display: none; }
+    .weight-seg { padding: 0 6px; }
+    th, td { padding: 8px 10px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <div class="doc-id">Evaluation spec · Agentic QA · test-plan generation</div>
+  <h1>Measuring an agentic QA system, end to end</h1>
+  <p class="lede">Three layers of metrics, a golden dataset schema, a weighted judge rubric, and the calibration protocol that keeps the judge honest.</p>
+</header>
+
+<section>
+  <h2>The three-layer framework</h2>
+  <p class="section-note">A plan can look excellent and still catch no bugs — so measure the artifact, the process that produced it, and what it does in the field.</p>
+  <div class="layers">
+    <div class="layer">
+      <h3>Layer 1 — Test plan quality <em>the output</em></h3>
+      <ul>
+        <li><strong>Requirement coverage</strong> — % of requirements with ≥1 mapped test case (traceability matrix)</li>
+        <li><strong>Groundedness</strong> — no hallucinated features, endpoints, or preconditions</li>
+        <li><strong>Precision &amp; recall</strong> — against human-written reference plans in the golden set</li>
+        <li><strong>Scenario depth</strong> — happy / edge / negative / boundary mix</li>
+        <li><strong>Executability</strong> — clear steps, expected results, test data specified</li>
+        <li><strong>Redundancy rate</strong> — near-duplicate cases via semantic clustering</li>
+        <li><strong>Prioritization quality</strong> — rank correlation vs a QA lead's ordering</li>
+      </ul>
+    </div>
+    <div class="layer">
+      <h3>Layer 2 — Agent process <em>how it got there</em></h3>
+      <ul>
+        <li>Tool call success rate, retries, error recovery</li>
+        <li>Latency and token cost per plan</li>
+        <li>Grounding rate — claims traceable to documents actually retrieved</li>
+        <li>Consistency — variance across N runs on the same input</li>
+      </ul>
+    </div>
+    <div class="layer">
+      <h3>Layer 3 — Downstream effectiveness <em>the real signal</em></h3>
+      <ul>
+        <li><strong>Defect detection rate</strong> — bugs found when the plan is executed, vs baseline</li>
+        <li><strong>Mutation score</strong> — % of seeded bugs the plan's cases catch; closest thing to ground truth</li>
+        <li><strong>Human acceptance</strong> — cases kept as-is vs edited vs deleted</li>
+        <li><strong>Escaped defects</strong> — production bugs in areas the plan claimed to cover</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Golden dataset schema</h2>
+  <p class="section-note">Each entry pairs one feature input with a human-authored reference plan. Start with 20–30 entries, stratified by difficulty and domain.</p>
+<pre>{
+  <span class="k">"id"</span>: "golden-014",
+  <span class="k">"input"</span>: {
+    "feature_spec": "...",          <span class="c">// exactly what the agent receives</span>
+    "context_docs": ["api.md"],
+    "constraints": "regression only"
+  },
+  <span class="k">"reference_plan"</span>: {
+    "test_cases": [ { "case_id", "requirement_refs",
+                      "type", "priority", "steps",
+                      "expected", "tags" } ],
+    "must_have_cases": ["TC-01", "TC-04"],   <span class="c">// recall measured here</span>
+    "nice_to_have_cases": ["TC-07"],
+    "known_traps": [ "Agent tends to invent /v2 endpoint",
+                     "Spec ambiguous on null handling" ]
+  },
+  <span class="k">"metadata"</span>: { "difficulty", "domain",
+                 "author", "spec_ambiguity" }
+}</pre>
+  <div class="decisions">
+    <div class="decision">
+      <h3>Split must-have from nice-to-have</h3>
+      <p>Recall on must-haves is the headline number. Counting every case equally rewards padding.</p>
+    </div>
+    <div class="decision">
+      <h3>Include ambiguous specs on purpose</h3>
+      <p>A good agent asks or flags assumptions; a bad one hallucinates. This is where agents differ most.</p>
+    </div>
+    <div class="decision">
+      <h3>Encode known traps</h3>
+      <p>Every hallucination pattern found in production becomes a regression check in a golden entry.</p>
+    </div>
+    <div class="decision">
+      <h3>Match cases semantically</h3>
+      <p>Pair agent cases to reference cases by embedding similarity or an LLM matcher — never by ID — then compute recall and precision on the pairs.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Judge rubric and scoring weights</h2>
+  <p class="section-note">Score each dimension 1–5 in a separate judge call — batching dimensions causes halo effects. Force evidence (quotes from the spec, or "NOT FOUND") before the score. Only three of six dimensions need the LLM judge; compute the rest deterministically.</p>
+
+  <div class="weight-bar" role="img" aria-label="Composite score weights: Groundedness 25%, Coverage 25%, Executability 20%, Edge depth 15%, Prioritization 10%, Redundancy 5%">
+    <div class="weight-seg w-ground" style="flex:25"><span>Groundedness</span><b>25%</b></div>
+    <div class="weight-seg w-cover" style="flex:25"><span>Coverage</span><b>25%</b></div>
+    <div class="weight-seg w-exec" style="flex:20"><span>Executability</span><b>20%</b></div>
+    <div class="weight-seg w-edge" style="flex:15"><span>Edge depth</span><b>15%</b></div>
+    <div class="weight-seg w-prio" style="flex:10"><span>Priority</span><b>10%</b></div>
+    <div class="weight-seg w-red" style="flex:5"><b>5%</b></div>
+  </div>
+  <p class="weight-caption">Composite score weights. Blue segments are judged by LLM against groundedness anchors; green and amber segments mix judged and computed dimensions as shown below.</p>
+
+  <table>
+    <thead>
+      <tr><th>Dimension</th><th>Weight</th><th>Method</th><th>How</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Groundedness</td><td>25%</td><td class="mode-judge">Judge</td><td>Anchored 1–5 scale; 5 = every element exists in the spec, 1 = tests nonexistent functionality</td></tr>
+      <tr><td>Requirement coverage</td><td>25%</td><td class="mode-compute">Compute</td><td>Traceability matrix, case → requirement</td></tr>
+      <tr><td>Executability / clarity</td><td>20%</td><td class="mode-judge">Judge</td><td>Could a human or automation run it as written</td></tr>
+      <tr><td>Edge / negative depth</td><td>15%</td><td class="mode-judge">Judge</td><td>Boundary and failure-mode coverage</td></tr>
+      <tr><td>Prioritization</td><td>10%</td><td class="mode-compute">Compute</td><td>Rank correlation (Kendall's tau) vs reference</td></tr>
+      <tr><td>Redundancy</td><td>5%</td><td class="mode-compute">Compute</td><td>Semantic similarity clustering</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>Calibration protocol</h2>
+  <p class="section-note">Run this before trusting any judge score, and repeat it whenever the judge model or prompt changes.</p>
+  <ol class="protocol">
+    <li>Two humans score ~30 plans on the same rubric, independently.</li>
+    <li>Compute human–human agreement (Cohen's kappa). If humans disagree, fix the rubric wording — not the judge.</li>
+    <li>Require judge–human kappa ≥ human–human kappa minus ~0.1.</li>
+    <li>Pin the judge model version; re-calibrate on any change to model or prompt.</li>
+  </ol>
+
+  <div class="canary">
+    <h3>Canary plans</h3>
+    <p>Keep a small set of deliberately bad plans — hallucinated features, missing negative tests — and score them every run. If the judge ever rates a canary above 3, the eval pipeline is broken, not the agent.</p>
+  </div>
+</section>
+
+<footer>
+  Agentic QA evaluation framework · Golden set → weighted rubric → calibrated judge → downstream validation
+</footer>
+
+</div>
+</body>
+</html>

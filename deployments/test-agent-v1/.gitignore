@@ -1,0 +1,9 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+# Real config / secrets — never commit; keep terraform.tfvars.example instead
+terraform.tfvars
+*.auto.tfvars
+# Keep the provider lock file (.terraform.lock.hcl) committed.

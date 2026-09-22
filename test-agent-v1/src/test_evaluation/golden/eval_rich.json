@@ -1,0 +1,15 @@
+{
+  "seed": "LUZ-501",
+  "fixture": "eval_rich",
+  "depth": 1,
+  "shape": "rich, well-linked ticket — happy path, high recall",
+  "expected_trajectory": ["gather", "refine", "approve"],
+  "expected_tiers": [],
+  "expected_fetch_kinds": ["jira"],
+  "relevant_node_ids": ["jira:LUZ-501", "jira:LUZ-502", "jira:LUZ-503"],
+  "must_not_retrieve_ids": [],
+  "key_entities": ["luz_finance", "LUZ-502", "LUZ-503", "Dunning", "Sandbox"],
+  "min_recall": 1.0,
+  "min_precision": 1.0,
+  "reference_understanding": "LUZ-501 adds a credit-only invoice charge job for luz_finance; it persists dunning status (LUZ-502) and verifies the sandbox payment processor test-mode result (LUZ-503). Passing means the stored invoice status is correct and no real charge occurred."
+}

@@ -1,0 +1,9 @@
+{
+  "id": "49662787598",
+  "title": "Perf comparison figures",
+  "body": {
+    "storage": {
+      "value": "<p>Traces back to <a href=\"https://axonivy.atlassian.net/browse/LUZ-158390\">the story</a>. Dashboard: <ri:url ri:value=\"https://grafana.example.com/d/abc/earchive\" />.</p>"
+    }
+  }
+}

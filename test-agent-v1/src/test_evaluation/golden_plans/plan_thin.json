@@ -1,0 +1,20 @@
+{
+  "seed": "LUZ-601",
+  "fixture": "eval_thin",
+  "depth": 1,
+  "shape": "thin container (title only) — tests Interrogation Yield + that the plan recovers the parent epic",
+  "expected_trajectory": ["define_plan", "approve_plan", "implement_plan"],
+  "expected_rounds": ["methodology", "scope", "metrics"],
+  "in_scope_ids": ["jira:LUZ-601", "jira:LUZ-600"],
+  "must_not_scope_ids": [],
+  "behaviours": [
+    {"id": "jira:LUZ-601", "expected_partitions": ["happy", "negative"],
+     "fault_classes": ["enricher triggered for the wrong document type"]},
+    {"id": "jira:LUZ-600", "expected_partitions": ["happy"],
+     "fault_classes": ["enrichmentstatus not written to the jsonstore"]}
+  ],
+  "pass_criteria": ["enrichment writes enrichmentstatus to the jsonstore for the document type"],
+  "min_ac_recall": 0.5,
+  "min_scope_precision": 0.8,
+  "reference_brief": "Test the enricher trigger by document type (LUZ-601); the parent epic LUZ-600 carries the real spec — enrichment writes enrichmentstatus to the jsonstore. Passing means the status is written for the right document type."
+}

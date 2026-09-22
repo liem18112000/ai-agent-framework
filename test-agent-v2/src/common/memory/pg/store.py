@@ -1,0 +1,210 @@
+"""PgMemoryStore (M0/M1 skeleton) — the pgvector recall tier behind the MemoryBank."""
+
+from __future__ import annotations
+
+import json
+
+from common.memory.pg.schema import HNSW_INDEX_SQL, SCHEMA_SQL
+from common.monitoring import get_logger
+
+log = get_logger("memory.pg")
+
+
+def _vec_literal(vec: list[float]) -> str:
+    """pgvector text form: '[0.1,0.2,...]' (bound as a param, cast to vector in SQL)."""
+    return "[" + ",".join(repr(float(x)) for x in vec) + "]"
+
+
+def rrf_fuse(*ranked_lists: list[str], k0: int = 60, limit: int = 40) -> list[str]:
+    """Reciprocal-rank fusion of ranked id lists → ids by descending fused score (id-asc tie-break)."""
+    scores: dict[str, float] = {}
+    for ids in ranked_lists:
+        for rank, node_id in enumerate(ids, start=1):
+            scores[node_id] = scores.get(node_id, 0.0) + 1.0 / (k0 + rank)
+    return sorted(scores, key=lambda i: (-scores[i], i))[:limit]
+
+
+class PgMemoryStore:
+    def __init__(self, engine) -> None:
+        self._engine = engine
+        self._ready = False
+        self._lock = None
+
+    async def _ensure(self) -> None:
+        """Apply the schema once per process (idempotent CREATE … IF NOT EXISTS statements).
+        Serialised by a lock so concurrent first callers don't race the CREATE EXTENSION/INDEX
+        (which would raise `tuple concurrently updated` and silently degrade recall — MEM-02)."""
+        if self._ready:
+            return
+        import asyncio
+
+        from sqlalchemy import text
+        if self._lock is None:  # no await before assignment → safe under cooperative asyncio
+            self._lock = asyncio.Lock()
+        async with self._lock:
+            if self._ready:
+                return
+            async with self._engine.begin() as conn:
+                for stmt in (s.strip() for s in SCHEMA_SQL.split(";") if s.strip()):
+                    await conn.execute(text(stmt))
+            self._ready = True
+
+    async def upsert_node(self, node: dict) -> None:
+        """INSERT … ON CONFLICT (id) DO UPDATE — a note/insight projection (no embedding here)."""
+        from sqlalchemy import text
+        await self._ensure()
+        params = {c: node.get(c) for c in ("id", "type", "kind", "title", "synopsis", "source_url", "content_uri",
+                                            "run_id", "context_id", "scope", "status", "confidence", "meta")}
+        sql = text(
+            "INSERT INTO memory_node (id,type,kind,title,synopsis,source_url,content_uri,"
+            "run_id,context_id,scope,status,confidence,meta) VALUES "
+            "(:id,:type,:kind,:title,:synopsis,:source_url,:content_uri,"
+            ":run_id,:context_id,:scope,:status,:confidence,CAST(:meta AS jsonb)) "
+            "ON CONFLICT (id) DO UPDATE SET "
+            "type=EXCLUDED.type, kind=EXCLUDED.kind, title=EXCLUDED.title, synopsis=EXCLUDED.synopsis, "
+            "source_url=EXCLUDED.source_url, content_uri=EXCLUDED.content_uri, run_id=EXCLUDED.run_id, "
+            "context_id=EXCLUDED.context_id, scope=EXCLUDED.scope, status=EXCLUDED.status, "
+            "confidence=EXCLUDED.confidence, meta=memory_node.meta || EXCLUDED.meta"
+        )
+        params["meta"] = json.dumps(params["meta"] or {})
+        async with self._engine.begin() as conn:
+            await conn.execute(sql, params)
+
+    async def upsert_edges(self, edges: list[dict]) -> None:
+        from sqlalchemy import text
+        if not edges:
+            return
+        await self._ensure()
+        sql = text(
+            "INSERT INTO memory_edge (source_id,target,type,origin,in_scope) "
+            "VALUES (:source_id,:target,:type,:origin,:in_scope) "
+            "ON CONFLICT (source_id,target) DO UPDATE SET "
+            "type=EXCLUDED.type, origin=EXCLUDED.origin, in_scope=EXCLUDED.in_scope"
+        )
+        rows = [{"source_id": e.get("source_id"), "target": e.get("target"), "type": e.get("type"),
+                 "origin": e.get("origin"), "in_scope": bool(e.get("in_scope"))} for e in edges]
+        async with self._engine.begin() as conn:
+            await conn.execute(sql, rows)
+
+    async def set_embedding(self, node_id: str, vec: list[float], *, emb_hash: str = "") -> None:
+        from sqlalchemy import text
+        await self._ensure()
+        sql = text("UPDATE memory_node SET embedding = CAST(:emb AS vector), "
+                   "meta = coalesce(meta, '{}'::jsonb) || jsonb_build_object('emb_hash', CAST(:h AS text)) "
+                   "WHERE id = :id")
+        async with self._engine.begin() as conn:
+            await conn.execute(sql, {"emb": _vec_literal(vec), "h": emb_hash, "id": node_id})
+
+    async def embedding_fresh(self, node_id: str, emb_hash: str) -> bool:
+        """True if the row already has an embedding computed from this exact text (content-hash match)."""
+        from sqlalchemy import text
+        await self._ensure()
+        sql = text("SELECT (embedding IS NOT NULL AND meta->>'emb_hash' = :h) "
+                   "FROM memory_node WHERE id = :id")
+        async with self._engine.connect() as conn:
+            return bool((await conn.execute(sql, {"h": emb_hash, "id": node_id})).scalar())
+
+    async def ensure_ann_index(self) -> None:
+        """Build the HNSW ANN index (idempotent); kept out of the lazy `_ensure` DDL since it can be slow."""
+        from sqlalchemy import text
+        await self._ensure()
+        async with self._engine.begin() as conn:
+            await conn.execute(text(HNSW_INDEX_SQL))
+
+    async def search(self, *, q_text: str = "", q_embed: list[float] | None = None, types: list[str] | None = None, scopes: list[str] | None = None, k: int = 40) -> list[dict]:
+        """Hybrid recall (M4): vector-nearest `embedding <=> q` ∪ full-text `tsv @@ q`, RRF-fused."""
+        await self._ensure()
+        scopes = scopes or ["context", "shared"]
+        if not q_text and q_embed is None:
+            return await self._recent(types, scopes, k)  # MEM-03: browse only on an EMPTY query
+        vec_ids = await self._vector_ids(q_embed, types, scopes, k) if q_embed else []
+        lex_ids = await self._lexical_ids(q_text, types, scopes, k) if q_text else []
+        if not vec_ids and not lex_ids:
+            return []  # MEM-03: a real query that matched nothing → no false-positive recent nodes
+        return await self._hydrate(rrf_fuse(vec_ids, lex_ids, limit=k))
+
+    @staticmethod
+    def _scope_type_where(types, params) -> str:
+        clauses = ["status = 'active'", "scope = ANY(:scopes)"]
+        if types:
+            clauses.append("type = ANY(:types)")
+            params["types"] = types
+        return " AND ".join(clauses)
+
+    async def _vector_ids(self, q_embed, types, scopes, k) -> list[str]:
+        from sqlalchemy import text
+        params = {"scopes": scopes, "k": k, "q": _vec_literal(q_embed)}
+        where = self._scope_type_where(types, params)
+        # MEM-03: drop non-positive-similarity hits. `<=>` is cosine distance in [0,2]; < 1.0 keeps
+        # only cosine sim > 0 (orthogonal/opposite vectors are never a real semantic match).
+        sql = text(f"SELECT id FROM memory_node WHERE {where} AND embedding IS NOT NULL "
+                   f"AND (embedding <=> CAST(:q AS vector)) < 1.0 "
+                   f"ORDER BY embedding <=> CAST(:q AS vector) LIMIT :k")
+        async with self._engine.connect() as conn:
+            return [r[0] for r in (await conn.execute(sql, params)).all()]
+
+    async def _lexical_ids(self, q_text, types, scopes, k) -> list[str]:
+        from sqlalchemy import text
+        params = {"scopes": scopes, "k": k, "t": q_text}
+        where = self._scope_type_where(types, params)
+        sql = text(f"SELECT id FROM memory_node WHERE {where} AND tsv @@ plainto_tsquery('simple', :t) "
+                   f"ORDER BY ts_rank(tsv, plainto_tsquery('simple', :t)) DESC LIMIT :k")
+        async with self._engine.connect() as conn:
+            return [r[0] for r in (await conn.execute(sql, params)).all()]
+
+    async def _recent(self, types, scopes, k) -> list[dict]:
+        from sqlalchemy import text
+        params = {"scopes": scopes, "k": k}
+        where = self._scope_type_where(types, params)
+        sql = text(f"SELECT id, type, title FROM memory_node WHERE {where} ORDER BY created_at DESC LIMIT :k")
+        async with self._engine.connect() as conn:
+            return [dict(r) for r in (await conn.execute(sql, params)).mappings().all()]
+
+    async def _hydrate(self, ids: list[str]) -> list[dict]:
+        from sqlalchemy import text
+        if not ids:
+            return []
+        sql = text("SELECT id, type, title FROM memory_node WHERE id = ANY(:ids)")
+        async with self._engine.connect() as conn:
+            by_id = {r["id"]: dict(r) for r in (await conn.execute(sql, {"ids": ids})).mappings().all()}
+        return [by_id[i] for i in ids if i in by_id]
+
+    async def grounded(self, candidate: str, anchors: set[str]) -> bool:
+        """B5 structural gate as SQL: candidate IS an anchor or shares an edge with one."""
+        from sqlalchemy import text
+        if not anchors or candidate in anchors:
+            return True
+        await self._ensure()
+        sql = text("SELECT EXISTS (SELECT 1 FROM memory_edge WHERE "
+                   "(source_id = :c AND target = ANY(:a)) OR (target = :c AND source_id = ANY(:a)))")
+        async with self._engine.connect() as conn:
+            return bool((await conn.execute(sql, {"c": candidate, "a": list(anchors)})).scalar())
+
+    async def recall(self, *, seed_refs: set[str], q_embed: list[float] | None = None, limit: int = 10) -> list[str]:
+        """Prior-lesson recall (M4b): structural ∪ semantic, deduped, structural-first."""
+        from sqlalchemy import text
+        await self._ensure()
+        out: list[str] = []
+        seen: set[str] = set()
+        if seed_refs:
+            sql = text(
+                "SELECT n.id, n.synopsis FROM memory_node n "
+                "WHERE n.status='active' AND n.kind IN ('lesson','correction','gotcha') "
+                "AND EXISTS (SELECT 1 FROM memory_edge e WHERE e.source_id=n.id AND e.target = ANY(:refs)) "
+                "ORDER BY (n.confidence='high') DESC, n.created_at ASC LIMIT :lim"
+            )
+            async with self._engine.connect() as conn:
+                for rid, syn in (await conn.execute(sql, {"refs": list(seed_refs), "lim": limit})).all():
+                    if syn and rid not in seen:
+                        seen.add(rid); out.append(syn)
+        if q_embed and len(out) < limit:
+            sql = text(
+                "SELECT id, synopsis FROM memory_node "
+                "WHERE status='active' AND scope='shared' AND kind IN ('lesson','correction','gotcha') "
+                "AND embedding IS NOT NULL ORDER BY embedding <=> CAST(:q AS vector) LIMIT :lim"
+            )
+            async with self._engine.connect() as conn:
+                for rid, syn in (await conn.execute(sql, {"q": _vec_literal(q_embed), "lim": limit})).all():
+                    if syn and rid not in seen:
+                        seen.add(rid); out.append(syn)
+        return out[:limit]
