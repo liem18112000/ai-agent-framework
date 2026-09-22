@@ -253,6 +253,32 @@ variable "typesafe_secret_enabled" {
   default     = false
 }
 
+# --- KGA pre-crawl fan-out (docs/PROPOSAL-parallel-gather-jev-gated.md); all inert by default → code
+# defaults hold (parallel wave at 4; source gate OFF). Injected into KGA only via local.gather_env. ---
+variable "kga_fanout_concurrency" {
+  type        = string
+  description = "Max concurrent pre-crawl seed producers (KGA_FANOUT_CONCURRENCY). Empty = code default (4). Set '1' to serialize the fan-out (rollback); raise once a live PQS/recall A/B holds."
+  default     = ""
+}
+
+variable "kga_source_gate" {
+  type        = bool
+  description = "Enable the JEV source-activation gate (KGA_SOURCE_GATE). No-op unless tpd_decision_backend is also set; UNCALIBRATED (G4 pending) — keep false. Drops a source only when JEV is confident it won't yield in-scope knowledge."
+  default     = false
+}
+
+variable "kga_source_gate_conf_min" {
+  type        = string
+  description = "Confidence floor for the source gate (KGA_SOURCE_GATE_CONF_MIN). Empty = code default (0.40, mirroring the JEV J4 finding). Only meaningful when kga_source_gate = true."
+  default     = ""
+}
+
+variable "kga_source_gate_tau" {
+  type        = string
+  description = "Run-bar τ for the source gate (KGA_SOURCE_GATE_TAU): SKIP only when confident AND P < τ. Empty = code default (0.50). Only meaningful when kga_source_gate = true."
+  default     = ""
+}
+
 # ---------------------------------------------------------------------------
 # admin_agent (see services.tf → module.admin) — the memory & history operator utility (NOT pipeline).
 # Deterministic router, no LLM; needs GCS + DB, no Atlassian, no Vertex. wipe_all is destructive.

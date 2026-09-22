@@ -203,4 +203,16 @@ locals {
     var.tpd_decision_conf_min != "" ? [{ name = "TPD_DECISION_CONF_MIN", value = var.tpd_decision_conf_min }] : [],
     var.typesafe_secret_enabled ? [{ name = "TYPESAFE_API_KEY", secret = google_secret_manager_secret.typesafe_api_key.secret_id }] : [],
   )
+
+  # KGA pre-crawl fan-out (docs/PROPOSAL-parallel-gather-jev-gated.md), injected into KGA only. ALL inert
+  # by default → the code defaults hold (parallel seed wave at concurrency 4; source gate OFF): the flags
+  # are emitted only when explicitly set in tfvars. KGA_SOURCE_GATE additionally needs a decision backend
+  # (TPD_DECISION_BACKEND) to do anything — it is a no-op selector otherwise. Set kga_fanout_concurrency=1
+  # to serialize the fan-out (rollback); raise it once a live PQS/recall A/B holds.
+  gather_env = concat(
+    var.kga_fanout_concurrency != "" ? [{ name = "KGA_FANOUT_CONCURRENCY", value = var.kga_fanout_concurrency }] : [],
+    var.kga_source_gate ? [{ name = "KGA_SOURCE_GATE", value = "1" }] : [],
+    var.kga_source_gate_conf_min != "" ? [{ name = "KGA_SOURCE_GATE_CONF_MIN", value = var.kga_source_gate_conf_min }] : [],
+    var.kga_source_gate_tau != "" ? [{ name = "KGA_SOURCE_GATE_TAU", value = var.kga_source_gate_tau }] : [],
+  )
 }

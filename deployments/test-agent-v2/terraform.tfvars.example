@@ -42,3 +42,10 @@ atlassian_email    = "liem.doanvanthanh@axonactive.com"
 # tpd_decision_backend    = "jev"
 # tpd_decision_conf_min   = "0.8"     # τ; empty = code default 0.8 (J4: no τ pays off on current data)
 # typesafe_secret_enabled = true
+
+# KGA pre-crawl fan-out (docs/PROPOSAL-parallel-gather-jev-gated.md). DEFAULT OFF/unset → code defaults:
+# parallel seed wave at concurrency 4 (recall-safe per the A/B), source gate OFF. Set to tune in prod.
+# kga_fanout_concurrency   = "1"      # serialize the fan-out (rollback); empty = code default 4
+# kga_source_gate          = true     # enable the JEV source gate — also needs tpd_decision_backend set; UNCALIBRATED (G4 pending)
+# kga_source_gate_conf_min = "0.40"   # empty = code default 0.40
+# kga_source_gate_tau      = "0.50"   # empty = code default 0.50

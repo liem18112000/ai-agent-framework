@@ -97,6 +97,34 @@ async def test_thin_orphan_falls_back_to_memory_recall(monkeypatch):
     assert "jira:PRIOR-1" in new_seeds
 
 
+async def test_parallel_wave_merges_and_dedups(monkeypatch):
+    """G0/G1: the seed producers fan out in parallel; results merge in stable order and cross-source
+    duplicates dedup once. Exercises the `ground_leads` 3-tuple unpack path."""
+    from knowledge_gathering.gather.explore import expand as expand_mod
+
+    monkeypatch.setattr(expand_mod, "memory_self_seed", lambda b, s, f: (["jira:A"], "prior"))
+
+    async def _sem(*a, **k):
+        return ([], "")
+
+    async def _search(*a, **k):
+        return (["jira:A", "jira:B"], "search")  # jira:A overlaps memory recall
+
+    async def _leads(*a, **k):
+        return (["jira:C"], ["unconfirmed"], "leads")  # 3-tuple
+
+    monkeypatch.setattr(expand_mod, "semantic_self_seed", _sem)
+    monkeypatch.setattr(expand_mod, "atlassian_search_seeds", _search)
+    monkeypatch.setattr(expand_mod, "ground_leads", _leads)
+
+    new_seeds, md = await expand_mod.expansion_round(
+        _bank(), _IssueClient(), seed="LUZ-1", terms="t", thin=True, project="LUZ",
+        parent=None, exclude=set(), leads=["lead1"])
+
+    assert new_seeds == ["jira:A", "jira:B", "jira:C"]  # A deduped once; stable order
+    assert md == ["prior", "search", "leads"]  # ordered, empty semantic md dropped
+
+
 async def test_non_thin_seed_does_not_climb(monkeypatch):
     """A seed with its own gravity (not thin) keeps the normal path: no climb, recall runs."""
     from knowledge_gathering.gather.explore import expand as expand_mod

@@ -89,6 +89,7 @@ module "kga" {
         var.gcp_env_matrix != "" ? [
           { name = "KGA_GCP_ENV_MATRIX", value = var.gcp_env_matrix },
         ] : [],
+        local.gather_env, # parallel fan-out concurrency + JEV source gate (both inert by default)
       )
     },
   ]

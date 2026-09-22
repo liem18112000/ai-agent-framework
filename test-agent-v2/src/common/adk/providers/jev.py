@@ -27,8 +27,6 @@ class JevProvider:
     name = "jev"
 
     def is_configured(self) -> bool:
-        """True only when ``TYPESAFE_API_KEY`` is set (the cascade's gate, like
-        ``ModelProvider.is_configured``); the SDK reads the same env var for auth."""
         return bool(os.environ.get("TYPESAFE_API_KEY", "").strip())
 
     def choice(self, state: str, options: list[str], instructions: str) -> Verdict:
@@ -41,8 +39,6 @@ class JevProvider:
         return self._call("noul", state, statement=statement)
 
     def _call(self, primitive: str, state: str, **spec) -> Verdict:
-        # Lazy import: keeps the module network-free at load and confines the optional dep to the path
-        # that actually runs (is_configured() has already gated this in every real caller).
         from typesafe_sdk import Choice, Noul, Score, TypeSafeClient
 
         question = {
