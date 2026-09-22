@@ -178,16 +178,20 @@ async def _run(args) -> int:
             if not plan_ok or apl.lower().startswith("no test plan"):
                 summary["stages"]["define_plan"] = "no-plan"  # forces FAIL + shows the real reason
 
-            # 5) implement_plan — loop while chunked in_progress
+            # 5) implement_plan — drive to generation. implement nests its OWN design interrogation
+            # (case/data/step): a bare implement_plan call auto-advances one design round, so KEEP
+            # calling while the reply is a design question ('answer each'/'Implement design') OR an
+            # assured-loop chunk ('[state: in_progress]'), until the generation summary. (implement_plan
+            # takes no answer param — the bare call is what advances the round.)
             rounds = 0
-            while True:
+            while rounds < args.max_implement_rounds:
                 imp = await call("implement_plan", {"context_id": ctx}, timeout=args.timeout)
                 rounds += 1
-                if not is_in_progress(imp) or rounds >= args.max_implement_rounds:
-                    log("implement", f"done after {rounds} round(s)"
-                        + ("" if not is_in_progress(imp) else f" (hit max {args.max_implement_rounds})"))
-                    break
-                log("implement", f"round {rounds}: in_progress, continuing")
+                low = imp.lower()
+                if is_in_progress(imp) or "answer each" in low or "implement design" in low:
+                    continue
+                break  # generation summary / done
+            log("implement", f"done after {rounds} round(s)")
             summary["stages"]["implement_plan"] = "ok"
 
             # 6) scenarios
