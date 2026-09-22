@@ -53,9 +53,11 @@ def is_in_progress(text: str) -> bool:
 
 
 def extract_score(text: str, *, labels: tuple[str, ...]) -> float | None:
-    """Best-effort: first 0–1 (or 0–100) float following any of the score labels (PQS/TPS/Score)."""
+    """First number after the ':'/'=' that follows a score label on the same line. Anchoring on the
+    separator matters: the context_id can sit between label and score ('Pack Quality Score for
+    run-b2665a81: 0.75') and its digits would otherwise be grabbed. Normalises a 0–100 value to 0–1."""
     for lab in labels:
-        m = re.search(rf"{lab}[^0-9]{{0,12}}([01]?\.\d+|\d{{1,3}}(?:\.\d+)?)", text, re.IGNORECASE)
+        m = re.search(rf"{lab}[^\n:=]*[:=]\s*([0-9]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
         if m:
             v = float(m.group(1))
             return v / 100 if v > 1.5 else v
@@ -204,6 +206,8 @@ def _selftest() -> None:
     assert extract_score("Pack Quality Score: 0.82 (recall...)", labels=("PQS", "Pack Quality Score")) == 0.82
     assert extract_score("TPS = 77", labels=("TPS",)) == 0.77  # 0-100 normalised
     assert extract_score("nothing", labels=("PQS",)) is None
+    # regression: the context_id between label and score must NOT be grabbed (was 2.66 from 'run-b2665a81')
+    assert extract_score("Pack Quality Score for run-b2665a81: 0.75", labels=("Score",)) == 0.75
     assert count_scenarios("## Scenario 1\n...\n## Scenario 2\n") == 2
     assert count_scenarios("1. happy path\n2. negative\n3. edge") == 3
     assert normalize_answers({"refine": ["a", "b"]}) == {"refine": ["a", "b"], "define": []}
