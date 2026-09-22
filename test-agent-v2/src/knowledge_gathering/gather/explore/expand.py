@@ -80,11 +80,13 @@ async def expansion_round(
     JEV gate (``select_sources``) may drop a candidate it's confident won't pay before the wave fires.
 
     Under parallelism the producers can't forward-exclude each other's output the way the old serial
-    chain did — each sees only the INITIAL exclude, and the capped producers (atlassian top-5, cloud
-    top-8) filter it before capping. ponytail: bounded tail-recall — two sources that both surface the
+    chain did — each sees only the INITIAL exclude, and every producer caps AFTER filtering exclude
+    (all `max_seeds=5`, cloud top-8). ponytail: bounded tail-recall — two sources that both surface the
     same id spend a cap slot on it and the post-fan-out dedup drops the overlap, netting one fewer
-    unique seed. Narrow in practice (the capped sources target near-disjoint id-spaces: Jira issues vs
-    cloud-service nodes); upgrade to a post-dedup cap re-fill only if the PQS/recall A/B shows a drop.
+    unique seed. The A/B (`tools/gather_fanout_ab.py`) measured the ceiling = the cross-source overlap
+    count (1 in the worst case tested): `atlassian_search` × `ground_leads` share Jira/Confluence
+    id-space (memory folds in first; cloud is disjoint). Upgrade to a post-dedup cap re-fill only if a
+    live PQS/recall golden shows a drop.
     """
     exclude = set(exclude or ())
     seed_norm = normalize_seed(seed)

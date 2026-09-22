@@ -59,9 +59,11 @@ from the original proposal:
 **Deviation 1 — G0 is NOT "no behaviour change".** The capped producers (`atlassian_search` top-5,
 `cloud_discover` top-8) filter `exclude` *before* the cap, so under parallelism each sees only the
 initial exclude and can spend a cap slot on a seed a sibling already found; the post-fan-out dedup
-then drops it, netting one fewer unique seed. Bounded (the capped sources target near-disjoint
-id-spaces) but real — named as a `ponytail:` ceiling in `expansion_round`, gated by the PQS/recall
-A/B. **The recall guard (I-PG-2) applies to the parallelism itself, not only the gate.**
+then drops it, netting one fewer unique seed. The A/B (`tools/gather_fanout_ab.py`, below) measured
+the ceiling = the cross-source overlap count — `atlassian_search` × `ground_leads` share
+Jira/Confluence id-space (memory folds in first, cloud is disjoint). Bounded but **not zero** — named
+as a `ponytail:` ceiling in `expansion_round`, gated by the PQS/recall A/B. **The recall guard
+(I-PG-2) applies to the parallelism itself, not only the gate.**
 
 **Deviation 2 — a missing dependency edge.** `hypothesize` writes `terms` (`_plan`: `terms = hyp`)
 and every term-consuming seed producer reads it, so the true shape is **two waves** — planners ∥,
@@ -310,6 +312,23 @@ gated on **pack quality (PQS), not just latency** — a parallel merge or a gate
 must not ship. Report per-stage wall-clock (expect Σ→MAX on the fan-out), the gate's **skip take-rate**,
 and **skip-precision** (skipped sources that would have contributed relevant nodes). Ship each phase
 only if PQS holds vs the serial baseline.
+
+**A/B run 1 — deterministic structural (2026-09-22, `tools/gather_fanout_ab.py`).** Fake producers +
+injected latency, so it measures the *structural* properties, not a live ticket's PQS:
+
+- **Latency Σ→MAX confirmed:** serial (N=1) 1172 ms → parallel (N=4) 406 ms = **2.9×** (producer
+  latencies 200/300/400/250 ms; Σ=1150, MAX=400).
+- **Concurrency is recall-neutral:** `set(N=1) == set(N=4)` — the new code hands every producer the
+  same initial exclude, so the level of concurrency can't change the seed set. The recall question is
+  purely *parallel-merge vs old serial-forward-exclude*, present at any N≥1.
+- **Tail-recall ceiling measured = the cross-source overlap count:** worst-case scenario old-serial
+  12 unique → new-parallel 11 (lost the one `atlassian_search`×`ground_leads` `SHARED` id whose cap
+  slot the dedup reclaimed). Confirms the loss is real but bounded to overlapping-id-space capped
+  producers — **not** the "near-disjoint" hand-wave.
+
+**Still needed — A/B run 2 (live PQS):** the MCP gateway runs committed code, not this branch, so a
+real-ticket PQS A/B (serial vs parallel; gate OFF vs ON) requires **deploying the branch** first. Do
+that before raising the prod `KGA_FANOUT_CONCURRENCY` default above 1.
 
 ## Definition of done
 
