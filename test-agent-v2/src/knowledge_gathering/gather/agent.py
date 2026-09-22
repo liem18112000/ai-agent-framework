@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
+import os
 
 from google.adk.agents import BaseAgent
 
@@ -40,6 +42,15 @@ from knowledge_gathering.monitoring import get_logger
 log = get_logger("adk.gather")
 
 
+def _planner_parallel() -> bool:
+    """Run the search planners concurrently — OPT-IN (env ``KGA_PLANNER_PARALLEL``), default OFF. The
+    planners share ONE Vertex quota (throughput-bound → ~0 speedup) AND concurrent in-process ADK runs
+    have returned simultaneously-empty structured output in prod (the reason implement is pinned to
+    ``Semaphore(1)``); serial is the safe default. Enable only after a live check that isolation holds.
+    See docs/PROPOSAL-parallel-gather-jev-gated.md G2."""
+    return os.environ.get("KGA_PLANNER_PARALLEL", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 class GatherAgent(BaseAgent):
     hypothesize_agent: BaseAgent | None = None
     leads_agent: BaseAgent | None = None
@@ -59,28 +70,48 @@ class GatherAgent(BaseAgent):
             log.warning("KGA planner %r degraded (%s)", output_key, exc)
         return result
 
+    async def _run_planner_isolated(self, plan_input: dict, agent, output_key: str) -> dict | None:
+        """Run a planner in its OWN throwaway Runner + session (seeded with `PLAN_INPUT_KEY` so its
+        InstructionProvider still finds the plan input) — so concurrent planners never race the shared
+        `ctx.session.state`, the trap that pins implement to `Semaphore(1)`. Reuses `run_json_agent` for
+        its Claude/LiteLlm empty-state recovery. Best-effort: a degrade returns None."""
+        from common.testplan.llm.adk import run_json_agent
+        try:
+            return await run_json_agent(agent, output_key=output_key, user="plan",
+                                        state={PLAN_INPUT_KEY: plan_input})
+        except Exception as exc:  # noqa: BLE001 — planning is best-effort; must never break gather
+            log.warning("KGA planner %r degraded (%s)", output_key, exc)
+            return None
+
     async def _plan(self, ctx, probe, cloud_on: bool) -> tuple[str, list[str] | None, list[str], CloudExplorePlan | None]:
-        """Run the search planners (one that can't reach a model degrades in `_run_planner`);
-        return (focus_terms, leads, planner_md, cloud_plan). `cloud_on` gates the cloud planner."""
+        """Run the search planners (one that can't reach a model degrades in the runner); return
+        (focus_terms, leads, planner_md, cloud_plan). `cloud_on` gates the cloud planner. The planners
+        are independent (same input, distinct output keys), so they run concurrently when
+        `KGA_PLANNER_PARALLEL` is set (each in an isolated session); default serial (see `_planner_parallel`)."""
         terms, leads, planner_md, cloud_plan = probe.terms, None, [], None
-        if not probe.title or all(a is None for a in
-                                  (self.hypothesize_agent, self.leads_agent, self.cloud_explore_agent)):
+        # X5: the cloud planner only runs when the tier is on (grounding-gated in cloud_discover).
+        enabled = [(a, k) for a, k in ((self.hypothesize_agent, HYP_KEY), (self.leads_agent, LEADS_KEY),
+                                       (self.cloud_explore_agent if cloud_on else None, CLOUD_KEY))
+                   if a is not None]
+        if not probe.title or not enabled:
             return terms, leads, planner_md, cloud_plan
-        ctx.session.state[PLAN_INPUT_KEY] = PlanInput.from_probe(probe).model_dump()
-        if self.hypothesize_agent is not None:
-            raw = await self._run_planner(ctx, self.hypothesize_agent, HYP_KEY)
-            if raw and (hyp := Hypothesis(**raw).as_terms()):
-                log.info("A2A gather: hypothesize enriched terms: %r", hyp)
-                terms = hyp
-                planner_md.append(f"Hypothesized focus: {hyp}")
-        if self.leads_agent is not None:
-            raw = await self._run_planner(ctx, self.leads_agent, LEADS_KEY)
-            leads = Leads(**raw).as_leads() if raw else None
-        # X5: cloud re-rank plan — only when the tier is on (grounding-gated in cloud_discover). A no-op
-        # when the agent can't reach a model (`_run_planner` swallows it) → numeric rank in discover.
-        if self.cloud_explore_agent is not None and cloud_on:
-            raw = await self._run_planner(ctx, self.cloud_explore_agent, CLOUD_KEY)
-            cloud_plan = CloudExplorePlan(**raw) if raw else None
+        plan_input = PlanInput.from_probe(probe).model_dump()
+        ctx.session.state[PLAN_INPUT_KEY] = plan_input
+
+        if _planner_parallel():
+            raws = await asyncio.gather(*(self._run_planner_isolated(plan_input, a, k) for a, k in enabled))
+            by_key = dict(zip((k for _, k in enabled), raws))
+        else:
+            by_key = {k: await self._run_planner(ctx, a, k) for a, k in enabled}
+
+        if (raw := by_key.get(HYP_KEY)) and (hyp := Hypothesis(**raw).as_terms()):
+            log.info("A2A gather: hypothesize enriched terms: %r", hyp)
+            terms = hyp
+            planner_md.append(f"Hypothesized focus: {hyp}")
+        if raw := by_key.get(LEADS_KEY):
+            leads = Leads(**raw).as_leads()
+        if raw := by_key.get(CLOUD_KEY):
+            cloud_plan = CloudExplorePlan(**raw)
         return terms, leads, planner_md, cloud_plan
 
     async def _run_async_impl(self, ctx):

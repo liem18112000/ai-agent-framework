@@ -131,6 +131,10 @@ async def cloud_service_seeds(
         ranked = _rank(relevant, terms)
         if plan is not None:
             ranked = rerank_with_plan(plan, ranked)
+        # G5: optional JEV Score re-rank before the cap — a no-op unless the source gate is on AND a
+        # decision backend is configured (offloaded; JEV Score is blocking). Default → numeric/plan rank.
+        from knowledge_gathering.gather.explore.source_gate import score_rank
+        ranked = await asyncio.to_thread(score_rank, ranked, state=terms, describe=lambda r: r.node_id)
         exclude = exclude or set()
         seeds: list[str] = []
         kept: list[ServiceRef] = []

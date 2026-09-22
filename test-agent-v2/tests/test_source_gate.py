@@ -62,6 +62,48 @@ def test_select_sources_noop_when_gate_off(monkeypatch):
     assert sg.select_sources({"a", "b"}, state="s") == {"a", "b"}
 
 
+class _Scorer:
+    name = "fake"
+
+    def __init__(self, scores):
+        self._scores = scores  # {item: 0-1 float}
+
+    def is_configured(self):
+        return True
+
+    def score(self, state, instructions, levels):
+        item = next(k for k in self._scores if f"of {k} to" in instructions)  # unambiguous match
+        return Verdict(value=self._scores[item], probs=None, confidence=1.0)
+
+
+def test_score_rank_noop_when_gate_off(monkeypatch):
+    monkeypatch.delenv("KGA_SOURCE_GATE", raising=False)
+    items = ["c", "a", "b"]
+    assert sg.score_rank(items, state="s", describe=str, provider=_Scorer({})) == items  # unchanged
+
+
+def test_score_rank_reorders_best_first_when_on(monkeypatch):
+    monkeypatch.setenv("KGA_SOURCE_GATE", "1")
+    prov = _Scorer({"a": 0.2, "b": 0.9, "c": 0.5})
+    assert sg.score_rank(["a", "b", "c"], state="s", describe=str, provider=prov) == ["b", "c", "a"]
+
+
+def test_score_rank_keeps_order_on_error(monkeypatch):
+    monkeypatch.setenv("KGA_SOURCE_GATE", "1")
+
+    class _Boom:
+        name = "boom"
+
+        def is_configured(self):
+            return True
+
+        def score(self, *a):
+            raise RuntimeError("jev down")
+
+    items = ["a", "b", "c"]
+    assert sg.score_rank(items, state="s", describe=str, provider=_Boom()) == items  # untouched on failure
+
+
 def test_select_sources_fires_all_when_no_backend(monkeypatch):
     # gate ON but no decision backend configured → still a no-op (worst case = today).
     monkeypatch.setenv("KGA_SOURCE_GATE", "1")

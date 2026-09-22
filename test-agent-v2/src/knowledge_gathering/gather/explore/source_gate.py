@@ -76,6 +76,33 @@ def apply_cascade(candidates, *, state: str, provider, conf_min: float, tau: flo
     return fired
 
 
+_SCORE_LEVELS = ["irrelevant", "marginal", "relevant", "central"]  # ordinal scale for JEV Score
+
+
+def score_rank(items, *, state: str, describe, provider=None):
+    """Re-order ``items`` best-first by a JEV ``Score`` of each item's relevance to ``state`` (G5 —
+    rank the capped sources, not just yes/no). No-op (returns ``items`` unchanged) unless the gate is ON
+    and a decision backend is configured, so the default numeric/plan rank is preserved. BLOCKING (JEV
+    Score is sync) — call via ``asyncio.to_thread`` from the event loop. Best-effort: ANY score failure
+    keeps the incoming order untouched (never partially reorder on incomplete data → never drop a
+    relevant item below the cap by accident)."""
+    items = list(items)
+    if not items or not gate_enabled():
+        return items
+    provider = provider or get_decision_provider()
+    if provider is None or not provider.is_configured():
+        return items
+    scored: list[tuple[float, object]] = []
+    for item in items:
+        try:
+            v = provider.score(state, f"Relevance of {describe(item)} to this ticket.", _SCORE_LEVELS)
+            scored.append((float(v.value), item))
+        except Exception as exc:  # noqa: BLE001 — any failure → keep the numeric rank, reorder nothing
+            log.warning("source gate: score(%s) failed (%s) → keeping incoming rank", describe(item), exc)
+            return items
+    return [item for _s, item in sorted(scored, key=lambda t: t[0], reverse=True)]  # stable: ties keep order
+
+
 def select_sources(candidates, *, state: str) -> set:
     """Fire every candidate unless the gate is ON, a decision backend is configured, and the cascade is
     confident a source won't pay. Strictly additive — off by default → returns the input set unchanged."""
