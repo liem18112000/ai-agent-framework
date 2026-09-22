@@ -6,12 +6,14 @@ primitives. The SDK is LAZY-imported inside ``_call`` (install the ``jev`` extra
 loads with the package absent and the offline suite never imports a network lib. ``is_configured()`` is
 gated on ``TYPESAFE_API_KEY`` — unset → callers keep their existing LLM path (the port is default OFF).
 
-UNVERIFIED against a live response (JEV is early-access): the docs pin ``.choice/.score/.noul`` but do
-NOT document a confidence or probability field, and leave the ``Score`` encoding ("ranked score") loose.
-So confidence/probs are probed defensively (``_conf``/``_probs``) and the score is normalised to the
-0–1 float the port promises (``_score01``). Confidence falls back to ``TYPESAFE_DEFAULT_CONFIDENCE``
-(default 1.0 — enabling this backend is an explicit "trust JEV" opt-in; lower it, or raise the cascade's
-``TPD_DECISION_CONF_MIN``, to keep the LLM judge in the loop). Re-check all three once JEV ships GA.
+Response shapes are pinned against ``typesafe-sdk`` 0.7.1 ``model_fields``: ``NoulAnswer.noul`` IS
+P(true) (a 0–1 float; there is NO separate probs/confidence field) — so noul maps it into
+``probs['true']`` and derives ``confidence`` as the calibrated distance from a coin-flip (``|p-0.5|*2``).
+``ScoreAnswer``/``ChoiceAnswer`` DO carry ``confidence`` + ``probabilities``, read defensively
+(``_conf``/``_probs``); ``Score.score`` is normalised to the 0–1 float the port promises (``_score01``,
+encoding still loose). Score/Choice confidence falls back to ``TYPESAFE_DEFAULT_CONFIDENCE`` (default
+1.0 — an explicit "trust JEV" opt-in; lower it, or raise the cascade's ``TPD_DECISION_CONF_MIN``, to
+keep the LLM judge in the loop). Re-check on any SDK upgrade.
 """
 
 from __future__ import annotations
@@ -57,8 +59,8 @@ def _verdict(primitive: str, result, spec: dict) -> Verdict:
         r = result.choices[_QKEY]
         return Verdict(value=r.choice, probs=_probs(r), confidence=_conf(r))
     if primitive == "noul":
-        r = result.nouls[_QKEY]
-        return Verdict(value=bool(r.noul), probs=_probs(r), confidence=_conf(r))
+        p = float(result.nouls[_QKEY].noul)  # SDK 0.7.1: NoulAnswer.noul IS P(true); no probs/confidence field
+        return Verdict(value=(p >= 0.5), probs={"true": p}, confidence=abs(p - 0.5) * 2.0)
     r = result.scores[_QKEY]
     return Verdict(value=_score01(r.score, spec["levels"]), probs=_probs(r), confidence=_conf(r))
 
@@ -105,8 +107,13 @@ if __name__ == "__main__":  # ponytail: one runnable check on the only non-trivi
     v = _verdict("choice", type("X", (), {"choices": {_QKEY: _R()}})(), {})
     assert v.value == "b" and v.confidence == 0.77 and v.probs == {"true": 0.9}
 
-    class _N:
-        noul = 1
+    class _N:  # SDK 0.7.1: NoulAnswer.noul IS P(true) → probs carries it; confidence = |p-0.5|*2
+        noul = 0.2
     v = _verdict("noul", type("X", (), {"nouls": {_QKEY: _N()}})(), {})
-    assert v.value is True and v.confidence == 1.0 and v.probs is None  # default conf, no probs
+    assert v.value is False and v.probs == {"true": 0.2} and abs(v.confidence - 0.6) < 1e-9
+
+    class _N1:
+        noul = 1.0
+    v = _verdict("noul", type("X", (), {"nouls": {_QKEY: _N1()}})(), {})
+    assert v.value is True and v.probs == {"true": 1.0} and v.confidence == 1.0
     print("ok")
