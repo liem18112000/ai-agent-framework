@@ -234,6 +234,25 @@ variable "tpd_llm_detail" {
   default     = false
 }
 
+# --- JEV DecisionProvider cascade (docs/PLAN-jev-apply-v2.md) — ALL default OFF (J4 was negative) ---
+variable "tpd_decision_backend" {
+  type        = string
+  description = "JEV DecisionProvider backend for the assured judge (TPD Score) + TEV semantic judge (Noul). Empty = OFF (LLM judge only, default). Set 'jev' to enable the cascade (also needs typesafe_secret_enabled + a secret version). J4 calibration was NEGATIVE — keep empty until a J7 fork pays off."
+  default     = ""
+}
+
+variable "tpd_decision_conf_min" {
+  type        = string
+  description = "Confidence floor τ for the JEV Score fast-path (TPD only). Empty = code default (0.8). Only meaningful when tpd_decision_backend = 'jev'."
+  default     = ""
+}
+
+variable "typesafe_secret_enabled" {
+  type        = bool
+  description = "Mount TYPESAFE_API_KEY (from the <prefix>-typesafe-api-key secret) into TPD + TEV. Keep false until the secret version is added out-of-band. With backend='jev' but this false, is_configured() is false and the code routes to the LLM judge (the 'set-without-key' smoke case)."
+  default     = false
+}
+
 # ---------------------------------------------------------------------------
 # admin_agent (see services.tf → module.admin) — the memory & history operator utility (NOT pipeline).
 # Deterministic router, no LLM; needs GCS + DB, no Atlassian, no Vertex. wipe_all is destructive.

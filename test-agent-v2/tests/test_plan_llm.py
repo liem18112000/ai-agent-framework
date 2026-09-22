@@ -272,6 +272,18 @@ def test_loads_obj_tolerates_fence_and_prose():
         == {"a": 1, "b": 2, "c": 3}
 
 
+def test_loads_obj_unwraps_toolcall_envelope():
+    """Prod bug: Claude-on-Vertex wraps the answer in a tool-call key ({"parameters": {...}}); the
+    largest-span rule returned the ENVELOPE, so JudgeVerdict(**that) saw no fields and scored 0.0 — a
+    false rejection that corrupted the assured judge (and the JEV calibration oracle)."""
+    from common.llm.parse import loads_obj
+
+    assert loads_obj('{"parameters": {"overall": 0.82, "accept": true}}') == {"overall": 0.82, "accept": True}
+    assert loads_obj('{"json": {"parameters": {"overall": 0.5}}}') == {"overall": 0.5}  # nested
+    assert loads_obj('{"scenarios": [1, 2, 3]}') == {"scenarios": [1, 2, 3]}  # single-key LIST untouched
+    assert loads_obj('{"overall": 0.7, "accept": true}') == {"overall": 0.7, "accept": True}  # multi-key untouched
+
+
 async def test_claude_scenarios_recovers_when_model_fences_its_json():
     """Prod bug repro: Claude-on-Vertex fences its JSON so ADK's output_schema leaves state empty →
     generation degraded to heuristic. run_json_agent must recover it from the raw model text."""

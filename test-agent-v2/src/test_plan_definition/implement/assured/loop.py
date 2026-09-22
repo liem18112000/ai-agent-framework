@@ -50,6 +50,14 @@ def _decision_conf_min() -> float:
     return _DECISION_CONF_MIN
 
 
+def suite_state(plan_pack, scenarios) -> str:
+    """The candidate-suite text the assured judge grades. Shared by the JEV gate and the calibration
+    harness (``tools/jev_calibrate.py``) so both score byte-identical input — the single source of truth
+    for what a Score decision sees."""
+    return plan_pack.summary_text() + "\n\nCANDIDATE SUITE:\n" + "\n".join(
+        f"- [{s.kind}] {s.title}" for s in scenarios)
+
+
 def _decision_gate(plan, scenarios, plan_pack, threshold: float):
     """JEV cascade: one fast typed Score gates the suite before the LLM judge. Returns an accepting
     minimal ``JudgeVerdict`` when a decision backend is configured AND it is both confident
@@ -62,8 +70,7 @@ def _decision_gate(plan, scenarios, plan_pack, threshold: float):
     decision = get_decision_provider()
     if decision is None or not decision.is_configured():
         return None  # OFF (default) → behaviour byte-for-byte identical to today
-    state = plan_pack.summary_text() + "\n\nCANDIDATE SUITE:\n" + "\n".join(
-        f"- [{s.kind}] {s.title}" for s in scenarios)
+    state = suite_state(plan_pack, scenarios)
     verdict = decision.score(
         state=state, levels=["low", "medium", "high"],
         instructions="Is this test suite good enough to ship for this plan? Grade its overall quality.")

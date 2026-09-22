@@ -163,7 +163,8 @@ module "tpd" {
           { name = "TPD_LOG", value = "1" },
           { name = "COMMON_LOG", value = "1" },
         ],
-        local.perf_env, # TESTAGENT_TURBO / VERTEX_MODEL_FAST (both inert by default)
+        local.perf_env,     # TESTAGENT_TURBO / VERTEX_MODEL_FAST (both inert by default)
+        local.decision_env, # JEV Score gate — inert unless tpd_decision_backend set (J4 negative; default OFF)
       )
     },
   ]
@@ -231,7 +232,8 @@ module "tev" {
           { name = "VERTEX_LOCATION", value = var.vertex_region },
           { name = "VERTEX_MODEL", value = var.vertex_model },
           { name = "A2A_BEARER_TOKEN", secret = google_secret_manager_secret.a2a_bearer.secret_id },
-        ]
+        ],
+        local.decision_env, # JEV Noul semantic judge — inert unless tpd_decision_backend set (J4 negative; default OFF)
       )
     },
   ]

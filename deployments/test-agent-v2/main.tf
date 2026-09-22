@@ -152,3 +152,19 @@ resource "google_secret_manager_secret_iam_member" "a2a_access" {
   member    = "serviceAccount:${google_service_account.kga.email}"
 }
 
+# typesafe-sdk (JEV) API key — the DecisionProvider cascade. Created empty; add a version out-of-band
+# only when enabling the cascade (default-OFF deploys never mount it). See docs/PLAN-jev-apply-v2.md.
+resource "google_secret_manager_secret" "typesafe_api_key" {
+  secret_id = "${var.name_prefix}-typesafe-api-key"
+  replication {
+    auto {}
+  }
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_secret_manager_secret_iam_member" "typesafe_access" {
+  secret_id = google_secret_manager_secret.typesafe_api_key.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.kga.email}"
+}
+

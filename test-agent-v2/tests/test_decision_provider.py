@@ -62,6 +62,17 @@ def test_semantic_judge_noul_rejects_below_half(monkeypatch):
     assert judge_mod.build_semantic_judge()("Is X covered?", "nope") is False
 
 
+def test_semantic_judge_noul_threshold_is_configurable(monkeypatch):
+    from test_evaluation.eval import judge as judge_mod
+
+    fake = FakeDecisionProvider(noul=Verdict(value=False, probs={"true": 0.6}, confidence=0.9))
+    monkeypatch.setattr("common.adk.providers.get_decision_provider", lambda: fake)
+    monkeypatch.setenv("TEV_NOUL_THRESHOLD", "0.7")  # 0.6 < 0.7 → reject
+    assert judge_mod.build_semantic_judge()("Is X covered?", "maybe") is False
+    monkeypatch.setenv("TEV_NOUL_THRESHOLD", "0.5")  # 0.6 ≥ 0.5 → accept (also the default)
+    assert judge_mod.build_semantic_judge()("Is X covered?", "maybe") is True
+
+
 # --- call site #2: the assured cascade --------------------------------------------------------
 
 async def _confirmed(bank):

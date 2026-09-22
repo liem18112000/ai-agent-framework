@@ -45,6 +45,7 @@ output "secret_ids" {
   value = {
     atlassian_api_token = google_secret_manager_secret.atlassian_token.secret_id
     a2a_bearer_token    = google_secret_manager_secret.a2a_bearer.secret_id
+    typesafe_api_key    = google_secret_manager_secret.typesafe_api_key.secret_id # only when enabling JEV
   }
 }
 
