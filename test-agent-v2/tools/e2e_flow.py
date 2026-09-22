@@ -125,16 +125,30 @@ async def _run(args) -> int:
             def log(stage: str, detail: str) -> None:
                 print(f"[{stage:<11}] {detail}", flush=True)
 
-            async def interrogate(tool: str, phase: str) -> None:
-                """Start the interrogation, feed the canned answers for `phase` in order (N answers =>
-                N+1 rounds), else just the one start round. State can't signal 'more questions' (agents
-                report 'completed' every round), so the answer list length drives the rounds."""
+            async def interrogate(tool: str, phase: str) -> bool:
+                """Drive the interrogation to FINALIZE (that's when the plan/understanding is written —
+                interrogation.py only calls finalize() when next_questions() is None). Feed the canned
+                answers for `phase` first, then auto-accept the remaining rounds, until the reply is the
+                finalize summary ('... complete') or the empty-pack notice ('Nothing to ...'), bounded by
+                --max-interrogation-rounds. Returns True iff it finalized. NOTE: the '[state: completed]'
+                prefix contains 'complete', so match the summary phrases, not a bare 'complete'."""
                 reply = await call(tool, {"context_id": ctx})  # round 1: start, surfaces questions
-                acts = answers[phase]
-                for i, a in enumerate(acts, 1):
-                    reply = await call(tool, {"context_id": ctx, "answer": a})
-                log(tool, f"{len(acts) + 1} round(s) ({len(acts)} canned answer(s)); "
-                    f"last state {'in_progress' if is_in_progress(reply) else 'ready'}")
+                canned = list(answers[phase])
+                rounds = 1
+                while rounds < args.max_interrogation_rounds:
+                    low = reply.lower()
+                    if "nothing to " in low:
+                        log(tool, f"EMPTY pack after {rounds} round(s) — {reply.splitlines()[-1][:80]}")
+                        return False
+                    if "definition complete" in low or "refinement complete" in low:
+                        break
+                    ans = canned.pop(0) if canned else "Accept the recommended answer for every open question."
+                    reply = await call(tool, {"context_id": ctx, "answer": ans})
+                    rounds += 1
+                finalized = any(s in reply.lower() for s in ("definition complete", "refinement complete"))
+                log(tool, f"{rounds} round(s) ({len(answers[phase])} canned); "
+                    f"{'FINALIZED' if finalized else 'NOT finalized (hit cap)'}")
+                return finalized
 
             # 1) gather -> context_id
             g = await call("gather_knowledge",
@@ -146,10 +160,10 @@ async def _run(args) -> int:
             summary["context_id"] = ctx
             log("gather", f"ctx={ctx}  reply={len(g)} chars")
 
-            # 2) refine (canned answers if given, else one round) -> approve
+            # 2) refine (drive to finalize) -> approve
             await interrogate("refine", "refine")
-            await call("approve", {"context_id": ctx})
-            log("approve", "pack understanding confirmed")
+            ap = await call("approve", {"context_id": ctx})
+            log("approve", ap.splitlines()[0][:90] if ap.strip() else "ok")
 
             # 3) evaluate_pack (optional, non-blocking)
             if not args.no_eval:
@@ -157,10 +171,12 @@ async def _run(args) -> int:
                 summary["pqs"] = extract_score(ep, labels=("PQS", "Pack Quality Score", "Score"))
                 log("eval_pack", f"PQS={summary['pqs']}")
 
-            # 4) define_plan (canned answers if given, else one round) -> approve_plan
-            await interrogate("define_plan", "define")
-            await call("approve_plan", {"context_id": ctx})
-            log("approve_plan", "plan locked to confirmed")
+            # 4) define_plan (drive to finalize) -> approve_plan
+            plan_ok = await interrogate("define_plan", "define")
+            apl = await call("approve_plan", {"context_id": ctx})
+            log("approve_plan", apl.splitlines()[0][:90])
+            if not plan_ok or apl.lower().startswith("no test plan"):
+                summary["stages"]["define_plan"] = "no-plan"  # forces FAIL + shows the real reason
 
             # 5) implement_plan — loop while chunked in_progress
             rounds = 0
@@ -231,6 +247,8 @@ def main() -> int:
     ap.add_argument("--url", help="gateway MCP url (else GATEWAY_URL env, else deployed default)")
     ap.add_argument("--timeout", type=float, default=600.0, help="per-call read timeout seconds")
     ap.add_argument("--max-implement-rounds", type=int, default=12)
+    ap.add_argument("--max-interrogation-rounds", type=int, default=8,
+                    help="cap on refine/define rounds driven to finalize (canned answers + auto-accept)")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--selftest", action="store_true", help="offline parser check; no network/token")
     args = ap.parse_args()
