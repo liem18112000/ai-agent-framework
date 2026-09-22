@@ -17,9 +17,14 @@ Run:
   PYTHONIOENCODING=utf-8 uv run python tools/e2e_flow.py LUZ-158390
   ... --explore              # also run the noisy discovery tiers (default quiet/high-precision)
   ... --no-eval              # skip evaluate_pack/evaluate_plan (faster)
+  ... --answers ans.json     # feed canned per-round answers (else 1 shallow round each, then approve)
   ... --url https://.../mcp  # override gateway (else GATEWAY_URL env, else the deployed default)
   ... --json                 # machine-readable summary
   uv run python tools/e2e_flow.py --selftest   # offline: check the pure parsers, no network/token
+
+--answers JSON = {"refine": ["round-1 answer", "round-2 answer", ...], "define": [...]} — both keys
+optional, each a list of free-text answers. The phase runs one start round then feeds the answers in
+order (N answers => N+1 rounds), then approves. A missing/empty phase falls back to one shallow round.
 """
 
 from __future__ import annotations
@@ -65,6 +70,27 @@ def count_scenarios(text: str) -> int:
     return len(re.findall(r"(?m)^\s*\d+[.)]\s+\S", text))
 
 
+def normalize_answers(data) -> dict[str, list[str]]:
+    """Validate the parsed --answers object into {'refine': [...], 'define': [...]} (lists of str)."""
+    if not isinstance(data, dict):
+        raise ValueError("--answers must be a JSON object keyed by phase ('refine' / 'define')")
+    out = {}
+    for phase in ("refine", "define"):
+        v = data.get(phase, [])
+        if not isinstance(v, list) or not all(isinstance(x, str) for x in v):
+            raise ValueError(f"--answers['{phase}'] must be a list of strings")
+        out[phase] = v
+    return out
+
+
+def load_answers(path: str | None) -> dict[str, list[str]]:
+    """Read + validate the canned-answers JSON file (empty phases when no path given)."""
+    if not path:
+        return {"refine": [], "define": []}
+    import json
+    return normalize_answers(json.loads(pathlib.Path(path).read_text(encoding="utf-8")))
+
+
 # --- MCP driver ---------------------------------------------------------------------------------
 async def _run(args) -> int:
     import httpx2
@@ -77,6 +103,7 @@ async def _run(args) -> int:
     if not token:
         print("WARN: GATEWAY_BEARER_TOKEN unset — gateway will 401 if it enforces auth.", file=sys.stderr)
 
+    answers = load_answers(args.answers)  # read+validate before connecting so a bad file fails fast
     summary: dict = {"seed": args.seed, "url": url, "stages": {}, "pqs": None, "tps": None,
                      "scenarios": 0, "passed": False}
 
@@ -96,6 +123,17 @@ async def _run(args) -> int:
             def log(stage: str, detail: str) -> None:
                 print(f"[{stage:<11}] {detail}", flush=True)
 
+            async def interrogate(tool: str, phase: str) -> None:
+                """Start the interrogation, feed the canned answers for `phase` in order (N answers =>
+                N+1 rounds), else just the one start round. State can't signal 'more questions' (agents
+                report 'completed' every round), so the answer list length drives the rounds."""
+                reply = await call(tool, {"context_id": ctx})  # round 1: start, surfaces questions
+                acts = answers[phase]
+                for i, a in enumerate(acts, 1):
+                    reply = await call(tool, {"context_id": ctx, "answer": a})
+                log(tool, f"{len(acts) + 1} round(s) ({len(acts)} canned answer(s)); "
+                    f"last state {'in_progress' if is_in_progress(reply) else 'ready'}")
+
             # 1) gather -> context_id
             g = await call("gather_knowledge",
                            {"seed": args.seed, "depth": args.depth, "explore": args.explore},
@@ -106,9 +144,8 @@ async def _run(args) -> int:
             summary["context_id"] = ctx
             log("gather", f"ctx={ctx}  reply={len(g)} chars")
 
-            # 2) refine (one round, no answer) -> approve
-            r = await call("refine", {"context_id": ctx})
-            log("refine", f"state={'in_progress' if is_in_progress(r) else 'ready'} -> auto-approve")
+            # 2) refine (canned answers if given, else one round) -> approve
+            await interrogate("refine", "refine")
             await call("approve", {"context_id": ctx})
             log("approve", "pack understanding confirmed")
 
@@ -118,9 +155,8 @@ async def _run(args) -> int:
                 summary["pqs"] = extract_score(ep, labels=("PQS", "Pack Quality Score", "Score"))
                 log("eval_pack", f"PQS={summary['pqs']}")
 
-            # 4) define_plan (one round, no answer) -> approve_plan
-            d = await call("define_plan", {"context_id": ctx})
-            log("define", f"state={'in_progress' if is_in_progress(d) else 'ready'} -> auto-approve")
+            # 4) define_plan (canned answers if given, else one round) -> approve_plan
+            await interrogate("define_plan", "define")
             await call("approve_plan", {"context_id": ctx})
             log("approve_plan", "plan locked to confirmed")
 
@@ -170,6 +206,14 @@ def _selftest() -> None:
     assert extract_score("nothing", labels=("PQS",)) is None
     assert count_scenarios("## Scenario 1\n...\n## Scenario 2\n") == 2
     assert count_scenarios("1. happy path\n2. negative\n3. edge") == 3
+    assert normalize_answers({"refine": ["a", "b"]}) == {"refine": ["a", "b"], "define": []}
+    assert normalize_answers({}) == {"refine": [], "define": []}
+    for bad in ([1, 2], {"refine": [1]}, {"define": "x"}):
+        try:
+            normalize_answers(bad)
+            raise AssertionError(f"expected ValueError for {bad!r}")
+        except ValueError:
+            pass
     print("ok")
 
 
@@ -179,6 +223,7 @@ def main() -> int:
     ap.add_argument("--depth", type=int, default=2)
     ap.add_argument("--explore", action="store_true", help="also run the noisy discovery tiers")
     ap.add_argument("--no-eval", action="store_true", help="skip evaluate_pack/evaluate_plan")
+    ap.add_argument("--answers", help="JSON file of canned per-round answers {refine:[...], define:[...]}")
     ap.add_argument("--url", help="gateway MCP url (else GATEWAY_URL env, else deployed default)")
     ap.add_argument("--timeout", type=float, default=600.0, help="per-call read timeout seconds")
     ap.add_argument("--max-implement-rounds", type=int, default=12)
