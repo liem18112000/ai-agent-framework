@@ -47,8 +47,13 @@ def build_generator_agent(*, name: str, system: str, output_schema, output_key: 
                     disallow_transfer_to_peers=True)
 
 
-async def run_json_agent(agent: LlmAgent, *, output_key: str, user: str = "generate") -> dict | None:
+async def run_json_agent(agent: LlmAgent, *, output_key: str, user: str = "generate",
+                         state: dict | None = None) -> dict | None:
     """Run ``agent`` once in a throwaway Runner with ``user`` as the turn; return the validated dict.
+
+    ``state`` seeds the throwaway session's ``session.state`` — needed by agents whose
+    ``InstructionProvider`` reads a state key (e.g. the KGA planners read ``PLAN_INPUT_KEY``); ``None``
+    leaves it empty (the TPD generators pass their whole task as ``user``, so they don't need it).
 
     ADK's ``output_schema`` LlmAgent is meant to populate ``session.state[output_key]``, but the
     deployed Claude-on-Vertex (LiteLlm) path leaves it EMPTY — Claude fences/prefaces its JSON and
@@ -63,7 +68,7 @@ async def run_json_agent(agent: LlmAgent, *, output_key: str, user: str = "gener
     from common.llm.parse import loads_obj
 
     svc = InMemorySessionService()
-    await svc.create_session(app_name="tpd-gen", user_id="tpd", session_id="gen")
+    await svc.create_session(app_name="tpd-gen", user_id="tpd", session_id="gen", state=state or {})
     runner = Runner(app_name="tpd-gen", agent=agent, session_service=svc)
 
     texts: list[str] = []  # capture the model's raw output for the state-empty recovery path
