@@ -192,4 +192,15 @@ locals {
       { name = "TPD_WORKER_TOPIC", value = "tpd-gen-batches" },
     ] : [],
   )
+
+  # JEV decision cascade (docs/PLAN-jev-apply-v2.md), injected into TPD (Score gate) + TEV (Noul judge).
+  # ALL inert by default: TPD_DECISION_BACKEND is emitted only when var.tpd_decision_backend != "" (unset
+  # → get_decision_provider() = None → the LLM judge path, byte-identical to today); TYPESAFE_API_KEY is
+  # mounted only when var.typesafe_secret_enabled (add the secret version out-of-band first). NOTE: J4
+  # calibration was NEGATIVE (accept fast-path never fires safely) — keep OFF until a J7 fork pays off.
+  decision_env = concat(
+    var.tpd_decision_backend != "" ? [{ name = "TPD_DECISION_BACKEND", value = var.tpd_decision_backend }] : [],
+    var.tpd_decision_conf_min != "" ? [{ name = "TPD_DECISION_CONF_MIN", value = var.tpd_decision_conf_min }] : [],
+    var.typesafe_secret_enabled ? [{ name = "TYPESAFE_API_KEY", secret = google_secret_manager_secret.typesafe_api_key.secret_id }] : [],
+  )
 }

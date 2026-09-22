@@ -52,10 +52,38 @@ def build_ragas_embeddings():
     return _wrap_ragas_embeddings(vertex_config())
 
 
+def _noul_threshold() -> float:
+    """Accept cut for the JEV noul judge: P(true) ≥ τ ⇒ True. Env ``TEV_NOUL_THRESHOLD`` (default 0.5);
+    a malformed value falls back to 0.5 rather than crashing the judge."""
+    import contextlib
+    import os
+
+    with contextlib.suppress(ValueError):
+        return float(os.environ.get("TEV_NOUL_THRESHOLD", "0.5"))
+    return 0.5
+
+
 def build_semantic_judge():
     """A ``judge(question, text) -> bool`` backed by the provider's Claude-on-Vertex, or ``None``
     when unconfigured. Consumed by ``metrics.rubrics.judge_semantic`` in the judged tier ONLY —
     never by ``evaluate_pack`` (V2)."""
+    from common.adk.providers import get_decision_provider
+
+    # JEV cascade (rollout step 1): a configured decision backend serves the yes/no as a typed Noul,
+    # fronting the LLM. Default OFF (TPD_DECISION_BACKEND unset) → None → the exact LLM path below.
+    decision = get_decision_provider()
+    if decision is not None and decision.is_configured():
+        threshold = _noul_threshold()
+        def judge(question: str, text: str) -> bool:
+            verdict = decision.noul(state=text, statement=question)
+            probs = verdict.probs or {}
+            # Accept at P(true) >= threshold (env TEV_NOUL_THRESHOLD, default 0.5). probs is authoritative
+            # when present; else fall back to the bool value. confidence is advisory here — a bool sink
+            # can't carry it (see the assured cascade).
+            p_true = probs.get("true", probs.get("yes", float(bool(verdict.value))))
+            return p_true >= threshold
+        return judge
+
     if not provider_configured():
         return None
     provider = get_provider()

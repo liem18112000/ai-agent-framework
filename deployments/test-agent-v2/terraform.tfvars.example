@@ -32,3 +32,13 @@ atlassian_email    = "liem.doanvanthanh@axonactive.com"
 # The example map lives in ./gcp-env-matrix.example.json — inline it as one JSON string here:
 # gcp_env_matrix = "{\"dev\":{\"project\":\"klara-nonprod\",\"region\":\"europe-west6\",\"cluster\":\"klara-nonprod\",\"namespace\":\"dev\"},\"prod\":{\"project\":\"klara-prod\",\"region\":\"europe-west6\",\"cluster\":\"klara-prod\",\"namespace\":\"prod\"}}"
 # cloud_exploration_projects = ["klara-nonprod"]           # add "klara-prod" only after approving cross-project read
+#
+# JEV DecisionProvider cascade (docs/PLAN-jev-apply-v2.md). DEFAULT OFF — J4 calibration was NEGATIVE
+# (the confident-accept fast-path never fires safely), so leave these unset until a J7 design fork pays off.
+# To enable (experimental): (1) create a version on the <name_prefix>-typesafe-api-key secret out-of-band
+#   (gcloud secrets versions add <prefix>-typesafe-api-key --data-file=-), (2) set typesafe_secret_enabled,
+#   (3) set tpd_decision_backend. With backend='jev' but typesafe_secret_enabled=false the code routes to
+#   the LLM judge (safe). The deployed image already installs the [jev] extra.
+# tpd_decision_backend    = "jev"
+# tpd_decision_conf_min   = "0.8"     # τ; empty = code default 0.8 (J4: no τ pays off on current data)
+# typesafe_secret_enabled = true

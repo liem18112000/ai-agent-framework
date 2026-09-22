@@ -276,3 +276,31 @@ class FakeCloudProvider:
 
     def read_logs(self, ref, days, *, cap, min_severity="WARNING"):
         return self._read_logs_fn(ref, days, cap, min_severity)
+
+
+# --- Offline fake DecisionProvider (JEV cascade) — canned typed Verdicts, no network -------------
+class FakeDecisionProvider:
+    """A `DecisionProvider` double: returns one canned `Verdict` (or per-primitive overrides) so the
+    JEV cascade is deterministic and offline. Inject by monkeypatching
+    `common.adk.providers.get_decision_provider` to return an instance."""
+
+    name = "fake-decision"
+
+    def __init__(self, *, verdict=None, score=None, noul=None, choice=None, configured=True):
+        from common.adk.providers.decision import Verdict
+
+        default = verdict or Verdict(value=True, probs={"true": 0.9, "false": 0.1}, confidence=0.9)
+        self._score, self._noul, self._choice = score or default, noul or default, choice or default
+        self._configured = configured
+
+    def is_configured(self):
+        return self._configured
+
+    def choice(self, state, options, instructions):
+        return self._choice
+
+    def score(self, state, instructions, levels):
+        return self._score
+
+    def noul(self, state, statement):
+        return self._noul

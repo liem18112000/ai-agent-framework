@@ -39,6 +39,46 @@ _DEGRADED_NOTE = " · generation degraded to the heuristic fallback (LLM timed o
 
 _DEFAULT_JUDGE_SAMPLES = 3
 
+# JEV cascade (rollout step 2): trust the fast typed Score only at/above this calibrated confidence;
+# below it we fall back to the LLM judge. Env-overridable (TPD_DECISION_CONF_MIN).
+_DECISION_CONF_MIN = 0.8
+
+
+def _decision_conf_min() -> float:
+    with contextlib.suppress(ValueError):
+        return float(os.environ.get("TPD_DECISION_CONF_MIN", _DECISION_CONF_MIN))
+    return _DECISION_CONF_MIN
+
+
+def suite_state(plan_pack, scenarios) -> str:
+    """The candidate-suite text the assured judge grades. Shared by the JEV gate and the calibration
+    harness (``tools/jev_calibrate.py``) so both score byte-identical input — the single source of truth
+    for what a Score decision sees."""
+    return plan_pack.summary_text() + "\n\nCANDIDATE SUITE:\n" + "\n".join(
+        f"- [{s.kind}] {s.title}" for s in scenarios)
+
+
+def _decision_gate(plan, scenarios, plan_pack, threshold: float):
+    """JEV cascade: one fast typed Score gates the suite before the LLM judge. Returns an accepting
+    minimal ``JudgeVerdict`` when a decision backend is configured AND it is both confident
+    (``confidence >= τ_conf``) and above bar (``score >= threshold``) — the latency/cost win, LLM judge
+    skipped. Returns ``None`` otherwise (backend OFF → default; or low confidence / below bar → the
+    existing LLM judge runs to get the textual issues/reflections we need to regenerate anyway)."""
+    from common.adk.providers import get_decision_provider
+    from common.testplan.llm.schemas import JudgeVerdict
+
+    decision = get_decision_provider()
+    if decision is None or not decision.is_configured():
+        return None  # OFF (default) → behaviour byte-for-byte identical to today
+    state = suite_state(plan_pack, scenarios)
+    verdict = decision.score(
+        state=state, levels=["low", "medium", "high"],
+        instructions="Is this test suite good enough to ship for this plan? Grade its overall quality.")
+    score = float(verdict.value)
+    if verdict.confidence >= _decision_conf_min() and score >= threshold:
+        return JudgeVerdict(overall=score, accept=True)  # minimal — no issues/reflections needed
+    return None
+
 
 async def judge_once(plan, scenarios, summary: str, model):
     """One judge call on a suite. Also used by ``tests/eval/judge_retest.py``."""
@@ -174,8 +214,10 @@ async def run_assured_scenarios(
 
         # P4 LLM-as-judge (§3.4). No verdict = no signal to gate on: the loop stops after one
         # unscored pass rather than failing.
-        verdict = None
-        if judge_model is not None:
+        # JEV cascade (rollout step 2): a confident fast Score accepts here and skips the LLM judge;
+        # None (backend OFF / low-confidence / below bar) falls through to the unchanged judge below.
+        verdict = _decision_gate(plan, scenarios, plan_pack, threshold)
+        if verdict is None and judge_model is not None:
             summary = plan_pack.summary_text()
 
             # Gate on the MEDIAN of k draws. Measured on identical input (tests/eval/judge_retest.py):

@@ -61,7 +61,27 @@ def loads_obj(raw: str) -> dict | None:
             continue
         if isinstance(data, dict) and len(span) > best_len:
             best, best_len = data, len(span)
-    return best
+    return _unwrap_toolcall(best) if best is not None else None
+
+
+_WRAPPER_KEYS = frozenset({"parameters", "arguments", "input", "output", "json", "result", "response"})
+
+
+def _unwrap_toolcall(d: dict) -> dict:
+    """Unwrap a single-key tool-call envelope, e.g. ``{"parameters": {<real fields>}}``.
+
+    Claude-on-Vertex sometimes emits its structured answer wrapped in the tool-call key instead of
+    bare. The largest-span rule above then returns the ENVELOPE, so the caller's schema sees none of
+    its own fields and silently defaults — a ``JudgeVerdict`` came back ``overall=0.0`` (a false
+    rejection that corrupted the assured judge). Unwrap only a single wrapper key whose value is a dict,
+    so a real single-key list payload like ``{"scenarios": [...]}`` is untouched."""
+    while len(d) == 1:
+        (key, value), = d.items()
+        if key.lower() in _WRAPPER_KEYS and isinstance(value, dict):
+            d = value
+        else:
+            break
+    return d
 
 
 def coerce_str(v):

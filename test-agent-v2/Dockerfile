@@ -16,7 +16,7 @@ COPY src ./src
 COPY main.py ./
 # Phase C push-subscription worker entrypoint (uvicorn worker:app)
 COPY worker.py ./
-RUN pip install ".[bridge,gcp]"
+RUN pip install ".[bridge,gcp,jev]"
 
 # Run as non-root.
 RUN useradd -m -u 10001 appuser

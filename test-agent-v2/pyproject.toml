@@ -39,6 +39,12 @@ dev = ["pytest>=8", "pytest-asyncio>=0.23", "pytest-timeout>=2", "ruff>=0.6", "m
 # (trajectory + node-overlap) needs NONE of these — install only for the judged job. Absent → the
 # RAGAS tests skip cleanly (see tests/eval/metrics/ragas_judge.available()).
 eval = ["ragas>=0.2", "pandas>=2", "datasets>=2", "google-adk>=1.22"]
+# The JEV DecisionProvider (System-1 cascade, default OFF via TPD_DECISION_BACKEND). LAZY-imported
+# in providers/jev.py, like the gcp adapter — base install + offline tests never need it. Enable per
+# env by installing this extra AND setting TYPESAFE_API_KEY. Unpinned: JEV SDK is early-access.
+jev = [
+    "typesafe-sdk==0.7.1",
+]
 # The GCP adapter for the CloudProvider port (KGA tiers 5/6/7 — discover/logs/relate). LAZY-imported
 # (like aiplatform), so the base install + offline tests never need these; install only where the gcp
 # adapter runs (deployed image). Enablement is config-presence: a non-empty KGA_GCP_ENV_MATRIX. Azure/AWS = future extras.
