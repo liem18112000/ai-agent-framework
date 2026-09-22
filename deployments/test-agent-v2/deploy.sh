@@ -78,13 +78,15 @@ terraform apply -auto-approve -input=false \
   -target='google_secret_manager_secret.atlassian_token' \
   -target='google_secret_manager_secret.bitbucket_app_password' \
   -target='google_secret_manager_secret.a2a_bearer' \
-  -target='google_secret_manager_secret.gateway_bearer[0]'
+  -target='google_secret_manager_secret.gateway_bearer[0]' \
+  -target='google_secret_manager_secret.typesafe_api_key'
 
 echo "==> secret versions"
 add_secret kga-v2-atlassian-api-token      ATLASSIAN_API_TOKEN
 add_secret kga-v2-bitbucket-app-password   ATLASSIAN_BITBUCKET_APP_PASSWORD
 add_secret kga-v2-a2a-bearer-token         A2A_BEARER_TOKEN
 add_secret kga-v2-gateway-bearer-token     GATEWAY_BEARER_TOKEN
+add_secret kga-v2-typesafe-api-key         TYPESAFE_API_KEY   # JEV DecisionProvider (from .env)
 
 # --- resolve the image tag (env > tfvars; for SKIP_BUILD, fall back to the deployed image) ---
 IMAGE="${IMAGE:-$(awk -F'"' '/^[[:space:]]*image[[:space:]]*=/{print $2; exit}' terraform.tfvars)}"

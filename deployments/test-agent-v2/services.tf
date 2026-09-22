@@ -89,7 +89,8 @@ module "kga" {
         var.gcp_env_matrix != "" ? [
           { name = "KGA_GCP_ENV_MATRIX", value = var.gcp_env_matrix },
         ] : [],
-        local.gather_env, # parallel fan-out concurrency + JEV source gate (both inert by default)
+        local.gather_env,   # parallel fan-out concurrency + JEV source gate (both inert by default)
+        local.decision_env, # TPD_DECISION_BACKEND + TYPESAFE_API_KEY — the source gate no-ops without them
       )
     },
   ]
@@ -99,6 +100,7 @@ module "kga" {
     google_secret_manager_secret_iam_member.atlassian_access,
     google_secret_manager_secret_iam_member.bitbucket_access,
     google_secret_manager_secret_iam_member.a2a_access,
+    google_secret_manager_secret_iam_member.typesafe_access, # JEV source gate mounts TYPESAFE_API_KEY
     google_secret_manager_secret_version.db_password,
     google_secret_manager_secret_iam_member.db_password_access,
     google_project_iam_member.cloudsql_client,
