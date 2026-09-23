@@ -112,9 +112,10 @@ async def test_run_suite_llm_budget_makes_no_call(monkeypatch):
     monkeypatch.setattr("common.adk.model.model_configured", lambda: checked.append(1) or True)
     store = InMemoryExecStore()
     scenarios = [{"methodology": "exploratory", "title": f"s{i}"} for i in range(3)]
+    scenarios.append({"methodology": "ui", "title": "ui nl"})   # browser-NL also needs the LLM → budgeted
     run = await run_suite(store, "CTX", "dev", scenarios=scenarios, base_url="http://svc")
-    assert run["summary"]["unbound"] == 3
-    assert checked == []            # budget 0 → the engine is never invoked, so no model call is attempted
+    assert run["summary"]["unbound"] == 4
+    assert checked == []            # budget 0 → no engine invoked, so no model call is attempted
 
 
 class _FakeDriver:
@@ -166,3 +167,16 @@ async def test_browser_engine_unbound_without_playwright(monkeypatch):
     monkeypatch.setattr("importlib.util.find_spec", lambda name: None if name == "playwright" else object())
     res = await runners.BrowserEngine().run({"browser": {"url_path": "/x"}}, base_url="http://svc")
     assert res.ran is False and "Playwright" in res.note
+
+
+async def test_browser_engine_llm_translates_nl(monkeypatch):
+    from tests.conftest import fake_model
+    canned = ('{"url_path":"/login","steps":[{"action":"fill","selector":"#u","value":"x"},'
+              '{"action":"click","selector":"#go"}],"expect_text":"Welcome"}')
+    monkeypatch.setattr("common.adk.model.model_configured", lambda: True)
+    monkeypatch.setattr("common.adk.model.agent_model", lambda **k: fake_model(canned))
+    driver = _FakeDriver(body="Welcome home")
+    monkeypatch.setattr(runners, "_browser_driver", driver)
+    res = await runners.BrowserEngine().run({"methodology": "ui", "title": "user logs in"}, base_url="http://svc")
+    assert res.ran and res.passed
+    assert ("goto", "http://svc/login") in driver.actions       # LLM-translated plan actually executed

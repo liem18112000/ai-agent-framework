@@ -45,6 +45,17 @@ def triage(failures: list[dict]) -> list[dict]:
     return [{"message": f.get("message", ""), "verdict": classify_failure(f)} for f in failures]
 
 
+def _needs_llm(engine: str, sc: dict) -> bool:
+    """True if routing `sc` to `engine` will make an LLM translation call — so it counts against the
+    per-run budget. Pre-bound scenarios (llm with a `request`, browser with a `browser` plan) don't."""
+    if engine == "llm":
+        req = sc.get("request")
+        return not (isinstance(req, dict) and req.get("path"))
+    if engine == "browser":
+        return not isinstance(sc.get("browser"), dict)
+    return False
+
+
 async def load_scenarios(context_id: str) -> list[dict]:
     """Read the persisted scenarios for `context_id` from the shared memory bank — the same
     `scenarios.json` TPD writes via `common.testplan.memory.write_scenarios`. Returns dicts (carrying
@@ -97,7 +108,7 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
     for sc in scenarios:
         name = select_engine(sc)
         by_engine[name] = by_engine.get(name, 0) + 1
-        if name == "llm":
+        if _needs_llm(name, sc):
             if llm_used >= llm_max:
                 unbound += 1
                 continue                 # over the per-run LLM budget — record unbound, make no call

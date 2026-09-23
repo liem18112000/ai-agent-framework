@@ -156,18 +156,23 @@ def _get_browser_driver():
 
 
 class BrowserEngine:
-    """Drive a UI/E2E scenario's structured browser plan (`scenario["browser"]` =
-    {url_path, steps:[{action, selector, value}], expect_text}) via a BrowserDriver, then assert the
-    final page contains `expect_text` (the scenario's Gherkin `Then`). A natural-language UI scenario
-    with no plan is unbound (LLM→browser translation is the follow-up, as LlmEngine followed ApiEngine)."""
+    """Drive a UI/E2E scenario via a BrowserDriver. The scenario's structured browser plan
+    (`scenario["browser"]` = {url_path, steps:[{action, selector, value}], expect_text}) is run and the
+    final page is asserted to contain `expect_text` (its Gherkin `Then`). A natural-language UI scenario
+    with no plan is translated by one LLM call (BrowserPlan) — the browser twin of LlmEngine."""
 
     name = "browser"
 
     async def run(self, scenario: dict, *, base_url: str) -> EngineResult:
         plan = scenario.get("browser")
-        if not (base_url and isinstance(plan, dict)):
+        if not plan and base_url:                            # NL UI scenario → translate via the LLM
+            from common.adk.model import model_configured
+            if model_configured():
+                plan = await _llm_translate(scenario, system=_BROWSER_TRANSLATE_SYSTEM,
+                                            schema=BrowserPlan, output_key="browser")
+        if not (base_url and isinstance(plan, dict) and (plan.get("url_path") or plan.get("steps"))):
             return EngineResult(self.name, ran=False,
-                                note="no browser plan / base_url (LLM→browser translation is a follow-up)")
+                                note="no browser plan / base_url and no provider to translate the scenario")
         driver = _get_browser_driver()
         if driver is None:
             return EngineResult(self.name, ran=False,
@@ -208,6 +213,30 @@ _TRANSLATE_SYSTEM = (
 )
 
 
+class BrowserStep(BaseModel):
+    action: str = ""      # goto | click | fill
+    selector: str = ""    # a CSS selector for click/fill
+    value: str = ""       # the text to fill, or a URL for goto
+
+
+class BrowserPlan(BaseModel):
+    """The LLM's structured translation of a UI scenario into a browser interaction + its oracle."""
+
+    url_path: str = ""                                # path relative to the base URL (leading '/')
+    steps: list[BrowserStep] = []                     # ordered click/fill interactions
+    expect_text: str = ""                             # text the final page must contain (the 'Then')
+
+
+_BROWSER_TRANSLATE_SYSTEM = (
+    "You translate ONE UI test scenario into a single browser interaction against a web app. Given the "
+    "scenario's title, description and preconditions, output: the path to open (relative to the base URL, "
+    "leading '/'), an ordered list of steps (each an action 'click' or 'fill' with a CSS selector, and a "
+    "value for 'fill'), and a short substring the final page must contain to prove the scenario's expected "
+    "end-state (its Gherkin 'Then'). Output only the structured fields. If you cannot infer a concrete "
+    "interaction, return an empty url_path."
+)
+
+
 def _scenario_task(scenario: dict) -> str:
     parts = [f"title: {scenario.get('title', '')}", f"kind: {scenario.get('kind', '')}"]
     if scenario.get("description"):
@@ -216,6 +245,16 @@ def _scenario_task(scenario: dict) -> str:
     if pre:
         parts.append("preconditions: " + "; ".join(map(str, pre)))
     return "\n".join(parts)
+
+
+async def _llm_translate(scenario: dict, *, system: str, schema, output_key: str) -> dict | None:
+    """One structured-output LLM call: translate a scenario into `schema` (an API request or a browser
+    plan), returning the validated dict or None on degrade. Shared by LlmEngine and BrowserEngine."""
+    from common.adk.model import agent_model
+    from common.testplan.llm.adk import build_generator_agent, run_json_agent
+    agent = build_generator_agent(name="exec_translate", system=system, output_schema=schema,
+                                  output_key=output_key, model=agent_model())
+    return await run_json_agent(agent, output_key=output_key, user=_scenario_task(scenario))
 
 
 class LlmEngine:
@@ -242,11 +281,7 @@ class LlmEngine:
         return EngineResult(self.name, ran=res.ran, outcomes=res.outcomes, note=res.note)
 
     async def _translate(self, scenario: dict) -> dict | None:
-        from common.adk.model import agent_model
-        from common.testplan.llm.adk import build_generator_agent, run_json_agent
-        agent = build_generator_agent(name="exec_translate", system=_TRANSLATE_SYSTEM,
-                                      output_schema=RequestPlan, output_key="request", model=agent_model())
-        return await run_json_agent(agent, output_key="request", user=_scenario_task(scenario))
+        return await _llm_translate(scenario, system=_TRANSLATE_SYSTEM, schema=RequestPlan, output_key="request")
 
 
 ENGINES: dict[str, RunnerEngine] = {
