@@ -104,7 +104,7 @@ services:
     volumes: ["claude_config:/root/.claude"]   # persists the one-time `claude /login` (subscription auth)
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8088/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8088/health').read()==b'ok' else 1)"]
       interval: 10s
       timeout: 5s
       retries: 5
