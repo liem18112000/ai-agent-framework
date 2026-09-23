@@ -38,8 +38,11 @@ def _offline_default_no_vertex():
     Session scope is required (the eval pipeline fixtures are module-scoped and run before any
     function-scoped clear). Tests that exercise the LLM path set real values via their own
     function-scoped monkeypatch, which applies within — and reverts after — their test."""
+    # TPD_DECISION_BACKEND="" keeps get_decision_provider() → None offline, so the JEV cascade never
+    # dials real JEV even though a local .env leaks TYPESAFE_API_KEY (same hazard as VERTEX_* above).
     saved = {k: os.environ.get(k)
-             for k in ("VERTEX_PROJECT", "VERTEX_LOCATION", "VERTEX_MODEL", "CACHE_BACKEND")}
+             for k in ("VERTEX_PROJECT", "VERTEX_LOCATION", "VERTEX_MODEL", "CACHE_BACKEND",
+                       "TPD_DECISION_BACKEND")}
     for k in saved:
         os.environ[k] = ""  # CACHE_BACKEND="" → build_cache() → NullCache (offline tests never touch Redis)
     from common.cache import get_cache

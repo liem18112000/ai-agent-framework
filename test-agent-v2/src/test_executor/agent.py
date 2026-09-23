@@ -7,6 +7,7 @@ Cloud SQL engine, or an in-memory fallback offline). Design: docs/RESEARCH-test-
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 
 from common.adk.router import RouterAgent
@@ -59,7 +60,7 @@ class ExecutorRouter(RouterAgent):
         if not run:
             return "No run to triage — call run first."
         failures = (run.get("signals") or {}).get("failures") or []
-        verdicts = runner.triage(failures)
+        verdicts = await asyncio.to_thread(runner.triage, failures)   # JEV cascade is sync/blocking
         if not verdicts:
             return f"Run {run.get('id')}: no failures to triage (status {run.get('status')})."
         return "Triage:\n" + "\n".join(f"  - {v['verdict']}: {v['message']}" for v in verdicts)

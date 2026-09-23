@@ -20,6 +20,49 @@ def test_triage_maps_all():
     assert [v["verdict"] for v in out] == ["Heal", "Bug"]
 
 
+class _FakeDecision:
+    """A DecisionProvider double — returns a fixed Choice verdict at a fixed confidence."""
+
+    name = "fake"
+
+    def __init__(self, value, confidence):
+        self._value, self._confidence = value, confidence
+
+    def is_configured(self):
+        return True
+
+    def choice(self, state, options, instructions):
+        from common.adk.providers import Verdict
+        return Verdict(value=self._value, probs=None, confidence=self._confidence)
+
+    def score(self, *a, **k):
+        raise NotImplementedError
+
+    def noul(self, *a, **k):
+        raise NotImplementedError
+
+
+def test_triage_jev_confident_overrides_heuristic(monkeypatch):
+    # message reads Bug by heuristic; a confident JEV Choice wins
+    monkeypatch.setattr("common.adk.providers.get_decision_provider", lambda: _FakeDecision("Environment", 0.9))
+    assert triage([{"message": "AssertionError: expected 3"}])[0]["verdict"] == "Environment"
+
+
+def test_triage_jev_low_confidence_falls_back(monkeypatch):
+    monkeypatch.setattr("common.adk.providers.get_decision_provider", lambda: _FakeDecision("Environment", 0.2))
+    assert triage([{"message": "AssertionError: expected 3"}])[0]["verdict"] == "Bug"  # heuristic tail
+
+
+def test_triage_flaky_not_rejudged_by_jev(monkeypatch):
+    monkeypatch.setattr("common.adk.providers.get_decision_provider", lambda: _FakeDecision("Bug", 0.99))
+    assert triage([{"message": "x", "flaky": True}])[0]["verdict"] == "Flaky"  # proven-flaky short-circuits
+
+
+def test_triage_default_off_is_heuristic(monkeypatch):
+    monkeypatch.setattr("common.adk.providers.get_decision_provider", lambda: None)
+    assert triage([{"message": "selector not found"}])[0]["verdict"] == "Heal"
+
+
 async def test_ledger_roundtrip():
     s = InMemoryExecStore()
     eid = await s.upsert_env("CTX", "dev", base_url="http://dev")
