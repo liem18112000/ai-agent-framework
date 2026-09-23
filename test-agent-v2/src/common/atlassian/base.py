@@ -23,6 +23,22 @@ def _filename_from_disposition(disposition: str) -> str:
     m = _DISPOSITION_FILENAME.search(disposition or "")
     return m.group(1).strip() if m else ""
 
+
+async def _read_capped(resp: httpx.Response, max_bytes: int, url: str) -> bytes:
+    """Stream `resp`'s body with an up-front Content-Length check and a cumulative byte cap, so a body
+    over `max_bytes` is refused without being buffered whole. Shared by `download_bytes`/`stream_text`."""
+    declared = resp.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > max_bytes:
+        raise ValueError(f"body exceeds {max_bytes} bytes: {url}")
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in resp.aiter_bytes():
+        total += len(chunk)
+        if total > max_bytes:
+            raise ValueError(f"body exceeds {max_bytes} bytes: {url}")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
 RETRY_BACKOFFS: tuple[float, ...] = (1.0, 2.0, 4.0)
 RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
 BITBUCKET_API = "https://api.bitbucket.org/2.0"
@@ -113,20 +129,34 @@ class BaseClient:
                     current = str(resp.url.join(resp.headers["location"]))
                     continue
                 resp.raise_for_status()
-                declared = resp.headers.get("content-length")
-                if declared and declared.isdigit() and int(declared) > max_bytes:
-                    raise ValueError(f"attachment exceeds {max_bytes} bytes: {url}")
-                chunks: list[bytes] = []
-                total = 0
-                async for chunk in resp.aiter_bytes():
-                    total += len(chunk)
-                    if total > max_bytes:
-                        raise ValueError(f"attachment exceeds {max_bytes} bytes: {url}")
-                    chunks.append(chunk)
+                data = await _read_capped(resp, max_bytes, url)
                 ctype = resp.headers.get("content-type", "").split(";", 1)[0].strip().lower()
                 filename = _filename_from_disposition(resp.headers.get("content-disposition", ""))
-                return b"".join(chunks), ctype, filename
+                return data, ctype, filename
         raise ValueError(f"too many redirects (> {_MAX_REDIRECTS}): {url}")
+
+    async def stream_text(
+        self, url: str, *, params: dict | None = None, accept: str | None = None,
+        headers: dict | None = None, max_bytes: int = 10 * 1024 * 1024,
+    ) -> str:
+        """Streamed, byte-capped, SSRF-guarded GET returning decoded text (no redirect following).
+
+        For raw source blobs (e.g. the GitHub Contents raw media type) whose size is untrusted — the
+        URL derives from ticket content. Refuses a body over `max_bytes` without buffering it whole
+        (→ the crawl records a gap instead of OOMing), rejects a 3xx as an error (never returns a
+        redirect page as the file), and blocks non-public hosts up front."""
+        if host_blocked(httpx.URL(url).host):
+            raise BlockedHostError(f"blocked non-public address: {url}")
+        hdrs = {"Accept": accept} if accept else {}
+        if headers:
+            hdrs.update(headers)
+        async with self._client.stream("GET", url, params=params, headers=hdrs,
+                                       follow_redirects=False) as resp:
+            if resp.status_code in _REDIRECT_CODES:
+                raise ValueError(f"unexpected redirect ({resp.status_code}) for raw fetch: {url}")
+            resp.raise_for_status()
+            data = await _read_capped(resp, max_bytes, url)
+            return data.decode(resp.charset_encoding or "utf-8", errors="replace")
 
     async def aclose(self) -> None:
         await self._client.aclose()

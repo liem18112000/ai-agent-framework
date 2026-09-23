@@ -12,8 +12,9 @@ P(true) (a 0–1 float; there is NO separate probs/confidence field) — so noul
 ``ScoreAnswer``/``ChoiceAnswer`` DO carry ``confidence`` + ``probabilities``, read defensively
 (``_conf``/``_probs``); ``Score.score`` is normalised to the 0–1 float the port promises (``_score01``,
 encoding still loose). Score/Choice confidence falls back to ``TYPESAFE_DEFAULT_CONFIDENCE`` (default
-1.0 — an explicit "trust JEV" opt-in; lower it, or raise the cascade's ``TPD_DECISION_CONF_MIN``, to
-keep the LLM judge in the loop). Re-check on any SDK upgrade.
+0.0 — fail SAFE: a missing/renamed confidence field then stays BELOW the cascade's ``TPD_DECISION_CONF_MIN``
+so the LLM judge keeps running rather than being silently skipped; set it to 1.0 to blindly trust JEV's
+fast path). Re-check on any SDK upgrade.
 """
 
 from __future__ import annotations
@@ -31,9 +32,6 @@ class JevProvider:
     def is_configured(self) -> bool:
         return bool(os.environ.get("TYPESAFE_API_KEY", "").strip())
 
-    def choice(self, state: str, options: list[str], instructions: str) -> Verdict:
-        return self._call("choice", state, options=options, instructions=instructions)
-
     def score(self, state: str, instructions: str, levels: list[str]) -> Verdict:
         return self._call("score", state, instructions=instructions, levels=levels)
 
@@ -41,10 +39,9 @@ class JevProvider:
         return self._call("noul", state, statement=statement)
 
     def _call(self, primitive: str, state: str, **spec) -> Verdict:
-        from typesafe_sdk import Choice, Noul, Score, TypeSafeClient
+        from typesafe_sdk import Noul, Score, TypeSafeClient
 
         question = {
-            "choice": lambda: Choice(instructions=spec["instructions"], criteria={o: None for o in spec["options"]}),
             "score": lambda: Score(instructions=spec["instructions"], criteria=list(spec["levels"])),
             "noul": lambda: Noul(instructions=spec["statement"]),
         }[primitive]()
@@ -55,9 +52,6 @@ class JevProvider:
 
 def _verdict(primitive: str, result, spec: dict) -> Verdict:
     """Map one System-1 result row onto a typed ``Verdict`` (value + defensive probs/confidence)."""
-    if primitive == "choice":
-        r = result.choices[_QKEY]
-        return Verdict(value=r.choice, probs=_probs(r), confidence=_conf(r))
     if primitive == "noul":
         p = float(result.nouls[_QKEY].noul)  # SDK 0.7.1: NoulAnswer.noul IS P(true); no probs/confidence field
         return Verdict(value=(p >= 0.5), probs={"true": p}, confidence=abs(p - 0.5) * 2.0)
@@ -71,7 +65,7 @@ def _conf(r) -> float:
         v = getattr(r, name, None)
         if isinstance(v, (int, float)) and not isinstance(v, bool):
             return float(v)
-    return float(os.environ.get("TYPESAFE_DEFAULT_CONFIDENCE", "1.0"))
+    return float(os.environ.get("TYPESAFE_DEFAULT_CONFIDENCE", "0.0"))  # fail SAFE: unknown conf → LLM judge stays in the loop
 
 
 def _probs(r) -> dict[str, float] | None:
@@ -87,10 +81,10 @@ if __name__ == "__main__":  # ponytail: one runnable check on the only non-trivi
     assert score01("high", L) == 1.0 and score01("low", L) == 0.0
     assert score01(True, L) == 1.0 and score01("weird", L) == 0.0
 
-    class _R:
-        choice, confidence, probs = "b", 0.77, {"true": 0.9}
-    v = _verdict("choice", type("X", (), {"choices": {_QKEY: _R()}})(), {})
-    assert v.value == "b" and v.confidence == 0.77 and v.probs == {"true": 0.9}
+    class _S:  # ScoreAnswer carries confidence + probs → read defensively
+        score, confidence, probs = 0.42, 0.77, {"true": 0.9}
+    v = _verdict("score", type("X", (), {"scores": {_QKEY: _S()}})(), {"levels": L})
+    assert v.value == 0.42 and v.confidence == 0.77 and v.probs == {"true": 0.9}
 
     class _N:  # SDK 0.7.1: NoulAnswer.noul IS P(true) → probs carries it; confidence = |p-0.5|*2
         noul = 0.2

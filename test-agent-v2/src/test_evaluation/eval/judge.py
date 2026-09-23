@@ -15,7 +15,10 @@ from __future__ import annotations
 from common.adk.model import agent_model
 from common.adk.providers import get_provider
 from common.llm.vertex import vertex_config
+from common.monitoring import get_logger
 from test_evaluation.metrics import ragas_judge
+
+log = get_logger("eval.judge")
 
 
 def provider_configured() -> bool:
@@ -69,21 +72,35 @@ def build_semantic_judge():
     never by ``evaluate_pack`` (V2)."""
     from common.adk.providers import get_decision_provider
 
+    llm_judge = _llm_semantic_judge()  # the fallback for the JEV path too (None when no provider creds)
+
     # JEV cascade (rollout step 1): a configured decision backend serves the yes/no as a typed Noul,
-    # fronting the LLM. Default OFF (TPD_DECISION_BACKEND unset) → None → the exact LLM path below.
+    # fronting the LLM. Default OFF (TPD_DECISION_BACKEND unset) → None → the LLM path (llm_judge) alone.
     decision = get_decision_provider()
     if decision is not None and decision.is_configured():
         threshold = _noul_threshold()
+
         def judge(question: str, text: str) -> bool:
-            verdict = decision.noul(state=text, statement=question)
-            probs = verdict.probs or {}
+            try:
+                verdict = decision.noul(state=text, statement=question)
+            except Exception as exc:  # a JEV outage falls back to the LLM judge, never crashes scoring
+                if llm_judge is None:
+                    raise
+                log.warning("semantic judge: JEV noul failed (%s); falling back to the LLM judge", exc)
+                return llm_judge(question, text)
             # Accept at P(true) >= threshold (env TEV_NOUL_THRESHOLD, default 0.5). probs is authoritative
             # when present; else fall back to the bool value. confidence is advisory here — a bool sink
             # can't carry it (see the assured cascade).
+            probs = verdict.probs or {}
             p_true = probs.get("true", probs.get("yes", float(bool(verdict.value))))
             return p_true >= threshold
         return judge
 
+    return llm_judge
+
+
+def _llm_semantic_judge():
+    """The Claude-on-Vertex yes/no judge closure, or ``None`` when the provider is unconfigured."""
     if not provider_configured():
         return None
     provider = get_provider()

@@ -256,6 +256,28 @@ async def test_get_github_src_anonymous_when_no_token():
     await c.aclose()
 
 
+async def test_github_src_rejects_oversize_via_content_length():
+    """KGA-01: a source blob over the cap is refused up-front, not buffered into RAM."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"x" * 100)
+
+    c = _gh_client(handler)
+    with pytest.raises(ValueError, match="exceeds"):
+        await c.stream_text("https://api.github.com/x", max_bytes=4)
+    await c.aclose()
+
+
+async def test_github_src_rejects_redirect_body():
+    """KGA-06: a 3xx on the raw path is an error, never returned as the file content."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(302, headers={"location": "https://elsewhere/x"})
+
+    c = _gh_client(handler)
+    with pytest.raises(ValueError, match="redirect"):
+        await c.stream_text("https://api.github.com/x")
+    await c.aclose()
+
+
 # --- download_bytes: SSRF guard (CLD-01) + streaming byte cap (CLD-02) ------------------------
 
 async def test_download_bytes_blocks_ssrf_to_internal_literal():

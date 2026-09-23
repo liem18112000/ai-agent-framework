@@ -49,8 +49,11 @@ def result_blob(ctx: str, run: str, batch_id: int) -> str:
 
 def handle_job(data: bytes) -> None:
     """WORKER side: run one job's generation and write its raw text to GCS. Raises on failure so the
-    subscriber leaves the message unacked → Pub/Sub redelivers / dead-letters it (idempotent: the result
-    blob is keyed by (ctx, run, batch) so a redelivery just overwrites)."""
+    subscriber leaves the message unacked. On the Pub/Sub path that means redelivery/dead-lettering; on
+    the Redis Streams path (redis_worker.py) an unacked job stays in the PEL and is NOT auto-redelivered
+    (no XAUTOCLAIM sweep — see common/queue.py) → the coordinator's poll budget elapses and its units
+    degrade to the heuristic. Either way it's idempotent: the result blob is keyed by (ctx, run, batch),
+    so a redelivery just overwrites."""
     from common.adk.model import complete
     from common.store import build_object_store
 

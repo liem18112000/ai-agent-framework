@@ -12,8 +12,12 @@ from common.bridge.prompts import server_instructions, test_prompt, trigger_inst
 from common.learn.config import _on
 from knowledge_gathering.bridge.mcp_server import register_tools as register_kga
 from test_evaluation.bridge.mcp_server import register_tools as register_tev
-from test_executor.bridge.mcp_server import register_tools as register_exec
 from test_plan_definition.bridge.mcp_server import register_tools as register_tpd
+
+try:  # the test_executor agent is WIP — the gateway still serves the other agents when it's absent
+    from test_executor.bridge.mcp_server import register_tools as register_exec
+except ModuleNotFoundError:
+    register_exec = None
 
 TOKEN = os.environ.get("A2A_BEARER_TOKEN")
 KGA_URL = os.environ.get("KGA_A2A_URL", "http://localhost:8081/")
@@ -43,7 +47,7 @@ _tools = {
     **register_kga(mcp, kga_session),
     **register_tpd(mcp, tpd_session, on_finish=_benchmark_on_finish),
     **register_tev(mcp, tev_session),
-    **register_exec(mcp, exec_session),
+    **(register_exec(mcp, exec_session) if register_exec else {}),
     **register_admin(mcp, admin_session),
 }
 globals().update(_tools)

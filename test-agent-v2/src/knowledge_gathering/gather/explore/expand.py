@@ -107,7 +107,8 @@ async def expansion_round(
     # Free, instant, in-memory recall runs first; its seeds join the exclude the parallel wave sees
     # (cheaply recovering part of the old forward-exclude behaviour for the capped producers).
     if not climbed:
-        prior_seeds, md["prior"] = memory_self_seed(bank, seed, terms)
+        # memory_self_seed does a blocking GCS bank.load_index() → off the event loop (Cloud Run liveness).
+        prior_seeds, md["prior"] = await asyncio.to_thread(memory_self_seed, bank, seed, terms)
         _add(prior_seeds)
 
     base_exclude = exclude | set(new_seeds) | {seed_norm}  # the ONE exclude the whole parallel wave sees

@@ -24,13 +24,15 @@ class GitHubMixin:
     async def get_github_src(self, owner: str, repo: str, path: str, ref: str = "main") -> str:
         """Raw file content at `path` on `ref` (returns text, not JSON).
 
-        The Contents API with `Accept: application/vnd.github.raw` streams the file directly.
-        ponytail: serves files up to 100MB; larger blobs need the Git Blobs API — add when a repo hits it.
+        The Contents API with `Accept: application/vnd.github.raw` streams the file directly. Fetched
+        via `stream_text`: streamed with a byte cap (owner/repo/path/ref derive from untrusted ticket
+        content), SSRF-guarded, and 3xx-rejected — a blob over the cap is refused without being
+        buffered into RAM, so the crawl records a gap instead of OOMing. Larger blobs would need the
+        Git Blobs API — add when a repo actually hits the cap.
         """
-        resp = await self._request(
+        return await self.stream_text(
             f"{self.github_base}/repos/{owner}/{repo}/contents/{path}",
             params={"ref": ref},
             accept="application/vnd.github.raw",
             headers=self._gh_headers(),
         )
-        return resp.text

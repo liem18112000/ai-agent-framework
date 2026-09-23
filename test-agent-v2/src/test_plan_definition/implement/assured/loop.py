@@ -2,11 +2,14 @@
 
 ALWAYS on — this is the implement scenario-generation path (``implement_plan`` calls it unconditionally;
 the old ``TPD_ASSURED`` opt-in gate is gone). Bounded by ``TPD_ASSURED_MAX_ITERS`` (default 2). NOTE:
-this trades away I3 (the 1-LLM-call default) — each round is generate + judge, so the worst case is
-2·iters serial Vertex calls; keep ``TPD_ASSURED_MAX_ITERS=1`` in a latency-sensitive deployment to stay
-clear of the Cloud-Run liveness/request timeout the three-serial-call bug once hit. State is persisted
-per ``context_id`` so a handler killed mid-loop RESUMES with its accumulated reflections + remaining
-budget rather than restarting from scratch.
+this trades away I3 (the 1-LLM-call default). Per round the serial Vertex cost is
+``ceil(in_scope_units / _BATCH_UNITS)`` scenario batches + ``TPD_JUDGE_SAMPLES`` judge calls (default 1),
+plus ONE scope-classify call per implement — so a rich pack is well above the old "2·iters" estimate.
+``max_rounds`` chunks ROUNDS across MCP calls and ``claude_scenarios`` caps BATCHES per round
+(``TPD_GEN_MAX_BATCHES``, overflow heuristic-filled) so one call stays under the ~300s MCP idle ceiling
+the three-serial-call timeout once hit; keep ``TPD_ASSURED_MAX_ITERS=1`` in a latency-sensitive deploy.
+State is persisted per ``context_id`` so a handler killed mid-loop RESUMES with its accumulated
+reflections + remaining budget rather than restarting from scratch.
 
 We do NOT have real execution yet (P1–P3), so 'measure' here is the LLM-as-judge rubric score, not
 coverage/flakiness/mutation — the gate is honest about that. The human Yes/No gate is unchanged; this
@@ -19,6 +22,7 @@ the agent reconstructs its inputs from the bank and reports the same loop as an 
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import os
 import time
@@ -37,7 +41,9 @@ _MAX_ISSUES = 5
 _DEGRADED_NOTE = " · generation degraded to the heuristic fallback (LLM timed out / unconfigured)"
 
 
-_DEFAULT_JUDGE_SAMPLES = 3
+# Default 1 (one judge call/round) to honor the ≈1-LLM-call implement invariant. Median-of-k is a
+# variance-reduction opt-in (sigma 0.057→0.020 at k=3) for latency-tolerant deployments: set TPD_JUDGE_SAMPLES.
+_DEFAULT_JUDGE_SAMPLES = 1
 
 # JEV cascade (rollout step 2): trust the fast typed Score only at/above this calibrated confidence;
 # below it we fall back to the LLM judge. Env-overridable (TPD_DECISION_CONF_MIN).
@@ -100,9 +106,10 @@ async def judge_once(plan, scenarios, summary: str, model):
 
 
 def _judge_samples() -> int:
-    """How many times to sample the judge per round (env ``TPD_JUDGE_SAMPLES``, default 3).
+    """How many times to sample the judge per round (env ``TPD_JUDGE_SAMPLES``, default 1).
 
-    Set 1 to restore the old single-draw behaviour when latency matters more than a trustworthy score."""
+    Set >1 to gate on the median of k draws (a variance cut) when a trustworthy score matters more
+    than latency; default 1 keeps implement near the ≈1-LLM-call invariant."""
     with contextlib.suppress(ValueError):
         return max(1, int(os.environ.get("TPD_JUDGE_SAMPLES", _DEFAULT_JUDGE_SAMPLES)))
     return _DEFAULT_JUDGE_SAMPLES
@@ -152,7 +159,7 @@ async def run_assured_scenarios(
         budget_s = max(1.0, float(os.environ.get("TPD_ASSURED_BUDGET_S", _DEFAULT_BUDGET_S)))
     start = time.monotonic()
     degraded = False  # a round fell back to the heuristic (LLM timed out / unconfigured / invalid)
-    saved = store.read_assured_state(bank, context_id)
+    saved = await asyncio.to_thread(store.read_assured_state, bank, context_id)  # blocking GCS read off the loop
     # resume a genuinely interrupted pass (rounds done, not accepted, budget left) OR a stuck pass the
     # client is now steering with `guidance` (carry the prior rounds + reflections and add more rounds).
     done_rounds = len(saved.get("iterations", []))
@@ -165,7 +172,8 @@ async def run_assured_scenarios(
 
     # on resume, restore the best scenarios the prior (paused/crashed) call persisted, so a
     # lower-scoring later round can't displace a better earlier one (final = best across all calls).
-    best_scenarios: list[TestScenario] = store.read_scenarios(bank, context_id) if resume else []
+    best_scenarios: list[TestScenario] = (
+        await asyncio.to_thread(store.read_scenarios, bank, context_id) if resume else [])
     # seed from the resumed rounds so final_score never under-reports a better pre-crash round
     best_score = max((it.get("score", -1.0) for it in history), default=-1.0)
     best_verdict = None
@@ -175,9 +183,12 @@ async def run_assured_scenarios(
     # inherit the ceiling (a cap truncates the verdict mid-JSON); fast tier — judging is cheap grading
     judge_model = model or agent_model(tier="fast")
 
-    # One scope-classifier call per implement (not per round): which pack nodes are in scope for THIS
-    # ticket, so generation batches over the ticket's own behaviours instead of the whole crawled pack
-    # (sibling/framework nodes tank the judge's faithfulness + scope precision). None → don't filter.
+    # One scope-classifier call per THIS CALL (so a chunked/resumed implement re-runs it once per
+    # chunk — an accepted, idempotent extra call on the rare resume path; the prompt is conservative,
+    # keep-if-unsure). It decides which pack nodes are in scope for THIS ticket, so generation batches
+    # over the ticket's own behaviours instead of the whole crawled pack (sibling/framework nodes tank
+    # the judge's faithfulness + scope precision). None → don't filter. (To eliminate the resume re-run,
+    # persist in_scope_ids in the assured state and read it back — deferred; not worth the machinery.)
     in_scope_ids = await classify_in_scope(plan, plan_pack, model=model)
     # The plan's scope/out_of_scope come from define and are often unreliable (seen: scope = the ticket
     # id duplicated 6x AND the ticket itself listed OUT of scope). That garbage feeds `_scope_block`
@@ -188,7 +199,7 @@ async def run_assured_scenarios(
         grounded_ids = {n.id for n in plan_pack.pack.grounded}
         plan.scope = sorted(in_scope_ids)
         plan.out_of_scope = sorted(grounded_ids - in_scope_ids)
-        store.write_plan(bank, plan)
+        await asyncio.to_thread(store.write_plan, bank, plan)
 
     scenarios: list[TestScenario] = []
     round_durations: list[float] = []  # cost of each round completed IN THIS run (empty on resume)
@@ -219,7 +230,8 @@ async def run_assured_scenarios(
         # unscored pass rather than failing.
         # JEV cascade (rollout step 2): a confident fast Score accepts here and skips the LLM judge;
         # None (backend OFF / low-confidence / below bar) falls through to the unchanged judge below.
-        verdict = _decision_gate(plan, scenarios, plan_pack, threshold)
+        # _decision_gate makes a BLOCKING JEV HTTP call when a decision backend is configured → off the loop.
+        verdict = await asyncio.to_thread(_decision_gate, plan, scenarios, plan_pack, threshold)
         if verdict is None and judge_model is not None:
             summary = plan_pack.summary_text()
 
@@ -246,7 +258,7 @@ async def run_assured_scenarios(
             log.info("assured: %s", note)
             report = AssuredReport(iterations=history, final_score=0.0, threshold=threshold,
                                    accepted=False, reflections=reflections, note=note)
-            _persist(bank, context_id, report)
+            await _persist(bank, context_id, report)
             return best_scenarios, report, False
 
         score = verdict.score()
@@ -260,13 +272,13 @@ async def run_assured_scenarios(
             iterations=history, final_score=round(best_score, 3), threshold=threshold,
             accepted=accepted, issues=(best_verdict.issues if best_verdict else []),
             reflections=reflections)
-        _persist(bank, context_id, report)  # after each round → resumable across a Cloud-Run kill
+        await _persist(bank, context_id, report)  # after each round → resumable across a Cloud-Run kill
 
         log.info("assured round %d: score=%.3f threshold=%.2f accepted=%s",
                  len(history), score, threshold, accepted)
         if accepted:
             report.note = f"accepted at round {len(history)} (score {score:.2f} ≥ {threshold:.2f})"
-            _persist(bank, context_id, report)
+            await _persist(bank, context_id, report)
             return best_scenarios or scenarios, report, False
 
         # REFLECT — carry the judge's imperative fixes into the next generation (dedup, ordered).
@@ -279,7 +291,7 @@ async def run_assured_scenarios(
     if pending:  # paused on the per-call round budget — hand back the last per-round report as in-progress
         report.note = (f"round {len(history)}/{cap} done (best {best_score:.2f} < {threshold:.2f}) "
                        "— more rounds pending; re-run implement to continue")
-        _persist(bank, context_id, report)
+        await _persist(bank, context_id, report)
         log.info("assured: %s", report.note)
         return best_scenarios or scenarios, report, True
 
@@ -293,14 +305,16 @@ async def run_assured_scenarios(
         iterations=history, final_score=round(max(best_score, 0.0), 3), threshold=threshold,
         accepted=False, issues=(best_verdict.issues if best_verdict else []),
         reflections=reflections, note=note)
-    _persist(bank, context_id, report)
+    await _persist(bank, context_id, report)
     log.info("assured: %s", note)
     return final, report, False
 
 
-def _persist(bank, context_id: str, report: AssuredReport) -> None:
-    """Best-effort GCS checkpoint of the loop state (the resume source). Never breaks the loop."""
+async def _persist(bank, context_id: str, report: AssuredReport) -> None:
+    """Best-effort GCS checkpoint of the loop state (the resume source). Never breaks the loop.
+
+    The write is a blocking GCS round-trip → run off the event loop (this fires after every round)."""
     try:
-        store.write_assured_state(bank, context_id, asdict(report))
+        await asyncio.to_thread(store.write_assured_state, bank, context_id, asdict(report))
     except Exception as exc:  # noqa: BLE001 — persistence is best-effort
         log.warning("assured: state checkpoint skipped (%s)", exc)

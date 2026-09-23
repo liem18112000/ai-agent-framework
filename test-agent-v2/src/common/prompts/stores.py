@@ -13,6 +13,8 @@ from collections.abc import Mapping
 from common.monitoring import get_logger
 from common.prompts.port import NONE, PromptNotFound, PromptTemplate, declared_vars
 
+_MAX_PROMPT_BODY = 32_000  # publish-time cap: a prompt body over ~32KB is a mistake, not a template
+
 log = get_logger("prompts")
 
 _DDL = (
@@ -75,6 +77,8 @@ def validate(key: str, body: str, engine: str, required_vars: tuple[str, ...], *
         raise ValueError(f"prompt {key!r}: unknown engine {engine!r} (expected {NONE!r})")
     if not body.strip():
         raise ValueError(f"prompt {key!r}: empty body")
+    if len(body) > _MAX_PROMPT_BODY:  # a published body becomes the cached system prompt for every run
+        raise ValueError(f"prompt {key!r}: body too large ({len(body)} > {_MAX_PROMPT_BODY} chars)")
     if engine == NONE:
         undeclared = [v for v in declared_vars(body) if v not in required_vars]
         if undeclared:

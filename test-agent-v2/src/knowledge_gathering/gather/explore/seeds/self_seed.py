@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from common.memory.graph_index import match_index_nodes, rank_promotions
 from common.models import INSIGHT
 from knowledge_gathering.gather.seed import normalize_seed
@@ -100,7 +102,7 @@ async def semantic_self_seed(bank, seed: str, terms: str = "", *, exclude: set[s
         if store is None or not embed_configured():
             return [], ""
         self_id = normalize_seed(seed)
-        graph, _ = bank.load_index()
+        graph, _ = await asyncio.to_thread(bank.load_index)  # blocking GCS read off the event loop
         if not (anchors := _neighbors(graph, self_id)):
             return [], ""
         q_embed = await aembed_query(terms) if terms else None

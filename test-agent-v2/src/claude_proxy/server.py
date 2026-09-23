@@ -8,9 +8,13 @@ and ADK LlmAgent text calls. Auth lives in a mounted volume (/root/.claude); run
 import json
 import os
 import subprocess
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = int(os.environ.get("PORT", "8088"))
+_MAX_BODY = int(os.environ.get("CLAUDE_PROXY_MAX_BODY", str(32 * 1024 * 1024)))  # reject bodies over this (unbounded-alloc guard)
+# One paid `claude` CLI per slot; excess requests queue instead of forking unbounded subprocesses.
+_SEM = threading.BoundedSemaphore(int(os.environ.get("CLAUDE_PROXY_MAX_CONCURRENCY", "4")))
 
 
 def flatten(messages):
@@ -28,12 +32,14 @@ def run_claude(prompt):
     args = ["claude", "-p", prompt, "--output-format", "json"]
     if os.environ.get("CLAUDE_MODEL"):
         args += ["--model", os.environ["CLAUDE_MODEL"]]
-    out = subprocess.run(args, capture_output=True, text=True, timeout=600).stdout
+    with _SEM:
+        out = subprocess.run(args, capture_output=True, text=True, timeout=600, check=False).stdout
     try:
         j = json.loads(out)
-        return j.get("result") or j.get("response") or out
     except json.JSONDecodeError:
         return out
+    # An empty "result" is a valid (empty) completion — don't fall through to dumping the raw JSON blob.
+    return j["result"] if "result" in j else j.get("response", out)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -56,6 +62,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(404); self.end_headers(); return
         try:
             n = int(self.headers.get("Content-Length", 0) or 0)
+            if n > _MAX_BODY:
+                self._json(413, {"error": {"message": f"request body too large (> {_MAX_BODY} bytes)"}})
+                return
             req = json.loads(self.rfile.read(n) or b"{}")
             text = run_claude(flatten(req.get("messages")))
             self._json(200, {

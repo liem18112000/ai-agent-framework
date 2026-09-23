@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from common.memory.graph_index import match_index_nodes
 from knowledge_gathering.gather.explore.seeds.atlassian_search import atlassian_search_seeds
 from knowledge_gathering.gather.explore.seeds.self_seed import _FETCHABLE
@@ -49,7 +51,7 @@ async def ground_leads(
             return [], [], ""
 
         try:
-            graph, _ = bank.load_index()
+            graph, _ = await asyncio.to_thread(bank.load_index)  # blocking GCS read off the event loop
         except Exception as exc:  # noqa: BLE001 — no index → memory grounding is simply empty
             log.warning("ground_leads: index load failed (%s); memory grounding disabled", exc)
             graph = None

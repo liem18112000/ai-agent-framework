@@ -38,7 +38,7 @@ def test_registry_unknown_backend_is_off(monkeypatch):
 def test_fake_provider_returns_typed_verdicts():
     p = FakeDecisionProvider()
     assert p.is_configured()
-    for v in (p.noul("s", "q"), p.score("s", "i", ["low", "high"]), p.choice("s", ["a", "b"], "i")):
+    for v in (p.noul("s", "q"), p.score("s", "i", ["low", "high"])):
         assert isinstance(v, Verdict)
 
 
