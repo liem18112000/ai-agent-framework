@@ -121,7 +121,9 @@ class PlaywrightDriver:
         if self._page is None:
             from playwright.async_api import async_playwright
             self._pw = await async_playwright().start()
-            self._browser = await self._pw.chromium.launch()
+            # --no-sandbox is required to run chromium as the non-root container user; --disable-dev-shm-usage
+            # avoids crashes on the small /dev/shm containers get. See Dockerfile INSTALL_BROWSER.
+            self._browser = await self._pw.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage"])
             self._page = await self._browser.new_page()
         return self._page
 

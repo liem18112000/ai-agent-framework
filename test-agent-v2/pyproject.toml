@@ -46,6 +46,10 @@ eval = ["ragas>=0.2", "pandas>=2", "datasets>=2", "google-adk>=1.22"]
 jev = [
     "typesafe-sdk==0.7.1",
 ]
+# The BrowserEngine (test_executor UI/E2E execution). LAZY-imported in runners.py (find_spec gates it),
+# so the base install + offline tests never need it — BrowserEngine reports unbound without it. Enabling
+# in the image ALSO requires the chromium binary: `playwright install --with-deps chromium` (Dockerfile).
+browser = ["playwright>=1.40"]
 # The GCP adapter for the CloudProvider port (KGA tiers 5/6/7 — discover/logs/relate). LAZY-imported
 # (like aiplatform), so the base install + offline tests never need these; install only where the gcp
 # adapter runs (deployed image). Enablement is config-presence: a non-empty KGA_GCP_ENV_MATRIX. Azure/AWS = future extras.

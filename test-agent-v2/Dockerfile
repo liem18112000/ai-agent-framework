@@ -19,6 +19,19 @@ COPY worker.py ./
 COPY redis_worker.py ./
 RUN pip install ".[bridge,gcp,jev]"
 
+# BrowserEngine (test_executor UI/E2E). Adds Playwright + chromium (+ its apt libs) — ~400MB shared
+# across every agent image, so it is gated by a build arg (default on; `--build-arg INSTALL_BROWSER=false`
+# for a lean build). Browsers go to a world-readable path so the non-root appuser finds them at runtime.
+# Chromium needs root for its apt deps, so this runs BEFORE the USER switch.
+ARG INSTALL_BROWSER=true
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN if [ "$INSTALL_BROWSER" = "true" ]; then \
+      pip install ".[browser]" \
+      && playwright install --with-deps chromium \
+      && chmod -R a+rx /ms-playwright \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
+
 # Run as non-root.
 RUN useradd -m -u 10001 appuser
 USER appuser
