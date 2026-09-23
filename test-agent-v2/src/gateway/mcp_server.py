@@ -12,6 +12,7 @@ from common.bridge.prompts import server_instructions, test_prompt, trigger_inst
 from common.learn.config import _on
 from knowledge_gathering.bridge.mcp_server import register_tools as register_kga
 from test_evaluation.bridge.mcp_server import register_tools as register_tev
+from test_executor.bridge.mcp_server import register_tools as register_exec
 from test_plan_definition.bridge.mcp_server import register_tools as register_tpd
 
 TOKEN = os.environ.get("A2A_BEARER_TOKEN")
@@ -19,11 +20,13 @@ KGA_URL = os.environ.get("KGA_A2A_URL", "http://localhost:8081/")
 TPD_URL = os.environ.get("TPD_A2A_URL", "http://localhost:8082/")
 TEV_URL = os.environ.get("TEV_A2A_URL", "http://localhost:8083/")
 ADMIN_URL = os.environ.get("ADMIN_A2A_URL", "http://localhost:8084/")
+EXEC_URL = os.environ.get("EXEC_A2A_URL", "http://localhost:8085/")
 
 kga_session = BridgeSession(KGA_URL, TOKEN)
 tpd_session = BridgeSession(TPD_URL, TOKEN)
 tev_session = BridgeSession(TEV_URL, TOKEN)
 admin_session = BridgeSession(ADMIN_URL, TOKEN)
+exec_session = BridgeSession(EXEC_URL, TOKEN)
 
 
 async def _benchmark_on_finish(context_id: str) -> None:
@@ -40,17 +43,19 @@ _tools = {
     **register_kga(mcp, kga_session),
     **register_tpd(mcp, tpd_session, on_finish=_benchmark_on_finish),
     **register_tev(mcp, tev_session),
+    **register_exec(mcp, exec_session),
     **register_admin(mcp, admin_session),
 }
 globals().update(_tools)
 
 _CARDS = (("knowledge-gathering", kga_session), ("test-plan-definition", tpd_session),
-          ("test-evaluation", tev_session), ("admin_agent", admin_session))
+          ("test-evaluation", tev_session), ("test-executor", exec_session),
+          ("admin_agent", admin_session))
 
 
 @mcp.tool()
 async def agent_cards() -> str:
-    """Fetch all three agents' A2A cards (name, version, advertised skills)."""
+    """Fetch every agent's A2A card (name, version, advertised skills)."""
     out = []
     for name, session in _CARDS:
         try:
@@ -77,6 +82,7 @@ for _agent, (_session, _label) in {
     "kga": (kga_session, "knowledge-gathering"),
     "tpd": (tpd_session, "test-plan-definition"),
     "tev": (tev_session, "test-evaluation"),
+    "exec": (exec_session, "test-executor"),
 }.items():
     mcp.tool(
         name=f"send_raw_{_agent}",

@@ -283,6 +283,16 @@ variable "kga_source_gate_tau" {
 # admin_agent (see services.tf → module.admin) — the memory & history operator utility (NOT pipeline).
 # Deterministic router, no LLM; needs GCS + DB, no Atlassian, no Vertex. wipe_all is destructive.
 # ---------------------------------------------------------------------------
+variable "deploy_test_executor" {
+  type        = bool
+  description = "Create the test_executor Cloud Run service (Pillar-2 execution + self-heal stage)."
+  default     = true
+}
+variable "exec_service_name" {
+  type        = string
+  description = "test_executor Cloud Run service name (A2A execution agent, ingress :8080)."
+  default     = "test-executor-agent-v2"
+}
 variable "deploy_admin" {
   type        = bool
   description = "Create the admin_agent Cloud Run service (memory & history operator utility)."
