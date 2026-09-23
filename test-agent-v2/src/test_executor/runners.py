@@ -18,6 +18,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
+from pydantic import BaseModel
+
 from common.monitoring import get_logger
 
 log = get_logger("exec.runners")
@@ -86,6 +88,10 @@ class ApiEngine:
                 resp.json()
             except ValueError:
                 outcomes.append(StepOutcome(False, f"{method} {url}: malformed JSON body"))
+        # oracle: the expected end-state must appear in the response (the scenario's `Then`)
+        want = str(req.get("expect_contains", ""))
+        if want and want not in resp.text:
+            outcomes.append(StepOutcome(False, f"{method} {url}: response missing expected {want!r}"))
         return EngineResult(self.name, ran=True, outcomes=outcomes)
 
 
@@ -99,10 +105,71 @@ class _StubEngine:
         return EngineResult(self.name, ran=False, note=f"{self.name} engine not built yet — needs {self._need}")
 
 
+class RequestPlan(BaseModel):
+    """The LLM's structured translation of a scenario into one executable HTTP request + its oracle."""
+
+    method: str = "GET"
+    path: str = ""
+    body: dict | None = None
+    expect_status: int = 0
+    expect_contains: str = ""
+
+
+_TRANSLATE_SYSTEM = (
+    "You translate ONE test scenario into a single executable HTTP request against a REST API. "
+    "Given the scenario's title, description and preconditions, output the request that exercises it: "
+    "the HTTP method, a path relative to the base URL (leading '/'), an optional JSON body, the "
+    "expected HTTP status, and a short substring the response body must contain to prove the scenario's "
+    "expected end-state (its Gherkin 'Then'). Output only the structured fields. If you cannot infer a "
+    "concrete request, return an empty path."
+)
+
+
+def _scenario_task(scenario: dict) -> str:
+    parts = [f"title: {scenario.get('title', '')}", f"kind: {scenario.get('kind', '')}"]
+    if scenario.get("description"):
+        parts.append(f"description: {scenario['description']}")
+    pre = scenario.get("preconditions") or []
+    if pre:
+        parts.append("preconditions: " + "; ".join(map(str, pre)))
+    return "\n".join(parts)
+
+
+class LlmEngine:
+    """Make a natural-language scenario executable: one LLM call translates it into a structured
+    request (the same shape ApiEngine runs), then delegate execution to ApiEngine. Unbound when no
+    provider/base_url is configured, or when the model can't produce a concrete request."""
+
+    name = "llm"
+
+    async def run(self, scenario: dict, *, base_url: str) -> EngineResult:
+        req = scenario.get("request")
+        if isinstance(req, dict) and req.get("path"):        # already bound → just execute
+            return await ApiEngine().run(scenario, base_url=base_url)
+        from common.adk.model import model_configured
+        if not (base_url and model_configured()):
+            return EngineResult(self.name, ran=False,
+                                note="no provider/base_url — needs a model provider to translate the scenario")
+        plan = await self._translate(scenario)
+        if not plan or not plan.get("path"):
+            return EngineResult(self.name, ran=False, note="the model could not translate this scenario to a request")
+        request = {"method": plan.get("method", "GET"), "path": plan["path"], "json": plan.get("body"),
+                   "expect_status": plan.get("expect_status", 0), "expect_contains": plan.get("expect_contains", "")}
+        res = await ApiEngine().run({**scenario, "request": request}, base_url=base_url)
+        return EngineResult(self.name, ran=res.ran, outcomes=res.outcomes, note=res.note)
+
+    async def _translate(self, scenario: dict) -> dict | None:
+        from common.adk.model import agent_model
+        from common.testplan.llm.adk import build_generator_agent, run_json_agent
+        agent = build_generator_agent(name="exec_translate", system=_TRANSLATE_SYSTEM,
+                                      output_schema=RequestPlan, output_key="request", model=agent_model())
+        return await run_json_agent(agent, output_key="request", user=_scenario_task(scenario))
+
+
 ENGINES: dict[str, RunnerEngine] = {
     "api": ApiEngine(),
     "browser": _StubEngine("browser", "Playwright + a browser binary in the image"),
-    "llm": _StubEngine("llm", "a model provider to translate NL steps into actions"),
+    "llm": LlmEngine(),
 }
 
 _UI = {"ui", "e2e", "browser", "web", "frontend"}

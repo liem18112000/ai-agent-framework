@@ -87,12 +87,22 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
     if scenarios is None:
         scenarios = await load_scenarios(context_id)
 
-    passed = failed = unbound = 0
+    # ponytail: cap LLM translations per run — serial per-scenario model calls in this (still inline)
+    # handler could otherwise blow the Cloud Run request ceiling (see: implement serial Vertex →
+    # timeout). Raise EXEC_LLM_MAX, or move to a polled background job (P1), for larger suites.
+    llm_max = int(os.environ.get("EXEC_LLM_MAX", "8"))
+    passed = failed = unbound = llm_used = 0
     failures: list[dict] = []
     by_engine: dict[str, int] = {}
     for sc in scenarios:
-        res = await ENGINES[select_engine(sc)].run(sc, base_url=base_url)
-        by_engine[res.engine] = by_engine.get(res.engine, 0) + 1
+        name = select_engine(sc)
+        by_engine[name] = by_engine.get(name, 0) + 1
+        if name == "llm":
+            if llm_used >= llm_max:
+                unbound += 1
+                continue                 # over the per-run LLM budget — record unbound, make no call
+            llm_used += 1
+        res = await ENGINES[name].run(sc, base_url=base_url)
         if not res.ran:
             unbound += 1
             continue
