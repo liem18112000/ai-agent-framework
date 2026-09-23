@@ -19,12 +19,6 @@ def test_select_engine_routes_by_methodology():
     assert select_engine({"methodology": "exploratory"}) == "llm"
 
 
-async def test_browser_engine_reports_unbound():
-    # BrowserEngine is still a stub behind the seam (LlmEngine is now real — see its own tests).
-    res = await ENGINES["browser"].run({"methodology": "ui"}, base_url="http://x")
-    assert res.ran is False and "not built" in res.note
-
-
 async def test_api_engine_conformance_pass(monkeypatch):
     def handler(request):
         return httpx.Response(200, json={"ok": True})
@@ -121,3 +115,54 @@ async def test_run_suite_llm_budget_makes_no_call(monkeypatch):
     run = await run_suite(store, "CTX", "dev", scenarios=scenarios, base_url="http://svc")
     assert run["summary"]["unbound"] == 3
     assert checked == []            # budget 0 → the engine is never invoked, so no model call is attempted
+
+
+class _FakeDriver:
+    """Offline BrowserDriver double — records actions, returns a canned page body."""
+
+    def __init__(self, body: str = "", fail_on: str | None = None) -> None:
+        self.body, self.fail_on, self.actions = body, fail_on, []
+
+    async def goto(self, url):
+        self.actions.append(("goto", url))
+
+    async def act(self, action, selector="", value=""):
+        if action == self.fail_on:
+            raise RuntimeError("boom")
+        self.actions.append((action, selector, value))
+
+    async def text(self):
+        return self.body
+
+    async def close(self):
+        self.actions.append(("close",))
+
+
+async def test_browser_engine_runs_plan(monkeypatch):
+    driver = _FakeDriver(body="Welcome — you are logged in")
+    monkeypatch.setattr(runners, "_browser_driver", driver)
+    plan = {"url_path": "/login",
+            "steps": [{"action": "fill", "selector": "#u", "value": "x"}, {"action": "click", "selector": "#go"}],
+            "expect_text": "logged in"}
+    res = await runners.BrowserEngine().run({"methodology": "ui", "browser": plan}, base_url="http://svc")
+    assert res.ran and res.passed
+    assert ("goto", "http://svc/login") in driver.actions and ("close",) in driver.actions
+
+
+async def test_browser_engine_expect_text_fail(monkeypatch):
+    monkeypatch.setattr(runners, "_browser_driver", _FakeDriver(body="error page"))
+    res = await runners.BrowserEngine().run({"browser": {"url_path": "/x", "expect_text": "success"}},
+                                            base_url="http://svc")
+    assert res.ran and not res.passed and "missing expected" in res.outcomes[-1].message
+
+
+async def test_browser_engine_unbound_without_plan():
+    res = await runners.BrowserEngine().run({"methodology": "ui", "title": "nl ui"}, base_url="http://svc")
+    assert res.ran is False and "browser plan" in res.note
+
+
+async def test_browser_engine_unbound_without_playwright(monkeypatch):
+    monkeypatch.setattr(runners, "_browser_driver", None)
+    monkeypatch.setattr("importlib.util.find_spec", lambda name: None if name == "playwright" else object())
+    res = await runners.BrowserEngine().run({"browser": {"url_path": "/x"}}, base_url="http://svc")
+    assert res.ran is False and "Playwright" in res.note

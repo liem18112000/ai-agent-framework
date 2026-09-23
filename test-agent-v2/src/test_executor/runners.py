@@ -15,6 +15,7 @@ scenario (not built, or no executable binding); that is recorded honestly, never
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
@@ -26,6 +27,9 @@ log = get_logger("exec.runners")
 
 #: Test seam — an httpx transport override (MockTransport/ASGITransport) so ApiEngine runs offline.
 _transport = None
+
+#: Test seam — a BrowserDriver override so BrowserEngine runs offline (no real browser binary).
+_browser_driver = None
 
 
 @dataclass
@@ -95,14 +99,93 @@ class ApiEngine:
         return EngineResult(self.name, ran=True, outcomes=outcomes)
 
 
-class _StubEngine:
-    """A registered-but-unbuilt engine: routes correctly, reports unbound (never a fake pass)."""
+@runtime_checkable
+class BrowserDriver(Protocol):
+    """The browser BrowserEngine drives — one Protocol so the real Playwright driver and the offline
+    test fake are interchangeable (the browser twin of ApiEngine's `_transport` seam)."""
 
-    def __init__(self, name: str, need: str) -> None:
-        self.name, self._need = name, need
+    async def goto(self, url: str) -> None: ...
+    async def act(self, action: str, selector: str = "", value: str = "") -> None: ...
+    async def text(self) -> str: ...
+    async def close(self) -> None: ...
+
+
+class PlaywrightDriver:
+    """Real driver — Playwright chromium (lazy import). Enable in the image with
+    `pip install playwright && playwright install chromium`; absent → BrowserEngine reports unbound."""
+
+    def __init__(self) -> None:
+        self._pw = self._browser = self._page = None
+
+    async def _ensure(self):
+        if self._page is None:
+            from playwright.async_api import async_playwright
+            self._pw = await async_playwright().start()
+            self._browser = await self._pw.chromium.launch()
+            self._page = await self._browser.new_page()
+        return self._page
+
+    async def goto(self, url: str) -> None:
+        await (await self._ensure()).goto(url)
+
+    async def act(self, action: str, selector: str = "", value: str = "") -> None:
+        page = await self._ensure()
+        if action == "click":
+            await page.click(selector)
+        elif action == "fill":
+            await page.fill(selector, value)
+        elif action == "goto":
+            await page.goto(value or selector)
+
+    async def text(self) -> str:
+        return await (await self._ensure()).inner_text("body")
+
+    async def close(self) -> None:
+        if self._browser:
+            await self._browser.close()
+        if self._pw:
+            await self._pw.stop()
+
+
+def _get_browser_driver():
+    """The injected test driver, else a real PlaywrightDriver when the package is importable, else None."""
+    if _browser_driver is not None:
+        return _browser_driver
+    import importlib.util
+    return PlaywrightDriver() if importlib.util.find_spec("playwright") is not None else None
+
+
+class BrowserEngine:
+    """Drive a UI/E2E scenario's structured browser plan (`scenario["browser"]` =
+    {url_path, steps:[{action, selector, value}], expect_text}) via a BrowserDriver, then assert the
+    final page contains `expect_text` (the scenario's Gherkin `Then`). A natural-language UI scenario
+    with no plan is unbound (LLM→browser translation is the follow-up, as LlmEngine followed ApiEngine)."""
+
+    name = "browser"
 
     async def run(self, scenario: dict, *, base_url: str) -> EngineResult:
-        return EngineResult(self.name, ran=False, note=f"{self.name} engine not built yet — needs {self._need}")
+        plan = scenario.get("browser")
+        if not (base_url and isinstance(plan, dict)):
+            return EngineResult(self.name, ran=False,
+                                note="no browser plan / base_url (LLM→browser translation is a follow-up)")
+        driver = _get_browser_driver()
+        if driver is None:
+            return EngineResult(self.name, ran=False,
+                                note="browser engine needs Playwright (pip install playwright && playwright install chromium)")
+        outcomes: list[StepOutcome] = []
+        try:
+            await driver.goto(base_url.rstrip("/") + "/" + str(plan.get("url_path", "")).lstrip("/"))
+            for step in plan.get("steps", []):
+                await driver.act(step.get("action", ""), step.get("selector", ""), step.get("value", ""))
+            want = str(plan.get("expect_text", ""))
+            ok = (want in await driver.text()) if want else True
+            outcomes.append(StepOutcome(ok, "" if ok else f"page missing expected text {want!r}"))
+        except Exception as exc:  # noqa: BLE001 — a browser/driver failure is a real failure to triage
+            outcomes.append(StepOutcome(False, f"browser run failed: {exc}"))
+        finally:
+            with contextlib.suppress(Exception):
+                await driver.close()
+        return EngineResult(self.name, ran=True, outcomes=outcomes)
 
 
 class RequestPlan(BaseModel):
@@ -168,7 +251,7 @@ class LlmEngine:
 
 ENGINES: dict[str, RunnerEngine] = {
     "api": ApiEngine(),
-    "browser": _StubEngine("browser", "Playwright + a browser binary in the image"),
+    "browser": BrowserEngine(),
     "llm": LlmEngine(),
 }
 
