@@ -71,9 +71,12 @@ def _decision_gate(plan, scenarios, plan_pack, threshold: float):
     if decision is None or not decision.is_configured():
         return None  # OFF (default) → behaviour byte-for-byte identical to today
     state = suite_state(plan_pack, scenarios)
-    verdict = decision.score(
-        state=state, levels=["low", "medium", "high"],
-        instructions="Is this test suite good enough to ship for this plan? Grade its overall quality.")
+    try:
+        verdict = decision.score(
+            state=state, levels=["low", "medium", "high"],
+            instructions="Is this test suite good enough to ship for this plan? Grade its overall quality.")
+    except Exception:  # noqa: BLE001 — a decision-backend outage must fall back to the LLM judge, not crash
+        return None
     score = float(verdict.value)
     if verdict.confidence >= _decision_conf_min() and score >= threshold:
         return JudgeVerdict(overall=score, accept=True)  # minimal — no issues/reflections needed

@@ -8,12 +8,20 @@ from common.store.object_store import ObjectStore
 
 
 def build_object_store() -> ObjectStore:
-    """Select by STORE_BACKEND: `gcs` (default) | `memory`."""
+    """Select by STORE_BACKEND: `gcs` (default) | `local` (shared FS, for docker-compose) | `memory`."""
     backend = os.environ.get("STORE_BACKEND", "gcs").lower()
     if backend == "memory":
         from common.store.memory import InMemoryObjectStore
 
         return InMemoryObjectStore()
+    if backend == "local":
+        from common.store.local import LocalFsObjectStore
+
+        return LocalFsObjectStore.from_env()
+    if backend == "s3":
+        from common.store.s3 import S3ObjectStore
+
+        return S3ObjectStore.from_env()
     if backend == "gcs":
         from common.store.gcs import GcsObjectStore
 

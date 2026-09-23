@@ -50,8 +50,11 @@ def build_runner(agent, *, app_name: str):
 
     from common.adk.plugins import LearnDrainPlugin
 
+    # GcsArtifactService dials storage.Client() eagerly (needs GCP creds), so only use it on the real
+    # gcs store backend. STORE_BACKEND=local/memory (docker-compose, no GCP) → in-memory artifacts.
     bucket = os.environ.get("GCS_BUCKET")
-    artifacts = GcsArtifactService(bucket_name=bucket) if bucket else InMemoryArtifactService()
+    on_gcs = os.environ.get("STORE_BACKEND", "gcs").lower() == "gcs"
+    artifacts = GcsArtifactService(bucket_name=bucket) if (bucket and on_gcs) else InMemoryArtifactService()
     return Runner(
         app_name=app_name,
         agent=agent,

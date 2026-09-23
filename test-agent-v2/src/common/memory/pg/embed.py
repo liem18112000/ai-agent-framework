@@ -8,16 +8,24 @@ lazily on first embed.
 
 from __future__ import annotations
 
+import os
+
 from common.embed import TASK_DOCUMENT, Embedder, VertexEmbedder
 
 _embedder: Embedder | None = None
 
 
 def _get_embedder() -> Embedder:
-    """The Vertex embedder, built once and cached (mirrors the old module-level model cache)."""
+    """The configured embedder, built once and cached. `EMBED_BACKEND=ollama` → local Ollama embeddings
+    (no GCP); default `vertex` → Vertex AI. The one place a new embedding backend is selected."""
     global _embedder
     if _embedder is None:
-        _embedder = VertexEmbedder.from_env()
+        if os.environ.get("EMBED_BACKEND", "vertex").lower() == "ollama":
+            from common.embed.ollama import OllamaEmbedder
+
+            _embedder = OllamaEmbedder.from_env()
+        else:
+            _embedder = VertexEmbedder.from_env()
     return _embedder
 
 

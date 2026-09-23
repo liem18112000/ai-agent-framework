@@ -12,6 +12,21 @@ from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 
+def score01(raw, levels: list[str]) -> float:
+    """Normalise a Score result to a 0–1 float — shared by every DecisionProvider (JEV, laya, …).
+    Covers the three plausible encodings: already-0–1 float (pass through), an ordinal rank/index
+    (÷ span), or a level string (its position ÷ span). ``bool`` is guarded first (int subclass)."""
+    span = max(len(levels) - 1, 1)
+    if isinstance(raw, bool):
+        return 1.0 if raw else 0.0
+    if isinstance(raw, (int, float)):
+        f = float(raw)
+        return f if 0.0 <= f <= 1.0 else max(0.0, min(1.0, f / span))
+    if raw in levels:
+        return levels.index(raw) / span
+    return 0.0
+
+
 @dataclass
 class Verdict:
     """A typed decision. ``value`` is the outcome (chosen option / score float / bool); ``probs`` the

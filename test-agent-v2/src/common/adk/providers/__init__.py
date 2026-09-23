@@ -6,14 +6,18 @@ from common.adk.config import get_config
 from common.adk.providers.base import ModelProvider
 from common.adk.providers.decision import DecisionProvider, Verdict
 from common.adk.providers.jev import JevProvider
+from common.adk.providers.laya import LayaProvider
+from common.adk.providers.litellm import LiteLlmProvider
 from common.adk.providers.vertex_claude import VertexClaudeProvider
 
 _REGISTRY: dict[str, type] = {
     "claude": VertexClaudeProvider,
+    "litellm": LiteLlmProvider,  # generic pluggable backend (Anthropic-direct / Ollama / local OpenAI)
 }
 
 _DECISION_REGISTRY: dict[str, type] = {
     "jev": JevProvider,
+    "laya": LayaProvider,  # local, open-source System-1 twin of JEV (runs as the laya_service sidecar)
 }
 
 

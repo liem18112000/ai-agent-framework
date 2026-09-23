@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import os
 
-from common.adk.providers.decision import Verdict
+from common.adk.providers.decision import Verdict, score01
 
 _QKEY = "q"  # single-question calls: one key in, one key out
 
@@ -62,7 +62,7 @@ def _verdict(primitive: str, result, spec: dict) -> Verdict:
         p = float(result.nouls[_QKEY].noul)  # SDK 0.7.1: NoulAnswer.noul IS P(true); no probs/confidence field
         return Verdict(value=(p >= 0.5), probs={"true": p}, confidence=abs(p - 0.5) * 2.0)
     r = result.scores[_QKEY]
-    return Verdict(value=_score01(r.score, spec["levels"]), probs=_probs(r), confidence=_conf(r))
+    return Verdict(value=score01(r.score, spec["levels"]), probs=_probs(r), confidence=_conf(r))
 
 
 def _conf(r) -> float:
@@ -80,27 +80,12 @@ def _probs(r) -> dict[str, float] | None:
     return {str(k): float(x) for k, x in v.items()} if isinstance(v, dict) else None
 
 
-def _score01(raw, levels: list[str]) -> float:
-    """Normalise a ``Score`` result to a 0–1 float. Encoding is unverified, so cover the three plausible
-    shapes: already-0–1 float (pass through), an ordinal rank/index (÷ span), or a level string (its
-    position ÷ span). ``bool`` is guarded first (it is an ``int`` subclass)."""
-    span = max(len(levels) - 1, 1)
-    if isinstance(raw, bool):
-        return 1.0 if raw else 0.0
-    if isinstance(raw, (int, float)):
-        f = float(raw)
-        return f if 0.0 <= f <= 1.0 else max(0.0, min(1.0, f / span))
-    if raw in levels:
-        return levels.index(raw) / span
-    return 0.0
-
-
 if __name__ == "__main__":  # ponytail: one runnable check on the only non-trivial logic (mapping)
     L = ["low", "medium", "high"]
-    assert _score01(0.42, L) == 0.42
-    assert _score01(2, L) == 1.0 and _score01(1, ["no", "yes"]) == 1.0
-    assert _score01("high", L) == 1.0 and _score01("low", L) == 0.0
-    assert _score01(True, L) == 1.0 and _score01("weird", L) == 0.0
+    assert score01(0.42, L) == 0.42
+    assert score01(2, L) == 1.0 and score01(1, ["no", "yes"]) == 1.0
+    assert score01("high", L) == 1.0 and score01("low", L) == 0.0
+    assert score01(True, L) == 1.0 and score01("weird", L) == 0.0
 
     class _R:
         choice, confidence, probs = "b", 0.77, {"true": 0.9}

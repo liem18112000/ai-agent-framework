@@ -1,0 +1,152 @@
+# Full local-parity stack for the Testing-Agent — every prod dependency as a container, no GCP.
+#
+#   Claude (MCP) -> gateway:8080 -> kga/tpd/tev/admin (A2A)
+#     object store : MinIO (S3)          STORE_BACKEND=s3
+#     task/session : Postgres (pgvector) TASK_DB_URL + MEMORY_BACKEND=hybrid
+#     cache        : Redis               CACHE_BACKEND=redis
+#     queue        : Pub/Sub emulator    TPD_GEN_MODE=workers -> worker service
+#     LLM          : Ollama              TESTAGENT_MODEL_BACKEND=litellm -> ollama/*
+#     decisions    : laya sidecar        TPD_DECISION_BACKEND=laya (JEV's local twin; heavy: torch)
+#
+#   cp .env.compose.example .env.compose   # set Atlassian creds + bearers
+#   docker compose up --build              # first run pulls Ollama models (~2GB) + builds torch (laya)
+#
+# MinIO console http://localhost:9001 (minioadmin/minioadmin). Point Claude's MCP client at :8080.
+
+x-agent: &agent
+  build: .
+  env_file: .env.compose
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/livez')"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+    start_period: 30s
+  depends_on:
+    db: {condition: service_healthy}
+    redis: {condition: service_healthy}
+    minio-init: {condition: service_completed_successfully}
+    ollama-init: {condition: service_completed_successfully}
+    claude-proxy: {condition: service_healthy}
+
+services:
+  # ---------- backing services ----------
+  minio:
+    image: quay.io/minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
+    ports: ["9000:9000", "9001:9001"]
+    volumes: ["minio_data:/data"]
+
+  minio-init:                     # create the bucket (retries until MinIO answers)
+    image: quay.io/minio/mc:latest
+    depends_on: [minio]
+    entrypoint: >
+      sh -c "until mc alias set local http://minio:9000 ${S3_ACCESS_KEY:-minioadmin} ${S3_SECRET_KEY:-minioadmin}; do echo waiting-for-minio; sleep 2; done;
+             mc mb --ignore-existing local/${S3_BUCKET:-testagent-memory}; echo minio-init-done"
+    restart: "no"
+
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${DB_USER:-taagent}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-taagent}
+      POSTGRES_DB: ${DB_NAME:-testagent}
+    ports: ["5432:5432"]
+    volumes: ["db_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-taagent} -d ${DB_NAME:-testagent}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  ollama:
+    image: ollama/ollama:latest
+    ports: ["11434:11434"]
+    volumes: ["ollama_models:/root/.ollama"]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  ollama-init:                    # pull the chat + embedding models once
+    image: ollama/ollama:latest
+    depends_on:
+      ollama: {condition: service_healthy}
+    env_file: .env.compose        # so it pulls the SAME model the agents use ($$ = read at container runtime, not compose-interp)
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    # Always pull the EMBEDDING model (pgvector recall). Pull a CHAT model only if OLLAMA_CHAT_MODEL is
+    # set — default LLM is the Claude subscription, so no 2GB chat pull unless you opt into Ollama-as-LLM.
+    entrypoint: >
+      sh -c "ollama pull \"$${MEMORY_EMBED_MODEL:-nomic-embed-text}\"; [ -n \"$${OLLAMA_CHAT_MODEL:-}\" ] && ollama pull \"$$OLLAMA_CHAT_MODEL\"; echo ollama-init-done"
+    restart: "no"
+
+  claude-proxy:                   # local Claude SUBSCRIPTION as an OpenAI endpoint (the `claude` CLI)
+    build:
+      context: .
+      dockerfile: claude_proxy/Dockerfile
+    ports: ["8088:8088"]
+    volumes: ["claude_config:/root/.claude"]   # persists the one-time `claude /login` (subscription auth)
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8088/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ---------- agents ----------
+  kga:   {<<: *agent, environment: {AGENT: knowledge_gathering}}
+  tpd:   {<<: *agent, environment: {AGENT: test_plan_definition}}
+  tev:   {<<: *agent, environment: {AGENT: test_evaluation}}
+  admin: {<<: *agent, environment: {AGENT: admin_agent}}
+
+  worker:                         # Redis Streams consumer — distributed scenario generation (TPD_GEN_MODE=workers)
+    build: .
+    command: ["python", "redis_worker.py"]
+    env_file: .env.compose
+    restart: unless-stopped
+    depends_on:
+      redis: {condition: service_healthy}
+      minio-init: {condition: service_completed_successfully}
+      ollama-init: {condition: service_completed_successfully}
+
+  gateway:
+    build: .
+    command: ["python", "-m", "gateway"]
+    env_file: .env.compose
+    restart: unless-stopped
+    ports: ["8080:8080"]
+    environment:
+      GATEWAY_TRANSPORT: http
+      KGA_A2A_URL: http://kga:8080/
+      TPD_A2A_URL: http://tpd:8080/
+      TEV_A2A_URL: http://tev:8080/
+      ADMIN_A2A_URL: http://admin:8080/
+      BENCHMARK_ON_FINISH: "1"
+    depends_on:
+      kga: {condition: service_healthy}
+      tpd: {condition: service_healthy}
+      tev: {condition: service_healthy}
+      admin: {condition: service_healthy}
+
+volumes:
+  minio_data:
+  db_data:
+  ollama_models:
+  claude_config:                  # the claude-proxy's persisted subscription login

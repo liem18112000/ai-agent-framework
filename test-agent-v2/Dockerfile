@@ -14,8 +14,9 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY src ./src
 COPY main.py ./
-# Phase C push-subscription worker entrypoint (uvicorn worker:app)
+# Phase C worker entrypoints: worker.py (Pub/Sub HTTP push) + redis_worker.py (Redis Streams consumer)
 COPY worker.py ./
+COPY redis_worker.py ./
 RUN pip install ".[bridge,gcp,jev]"
 
 # Run as non-root.

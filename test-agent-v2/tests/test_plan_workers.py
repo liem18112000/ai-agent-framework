@@ -31,24 +31,14 @@ def test_enabled_gate(monkeypatch):
 
 
 def test_handle_job_writes_completed_text(monkeypatch):
-    """Worker side: complete() the prompt, upload to the result blob. Both are faked — no net."""
-    monkeypatch.setenv("GCS_BUCKET", "b")
-    writes = {}
-
-    class _Blob:
-        def __init__(self, name): self.name = name
-        def upload_from_string(self, s): writes[self.name] = s
-
-    class _Bucket:
-        def blob(self, name): return _Blob(name)
-
-    class _Client:
-        def bucket(self, name): return _Bucket()
-
+    """Worker side: complete() the prompt, upload to the result blob via the ObjectStore. Faked — no net."""
     import common.adk.model as model
+    import common.store as store_mod
+    from common.store.memory import InMemoryObjectStore
+
     monkeypatch.setattr(model, "complete", lambda prompt, **kw: "SCENARIO_JSON")
-    import google.cloud.storage as storage
-    monkeypatch.setattr(storage, "Client", lambda *a, **k: _Client())
+    store = InMemoryObjectStore()
+    monkeypatch.setattr(store_mod, "build_object_store", lambda: store)
 
     handle_job(json.dumps(build_job("workers/c/r/0.txt", system="S", user="U", max_tokens=100)).encode())
-    assert writes == {"workers/c/r/0.txt": "SCENARIO_JSON"}
+    assert store.get_blob("workers/c/r/0.txt").download_as_text() == "SCENARIO_JSON"

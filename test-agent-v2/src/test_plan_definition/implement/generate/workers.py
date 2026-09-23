@@ -51,14 +51,12 @@ def handle_job(data: bytes) -> None:
     """WORKER side: run one job's generation and write its raw text to GCS. Raises on failure so the
     subscriber leaves the message unacked → Pub/Sub redelivers / dead-letters it (idempotent: the result
     blob is keyed by (ctx, run, batch) so a redelivery just overwrites)."""
-    from google.cloud import storage
-
     from common.adk.model import complete
+    from common.store import build_object_store
 
     job = json.loads(data)
     text = complete(job["user"], max_tokens=int(job["max_tokens"]), cache_prefix=job.get("system"))
-    bucket = os.environ["GCS_BUCKET"]
-    storage.Client().bucket(bucket).blob(job["result_blob"]).upload_from_string(text or "")
+    build_object_store().blob(job["result_blob"]).upload_from_string(text or "")
     log.info("worker: wrote %s (%d chars)", job["result_blob"], len(text or ""))
 
 
@@ -116,13 +114,22 @@ async def worker_scenarios(
 
 
 def _topic_path(publisher) -> str:
-    project = os.environ["VERTEX_PROJECT"]
+    project = (os.environ.get("PUBSUB_PROJECT") or os.environ.get("GOOGLE_CLOUD_PROJECT")
+               or os.environ["VERTEX_PROJECT"])  # emulator/local sets PUBSUB_PROJECT; prod has VERTEX_PROJECT
     topic = os.environ.get("TPD_WORKER_TOPIC", "tpd-gen-batches")
     return publisher.topic_path(project, topic)
 
 
 def _publish(jobs: list[dict]) -> None:
-    """Blocking publish of every job to the topic (runs in a worker thread)."""
+    """Blocking publish of every job to the queue (runs in a worker thread). Redis Streams when
+    ``TPD_QUEUE_BACKEND=redis`` (local), else Pub/Sub (prod)."""
+    from common.queue import queue_backend
+
+    if queue_backend() == "redis":
+        from common.queue import redis_publish
+
+        redis_publish(jobs)
+        return
     from google.cloud import pubsub_v1
 
     publisher = pubsub_v1.PublisherClient()
@@ -134,18 +141,16 @@ def _publish(jobs: list[dict]) -> None:
 
 def _poll_results(ctx: str, run: str, batch_ids: list[int], budget_s: float) -> dict[int, str]:
     """Poll GCS for each batch's result blob until all present or the budget elapses; return {id: text}."""
-    from google.cloud import storage
+    from common.store import build_object_store
 
-    bucket = os.environ["GCS_BUCKET"]
-    client = storage.Client()
-    b = client.bucket(bucket)
+    store = build_object_store()
     out: dict[int, str] = {}
     start = time.monotonic()
     pending = set(batch_ids)
     while pending and time.monotonic() - start < budget_s:
         for i in list(pending):
-            blob = b.blob(result_blob(ctx, run, i))
-            if blob.exists():
+            blob = store.get_blob(result_blob(ctx, run, i))
+            if blob is not None:
                 out[i] = blob.download_as_text()
                 pending.discard(i)
         if pending:
