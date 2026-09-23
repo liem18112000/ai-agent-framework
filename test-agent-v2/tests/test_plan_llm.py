@@ -144,6 +144,21 @@ async def test_claude_scenarios_batches_units_and_dedups():
     assert [s.id for s in scs] == ["scenario:run-x:a", "scenario:run-x:b"]   # deduped across batches
 
 
+async def test_claude_scenarios_caps_batches_and_heuristic_fills_overflow(monkeypatch):
+    """TPD-01: TPD_GEN_MAX_BATCHES bounds serial LLM batches per round; overflow units still get
+    heuristic coverage (never silently dropped) so one round can't blow the MCP idle ceiling."""
+    monkeypatch.setenv("TPD_GEN_MAX_BATCHES", "2")
+    from test_plan_definition.implement.generate.llm import claude_scenarios
+    from tests.tpd_fakes import FakeGeneratorModel, scenarios_json
+
+    pack = _multi_pack(13)  # ceil(13/3)=5 batches, capped to 2 LLM batches; the other 7 units → heuristic
+    fake = FakeGeneratorModel(model="fake", scenarios_json=scenarios_json(
+        [{"id": "scenario:run-x:a", "title": "A", "kind": "happy", "source_refs": ["jira:U0"]}]))
+    scs = await claude_scenarios(_plan(), pack, [TestData(id="td", kind="mock-data")], model=fake)
+    assert fake.calls == 2                        # only the first 2 batches reached the LLM
+    assert len(scs) > 1                           # 1 LLM scenario + heuristic-filled overflow units
+
+
 async def test_claude_scenarios_total_degrade_returns_none_and_wrapper_uses_full_heuristic():
     """When EVERY batch's output is invalid, claude_scenarios returns None (so the assured loop flags
     'degraded'); generate_scenarios then falls back to the whole-suite heuristic — nothing lost."""
@@ -393,3 +408,55 @@ def test_assemble_plan_dedupes_methodology_and_uses_word_boundaries():
     ]
     plan = assemble_plan(pack, decisions, conf="medium")
     assert plan.methodology == ["api", "e2e", "ui"]   # deduped, order-preserved, no 'ui' from 'build'
+
+
+def _dsc(sid, title, refs, kind="happy"):
+    return TestScenario(id=sid, plan_id="plan:run-x", title=title, kind=kind, source_refs=refs)
+
+
+def test_dedup_by_behaviour_merges_cross_source_duplicates(monkeypatch):
+    """Same behaviour arriving 3x (different wording + source) collapses to one, citations unioned."""
+    from test_plan_definition.implement.generate import scenarios as S
+
+    scs = [
+        _dsc("a", "Import a golden transfer.zip end to end", ["jira:LUZ-158390"]),
+        _dsc("b", "Spec-conformant transfer.zip imports every document", ["confluence:1"]),
+        _dsc("c", "Import the golden zip so every doc lands", ["codegraph:x"]),
+        _dsc("d", "OS artefacts are skipped and never counted", ["jira:LUZ-158437"]),
+    ]
+    vecs = {"golden transfer.zip end to end": [1.0, 0.0],
+            "every document": [0.99, 0.01],
+            "every doc lands": [0.98, 0.0],
+            "artefacts": [0.0, 1.0]}
+
+    class _FakeEmb:
+        def is_configured(self):
+            return True
+
+        def embed_texts(self, texts, **kw):
+            out = []
+            for t in texts:
+                out.append(next((v for k, v in vecs.items() if k in t), [0.0, 1.0]))
+            return out
+
+    monkeypatch.setattr("common.memory.pg.embed._get_embedder", lambda: _FakeEmb())
+    out = S.dedup_by_behaviour(scs)
+    assert len(out) == 2  # 3 golden-zip copies → 1 canonical, + the distinct OS-artefact one
+    golden = next(s for s in out if "transfer.zip" in s.title)
+    assert set(golden.source_refs) == {"jira:LUZ-158390", "confluence:1", "codegraph:x"}
+
+
+def test_dedup_by_behaviour_graceful_when_unconfigured(monkeypatch):
+    """Embedder off (offline / Vertex-less) → input returned unchanged, never embeds."""
+    from test_plan_definition.implement.generate import scenarios as S
+
+    class _Off:
+        def is_configured(self):
+            return False
+
+        def embed_texts(self, *a, **k):
+            raise AssertionError("must not embed when unconfigured")
+
+    monkeypatch.setattr("common.memory.pg.embed._get_embedder", lambda: _Off())
+    scs = [_dsc("a", "X", ["jira:LUZ-1"]), _dsc("b", "Y", ["jira:LUZ-2"])]
+    assert S.dedup_by_behaviour(scs) is scs

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from common.memory.bank import _slug
 from common.testplan.models import (
     BOUNDARY,
@@ -14,6 +16,9 @@ from common.testplan.models import (
     effective_kinds,
 )
 from common.testplan.pack import PlanPack
+from test_plan_definition.monitoring import get_logger
+
+log = get_logger("implement.generate.scenarios")
 
 # Q2: the four defaults are only a SEED — the kind taxonomy is open and ADDITIVE. `effective_kinds`
 # unions the elicited `plan.test_kinds` (case-design round) on top of the four, so user-added kinds
@@ -63,7 +68,53 @@ def refine_scenarios(scenarios: list[TestScenario], valid_ids: set[str]) -> list
             continue
         seen.add(key)
         out.append(sc)
-    return out
+    return dedup_by_behaviour(out)
+
+
+def dedup_by_behaviour(scenarios: list[TestScenario]) -> list[TestScenario]:
+    """Cross-source SEMANTIC dedup — the lever past the judge's non-duplication ceiling. The generator
+    emits scenarios per source-node, so the SAME behaviour arrives 2-3x worded differently (different
+    titles + citations) and the title-only pass above can't fold them. Here we cluster same-kind
+    scenarios whose title embeddings are near-identical (cosine >= threshold), keep ONE canonical per
+    cluster, and union every merged copy's source_refs + data_refs onto it so all supporting sources
+    survive as citations. GRACEFUL: any embedder problem (unconfigured / unreachable / error) returns the
+    input unchanged, so offline + Vertex-less paths stay byte-identical. Tunable: TPD_DEDUP_THRESHOLD."""
+    if len(scenarios) < 2:
+        return scenarios
+    try:
+        thr = float(os.environ.get("TPD_DEDUP_THRESHOLD", "0.86"))
+    except (TypeError, ValueError):
+        thr = 0.86
+    try:
+        from common.memory.pg.embed import _get_embedder
+        from common.memory.vector_memory import _cosine
+
+        emb = _get_embedder()
+        if not emb.is_configured():
+            return scenarios
+        vecs = emb.embed_texts([f"{s.kind}: {s.title}" for s in scenarios])
+    except Exception as exc:  # noqa: BLE001 — dedup must never break generation
+        log.info("dedup_by_behaviour: embedder unavailable (%s) — title-dedup only", exc)
+        return scenarios
+
+    reps: list[tuple[int, TestScenario]] = []  # (index into vecs, the kept canonical scenario)
+    for i, sc in enumerate(scenarios):
+        dup = next((rep for j, rep in reps
+                    if rep.kind == sc.kind and _cosine(vecs[i], vecs[j]) >= thr), None)
+        if dup is None:
+            reps.append((i, sc))
+            continue
+        for ref in sc.source_refs:  # fold the duplicate's citations onto the canonical copy
+            if ref not in dup.source_refs:
+                dup.source_refs.append(ref)
+        for ref in sc.data_refs:
+            if ref not in dup.data_refs:
+                dup.data_refs.append(ref)
+    merged = [sc for _, sc in reps]
+    if len(merged) < len(scenarios):
+        log.info("dedup_by_behaviour: %d -> %d scenarios (merged %d cross-source duplicates, thr=%.2f)",
+                 len(scenarios), len(merged), len(scenarios) - len(merged), thr)
+    return merged
 
 
 async def generate_scenarios(
