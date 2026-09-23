@@ -3,9 +3,9 @@
 `EXEC_RUNNER` gates execution. Default `stub`: resolve+record the environment and a placeholder run —
 the whole agent+DB+gateway path is real without touching a live system. `auto`: route each scenario to
 the engine that fits its nature (`runners.select_engine`, keyed on `TestScenario.methodology`) and
-aggregate real pass/fail + failures. The API engine is real (httpx conformance); the Playwright/LLM
-engines are stubs behind the same seam (§3, phase P1 — they drop in without dragging a browser/LLM dep
-in here). The triage classifier (`classify_failure`) is the heuristic tier of the §5 JEV cascade.
+aggregate real pass/fail + failures — chunked + polled so no call blocks past the request timeout. All
+three engines are real (API httpx-conformance · LLM NL→request · browser Playwright). The triage
+classifier (`classify_failure`) is the heuristic tier of the §5 JEV cascade.
 """
 
 from __future__ import annotations

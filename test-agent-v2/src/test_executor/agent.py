@@ -71,9 +71,9 @@ class ExecutorRouter(RouterAgent):
         ctx, _, step = rest.partition(" ")
         if not (ctx and step.strip()):
             return "Usage: heal <ctx> <step_id>."
-        # ponytail: real replay+patch healer is the next slice; today, surface the human-gated contract.
-        return (f"heal {step.strip()}: the replay+patch healer is not built yet (slice 0). Every heal "
-                "will be surfaced for a human Yes/No — never a silent retarget.")
+        # The replay+patch healer is the one Executor tool still unbuilt; surface the human-gated contract.
+        return (f"heal {step.strip()}: the replay+patch healer is not built yet. Every heal will be "
+                "surfaced for a human Yes/No — never a silent retarget.")
 
     async def _report(self, rest: str) -> str:
         ctx, _, run_id = rest.partition(" ")

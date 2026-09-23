@@ -5,12 +5,12 @@ The Executor does not hard-pick one runner: it routes each scenario to the engin
 default "api") as the routing key — not a fragile text heuristic. Design §3 lists all three engines:
 
   methodology  →  engine
-  api/rest/http/service  →  ApiEngine       (deterministic httpx conformance — BUILT, offline-testable)
-  ui/e2e/browser/web     →  BrowserEngine    (Playwright — stub; drops in without a browser dep here)
-  everything else        →  LlmEngine        (translate NL steps → actions — stub; needs a provider)
+  api/rest/http/service  →  ApiEngine       (deterministic httpx conformance)
+  ui/e2e/browser/web     →  BrowserEngine    (Playwright; LLM-translates a NL scenario to a browser plan)
+  everything else        →  LlmEngine        (LLM-translates a NL scenario to an HTTP request)
 
-Each engine returns an `EngineResult`. `ran=False` means "unbound" — the engine can't (yet) execute this
-scenario (not built, or no executable binding); that is recorded honestly, never faked as a pass.
+Each engine returns an `EngineResult`. `ran=False` means "unbound" — the engine can't execute this
+scenario (no executable binding / no provider); that is recorded honestly, never faked as a pass.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ class StepOutcome:
 @dataclass
 class EngineResult:
     engine: str
-    ran: bool                                        # False = unbound (not built / no executable binding)
+    ran: bool                                        # False = unbound (no executable binding / no provider)
     outcomes: list[StepOutcome] = field(default_factory=list)
     note: str = ""
 
@@ -175,7 +175,7 @@ class BrowserEngine:
         if not (base_url and isinstance(plan, dict) and (plan.get("url_path") or plan.get("steps"))):
             return EngineResult(self.name, ran=False,
                                 note="no browser plan / base_url and no provider to translate the scenario")
-        driver = _get_browser_driver()
+        driver = _get_browser_driver()   # ponytail: fresh browser per scenario; pool if throughput matters
         if driver is None:
             return EngineResult(self.name, ran=False,
                                 note="browser engine needs Playwright (pip install playwright && playwright install chromium)")
