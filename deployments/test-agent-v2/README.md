@@ -1,12 +1,12 @@
 # deployments/test-agent-v2 — Terraform for the ADK (v2) Testing-Agent stack
 
-> **This is the v2 (ADK) stack** — a **separate, coexisting** deployment from `../test-agent-v1`:
-> distinct `…-v2` Cloud Run service names, its own secrets/SA (`name_prefix = "kga-v2"`), its own
-> memory bucket (`<project>-kga-v2-memory`), and its own terraform state. v1 is left untouched.
+> **The ADK (v2) Testing-Agent stack** — distinct `…-v2` Cloud Run service names, its own secrets/SA
+> (`name_prefix = "kga-v2"`), its own memory bucket (`<project>-kga-v2-memory`), and its own
+> terraform state.
 > **Single-gateway topology (G2):** one `mcp-gateway-v2` service is the only MCP endpoint Claude
 > connects to; the three agents are **A2A-only** and reached by the gateway over A2A.
 > `deploy_cloudsql` defaults **on**: v2 stands up its **own** Cloud SQL Postgres instance (durable
-> `DatabaseSessionService`), isolated from v1 (extra cost) — set `false` for in-memory sessions (the
+> `DatabaseSessionService`), isolated per stack (extra cost) — set `false` for in-memory sessions (the
 > GCS bank stays durable regardless). Build context: `../../test-agent-v2`.
 
 Provisions: **Cloud Run** (four services — the gateway + three A2A agents), a shared **GCS**

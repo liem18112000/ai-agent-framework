@@ -1,7 +1,6 @@
 # GCP Service Exploration — Tiers 5/6/7 for the Self-Exploration Loop
 
 **Purpose.** Extend the Knowledge-Gathering Agent's **self-exploration loop**
-([`RESEARCH-self-exploring-knowledge-gather.md`](../../test-agent-v1/docs/RESEARCH-self-exploring-knowledge-gather.md))
 with a **runtime/operational** source: the live Google Cloud estate. Today the loop reaches four
 *document* tiers (memory → Atlassian search → external web → external LLM). It has never looked at
 **what is actually deployed and running**. This plan adds a **GCP-explore sub-agent** that grounds the

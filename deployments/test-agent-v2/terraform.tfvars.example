@@ -1,8 +1,7 @@
 # Copy to terraform.tfvars and fill in. Do NOT put secret values here.
 #
-# This is the v2 (ADK) stack — a SEPARATE, coexisting deployment from test-agent-v1:
-# distinct service names (…-v2), its own secrets/SA (name_prefix "kga-v2") and memory bucket
-# (<project>-kga-v2-memory), and its own terraform state. v1 is untouched.
+# The ADK (v2) Testing-Agent stack — distinct service names (…-v2), its own secrets/SA
+# (name_prefix "kga-v2") and memory bucket (<project>-kga-v2-memory), and its own terraform state.
 project_id         = "my-gcp-project"
 region             = "europe-west6"
 vertex_region      = "global" # Claude on Vertex (claude-sonnet-5) is served in 'global'
