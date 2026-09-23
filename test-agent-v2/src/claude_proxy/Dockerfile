@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
  && curl -fsSL https://claude.ai/install.sh | bash \
  && ln -sf /root/.local/bin/claude /usr/local/bin/claude
 WORKDIR /app
-COPY claude_proxy/server.py ./server.py
+COPY src/claude_proxy/server.py ./server.py
 ENV PORT=8088
 EXPOSE 8088
 CMD ["python", "server.py"]

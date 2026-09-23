@@ -13,7 +13,7 @@ from typing import Protocol, runtime_checkable
 
 
 def score01(raw, levels: list[str]) -> float:
-    """Normalise a Score result to a 0–1 float — shared by every DecisionProvider (JEV, laya, …).
+    """Normalise a Score result to a 0–1 float — shared by every DecisionProvider (JEV, …).
     Covers the three plausible encodings: already-0–1 float (pass through), an ordinal rank/index
     (÷ span), or a level string (its position ÷ span). ``bool`` is guarded first (int subclass)."""
     span = max(len(levels) - 1, 1)

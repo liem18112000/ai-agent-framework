@@ -6,10 +6,10 @@
 #     cache        : Redis               CACHE_BACKEND=redis
 #     queue        : Pub/Sub emulator    TPD_GEN_MODE=workers -> worker service
 #     LLM          : Ollama              TESTAGENT_MODEL_BACKEND=litellm -> ollama/*
-#     decisions    : laya sidecar        TPD_DECISION_BACKEND=laya (JEV's local twin; heavy: torch)
+#     decisions    : JEV cloud API       TPD_DECISION_BACKEND=jev (remote; blank key -> LLM fallback)
 #
 #   cp .env.compose.example .env.compose   # set Atlassian creds + bearers
-#   docker compose up --build              # first run pulls Ollama models (~2GB) + builds torch (laya)
+#   docker compose up --build              # first run pulls Ollama models (~2GB)
 #
 # MinIO console http://localhost:9001 (minioadmin/minioadmin). Point Claude's MCP client at :8080.
 
@@ -99,7 +99,7 @@ services:
   claude-proxy:                   # local Claude SUBSCRIPTION as an OpenAI endpoint (the `claude` CLI)
     build:
       context: .
-      dockerfile: claude_proxy/Dockerfile
+      dockerfile: src/claude_proxy/Dockerfile
     ports: ["8088:8088"]
     volumes: ["claude_config:/root/.claude"]   # persists the one-time `claude /login` (subscription auth)
     restart: unless-stopped
