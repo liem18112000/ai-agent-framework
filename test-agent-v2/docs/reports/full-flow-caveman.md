@@ -4,7 +4,7 @@
 robot remember, robot learn. Same hunt as before — but this the **v2** rock, so
 every robot-poke now ride through the ONE gateway door.** 🦣🤖🚪
 
-*(Hunt SAME as v1. Only names now v2-current. Pipeline no change.)*
+*(Names now v2-current. Pipeline no change.)*
 
 ---
 

@@ -4,7 +4,7 @@
 RAGAS grades what it retrieved and generated, and one golden set is the ground truth.
 Roll it all into ONE number: the Pack Quality Score (PQS).** 📏🔍🏆
 
-*(This the v2 doc set. Concept same as v1 — this a measurement design, framework-neutral.
+*(This the v2 doc set. This a measurement design, framework-neutral.
 Names kept current; no new architecture invented here.)*
 
 ---

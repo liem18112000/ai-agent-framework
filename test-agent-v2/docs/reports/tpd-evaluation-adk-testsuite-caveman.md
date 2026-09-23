@@ -4,7 +4,7 @@
 brief stays to the pack; test-suite science grades coverage + whether the suite catches real
 bugs. One golden set (a REAL executed plan) is truth. Roll into ONE number: Test-Plan Score (TPS).** 📏🧪🏆
 
-*(This the v2 doc set. Concept same as v1 — a measurement design, framework-neutral.
+*(This the v2 doc set. A measurement design, framework-neutral.
 Names kept current; no new architecture invented here.)*
 
 ---

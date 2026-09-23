@@ -5,7 +5,7 @@ might touch, fan out across three source ladders (cheapest+most-trusted first), 
 only what it can CITE, then crawl. External LLM only points the way — it is NOT a
 source of truth.** 🧭🐾
 
-**(v2 doc set — same self-exploration loop as v1; names kept current.)**
+**(v2 doc set — the self-exploration loop; names kept current.)**
 
 ---
 

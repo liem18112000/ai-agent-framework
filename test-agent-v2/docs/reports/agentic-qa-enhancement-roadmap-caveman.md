@@ -4,7 +4,7 @@
 Each pillar say exactly WHERE it plugs in. The big missing rock = a real "(Test execution)"
 stage — build it, and the red cliff go away.** 🧱🔬🚀
 
-*(This the v2 doc set. Concept same as v1 — the enhancement map is framework-neutral.
+*(This the v2 doc set. The enhancement map is framework-neutral.
 Names kept current; no new architecture invented here.)*
 
 ---

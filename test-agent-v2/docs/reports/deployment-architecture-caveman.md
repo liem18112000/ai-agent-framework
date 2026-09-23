@@ -5,7 +5,7 @@ door (the gateway), gateway run inside and poke the right robot with A2A rope.
 Worker robot lost their own door-guard — they just work now. FIVE house
 (one gateway + FOUR robot), one skin, one cloud land.** 🦣☁️🚪🤖
 
-*(This the **v2** rock. v1 had many door — v2 squish them into one gateway.
+*(This the **v2** rock. v2 squish the doors into one gateway.
 And v2 grow a fourth robot: the keeper ④ that tend the memory cave.)*
 
 ---

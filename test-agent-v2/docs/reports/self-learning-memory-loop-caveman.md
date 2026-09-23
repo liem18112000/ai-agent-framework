@@ -5,7 +5,7 @@ shared cave-wall (GCS), quiet-quiet on the side (not slow the hunt), with a GUAR
 no bad lesson poison future hunt. Next hunt start smarter. Loop close.** 🦣🧠🔁
 
 **Status: robot already DO this — BUILT & DEPLOYED, live-verified 2026-09-04, flags =1.**
-✅ (v2 doc set — same self-learning loop as v1; recall structural-only → semantic = L7 two-tier M4.)
+✅ (v2 doc set — the self-learning loop; recall structural-only → semantic = L7 two-tier M4.)
 
 ---
 

@@ -4,7 +4,7 @@
 BEND the hunt off-track toward whatever the memory is fat with. Give the robot a
 STRUCTURE anchor (codegraph) and the hunt stay on-seed and finish fast.** 🧲🐘
 
-**(v2 doc set — same memory-bias field case as v1; names kept current.)**
+**(v2 doc set — the memory-bias field case; names kept current.)**
 
 ---
 

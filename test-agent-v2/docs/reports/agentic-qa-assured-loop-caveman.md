@@ -4,7 +4,7 @@
 MEASURE, then keep ONLY the test that help. If test break, robot self-heal and re-run.
 Loop small, loop cheap, human still say final Yes/No.** 🔁🧪✅
 
-*(This the v2 doc set. Concept same as v1 — this the plan that replaces the single
+*(This the v2 doc set. This the plan that replaces the single
 `implement_plan` call. Names kept current.)*
 
 ---

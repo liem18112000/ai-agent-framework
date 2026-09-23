@@ -38,7 +38,7 @@ Pipeline:
 ## 1. Install — connect Claude to the gateway
 
 The gateway is a bearer-gated Cloud Run service serving Streamable-HTTP MCP at `/mcp`. You register
-**one** server (v1 registered three; v2 is a single endpoint).
+**one** server (v2 is a single endpoint).
 
 **Quickest — run the installer.** It reads `GATEWAY_BEARER_TOKEN` from `test-agent-v2/.env`, resolves
 the live `/mcp` URL from `terraform output -raw gateway_url`, and registers the one server
@@ -237,8 +237,7 @@ flows from the first step to the last:
 
 ## 5. Where the output goes — the shared Memory Bank
 
-Everything persists to GCS (`gs://<project>-kga-v2-memory/memory/`, v2's own bucket, isolated from
-v1) so the next run starts warm. Each stage writes its **own prefix** keyed by `context_id`:
+Everything persists to GCS (`gs://<project>-kga-v2-memory/memory/`, v2's own bucket) so the next run starts warm. Each stage writes its **own prefix** keyed by `context_id`:
 
 ```
 memory/

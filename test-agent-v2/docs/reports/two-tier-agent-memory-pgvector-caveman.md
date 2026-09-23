@@ -5,7 +5,7 @@ all rock, never lie. Layer two = a smart pond (Cloud SQL + pgvector) that rememb
 by MEANING, not by matching letters. Robot ask a question in ANY words and still find
 the right rock.** 🧠🔀
 
-**(v2 doc set — same two-tier CQRS design as v1; names kept current.)**
+**(v2 doc set — the two-tier CQRS design; names kept current.)**
 
 ---
 

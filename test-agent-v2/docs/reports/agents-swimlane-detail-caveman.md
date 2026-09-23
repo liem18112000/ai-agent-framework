@@ -16,7 +16,7 @@ That one door pass every knock to the right robot inside (A2A). No more per-robo
 5. **TPD agent-v2** 🗺️ — `test-plan-definition · A2A-only`. The planner. Also no own door.
 6. **Shared state** 🗄️ — `GCS · pgvector · CloudSQL · Vertex`. Where all robot keep stuff + brain.
 
-*(Old v1 had SEVEN pole — TWO extra door-guard, one per robot. v2 smash both into the ONE gateway.)*
+*(v2 smash the door-guards into the ONE gateway.)*
 
 ---
 

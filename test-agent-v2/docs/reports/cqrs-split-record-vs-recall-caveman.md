@@ -5,7 +5,7 @@ story-log — write-only, cheap, never lie. Then PAINT a fast picture of it in a
 smart pond (Cloud SQL + pgvector) that robot can ASK questions to. Two rooms, one
 truth.** 🪨💧
 
-**(v2 doc set — the CQRS split is the same idea as v1; names kept current.)**
+**(v2 doc set — the CQRS split; names kept current.)**
 
 ---
 
