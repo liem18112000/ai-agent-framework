@@ -1,13 +1,21 @@
 """Run orchestration + failure triage for the Test Executor.
 
-Slice 0 ships a STUB runner: it resolves+records the target environment and a run row on the shared
-ledger, but does NOT yet drive a real browser/API run. The real Playwright + `behave` + Schemathesis
-execution (design §3, phase P1) needs a sandbox + external infra and lands behind a flag in the next
-slice. The triage classifier (`classify_failure`) IS real — it's the heuristic tier of the §5 JEV
-cascade (JEV `Choice`/`Noul` fronts it later; today it's the deterministic fallback).
+`EXEC_RUNNER` gates execution. Default `stub`: resolve+record the environment and a placeholder run —
+the whole agent+DB+gateway path is real without touching a live system. `auto`: route each scenario to
+the engine that fits its nature (`runners.select_engine`, keyed on `TestScenario.methodology`) and
+aggregate real pass/fail + failures. The API engine is real (httpx conformance); the Playwright/LLM
+engines are stubs behind the same seam (§3, phase P1 — they drop in without dragging a browser/LLM dep
+in here). The triage classifier (`classify_failure`) is the heuristic tier of the §5 JEV cascade.
 """
 
 from __future__ import annotations
+
+import os
+
+from common.monitoring import get_logger
+from test_executor.runners import ENGINES, select_engine
+
+log = get_logger("exec.runner")
 
 # ponytail: heuristic triage now; the JEV DecisionProvider cascade (§5) fronts this once wired.
 _BUG_HINTS = ("assertion", "assert", "expected", "wrong value", "500", "server error", "exception")
@@ -37,18 +45,54 @@ def triage(failures: list[dict]) -> list[dict]:
     return [{"message": f.get("message", ""), "verdict": classify_failure(f)} for f in failures]
 
 
-async def run_suite(store, context_id: str, env: str = "") -> dict:
-    """Execute the persisted scenarios against `env` and record the run. Returns the finished run dict.
+async def load_scenarios(context_id: str) -> list[dict]:
+    """The scenario source for a run. TODO(P1): read the persisted scenarios for `context_id` from the
+    shared memory bank (the same store TPD's get_scenarios reads). Injected directly in tests today."""
+    log.info("load_scenarios: bank read not wired yet for %s — inject scenarios or wire the bank", context_id)
+    return []
 
-    STUB (slice 0): registers the environment + a run row with a placeholder result. Wiring the real
-    runner (fetch scenarios via get_scenarios → Playwright/behave/Schemathesis in a sandbox → real
-    coverage/flakiness/conformance signals) is phase P1 and replaces the body below."""
+
+async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[dict] | None = None,
+                    base_url: str = "") -> dict:
+    """Execute the scenarios against `env` and record the run. Returns the finished run dict.
+
+    EXEC_RUNNER gates execution: `stub` (default) records an honest placeholder — the whole agent + DB
+    + gateway path is real without touching a live environment; `auto` routes each scenario to the
+    engine that fits its nature (`runners.select_engine`) and aggregates real pass/fail + failures."""
     name = env.strip() or "default"
-    environment_id = await store.upsert_env(context_id, name)
+    base_url = base_url or os.environ.get("EXEC_BASE_URL", "")
+    environment_id = await store.upsert_env(context_id, name, base_url=base_url)
     run_id = await store.start_run(context_id, environment_id)
-    # ponytail: real execution deferred (P1). No scenarios are run yet — record an honest stub result.
-    summary = {"passed": 0, "failed": 0, "healed": 0, "quarantined": 0, "executed": 0}
-    signals = {"stub": True,
-               "note": "stub runner — real Playwright/behave/Schemathesis run is phase P1 (not built)"}
-    await store.finish_run(run_id, status="done", summary=summary, signals=signals, triage=[])
+
+    if os.environ.get("EXEC_RUNNER", "stub").lower() != "auto":
+        await store.finish_run(run_id, status="done",
+                               summary={"passed": 0, "failed": 0, "executed": 0},
+                               signals={"stub": True,
+                                        "note": "stub runner — set EXEC_RUNNER=auto to route scenarios to engines"},
+                               triage=[])
+        return await store.get_run(run_id=run_id) or {"id": run_id, "status": "done"}
+
+    if scenarios is None:
+        scenarios = await load_scenarios(context_id)
+
+    passed = failed = unbound = 0
+    failures: list[dict] = []
+    by_engine: dict[str, int] = {}
+    for sc in scenarios:
+        res = await ENGINES[select_engine(sc)].run(sc, base_url=base_url)
+        by_engine[res.engine] = by_engine.get(res.engine, 0) + 1
+        if not res.ran:
+            unbound += 1
+            continue
+        if res.passed:
+            passed += 1
+        else:
+            failed += 1
+            failures += [{"message": o.message, "flaky": o.flaky,
+                          "scenario": sc.get("title") or sc.get("id")} for o in res.outcomes if not o.ok]
+
+    summary = {"passed": passed, "failed": failed, "unbound": unbound,
+               "executed": passed + failed, "by_engine": by_engine}
+    await store.finish_run(run_id, status="done", summary=summary,
+                           signals={"failures": failures}, triage=triage(failures))
     return await store.get_run(run_id=run_id) or {"id": run_id, "status": "done"}
