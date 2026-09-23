@@ -110,4 +110,4 @@ def _fetchable(canonical: str, scope: Scope) -> bool:
         return scope.follow_web
     if kind == "cloudsvc":
         return scope.explore_cloud
-    return kind in ("jira", "confluence", "bitbucket", "codegraph", "attachment")
+    return kind in ("jira", "confluence", "bitbucket", "github", "codegraph", "attachment")

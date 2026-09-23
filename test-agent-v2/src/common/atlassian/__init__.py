@@ -2,17 +2,19 @@
 
 from common.atlassian.base import (
     BITBUCKET_API,
+    GITHUB_API,
     RETRY_BACKOFFS,
     RETRY_STATUS,
     BaseClient,
 )
 from common.atlassian.bitbucket import BitbucketMixin
 from common.atlassian.confluence import ConfluenceMixin
+from common.atlassian.github import GitHubMixin
 from common.atlassian.jira import JiraMixin
 
 
-class AtlassianClient(JiraMixin, ConfluenceMixin, BitbucketMixin, BaseClient):
-    """Read-only Jira + Confluence + Bitbucket over one retry core."""
+class AtlassianClient(JiraMixin, ConfluenceMixin, BitbucketMixin, GitHubMixin, BaseClient):
+    """Read-only Jira + Confluence + Bitbucket + GitHub over one retry core."""
 
 
-__all__ = ["BITBUCKET_API", "RETRY_BACKOFFS", "RETRY_STATUS", "AtlassianClient"]
+__all__ = ["BITBUCKET_API", "GITHUB_API", "RETRY_BACKOFFS", "RETRY_STATUS", "AtlassianClient"]

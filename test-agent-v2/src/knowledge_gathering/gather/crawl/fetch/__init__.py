@@ -9,6 +9,7 @@ from knowledge_gathering.gather.crawl.fetch import (  # noqa: F401  (registratio
     cloud_service,
     codegraph,
     confluence,
+    github,
     jira,
     web,
 )

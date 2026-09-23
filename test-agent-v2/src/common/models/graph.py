@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 JIRA_ISSUE = "jira-issue"
 CONFLUENCE_PAGE = "confluence-page"
 BITBUCKET = "bitbucket"
+GITHUB = "github"
 FIGMA = "figma"
 GOOGLE_DOC = "google-doc"
 ATTACHMENT = "attachment"

@@ -13,6 +13,7 @@ from common.models import (
     CONFLUENCE_PAGE,
     EXTERNAL_WEB,
     FIGMA,
+    GITHUB,
     JIRA_ISSUE,
     Scope,
 )
@@ -43,6 +44,15 @@ def test_classify_url():
     )
     assert classify_url("https://bitbucket.org/acme/x") == (CODEGRAPH, "codegraph:acme/x")
     assert classify_url("https://bitbucket.org/acme/x/pull-requests/9")[0] == BITBUCKET
+    assert classify_url("https://github.com/acme/r/blob/main/F.java") == (
+        GITHUB,
+        "github:acme/r/blob/main/F.java",
+    )
+    assert classify_url("https://github.com/acme/r/pull/9")[0] == GITHUB
+    assert classify_url("https://raw.githubusercontent.com/acme/r/main/F.java") == (
+        GITHUB,
+        "github:acme/r/blob/main/F.java",
+    )
     assert classify_url("https://www.figma.com/file/abc")[0] == FIGMA
     assert classify_url("https://example.com/spec.pdf")[0] == EXTERNAL_WEB
 

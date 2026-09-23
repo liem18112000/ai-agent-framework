@@ -26,6 +26,7 @@ def _filename_from_disposition(disposition: str) -> str:
 RETRY_BACKOFFS: tuple[float, ...] = (1.0, 2.0, 4.0)
 RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
 BITBUCKET_API = "https://api.bitbucket.org/2.0"
+GITHUB_API = "https://api.github.com"  # GitHub Enterprise Server: https://<host>/api/v3
 
 
 def _retryable(exc: Exception) -> bool:
@@ -40,6 +41,7 @@ class BaseClient:
     def __init__(
         self, base_url: str, email: str, api_token: str, *,
         bitbucket_auth: tuple[str, str] | None = None, bitbucket_base: str = BITBUCKET_API,
+        github_token: str | None = None, github_base: str = GITHUB_API,
         client: httpx.AsyncClient | None = None, backoffs: tuple[float, ...] = RETRY_BACKOFFS,
         timeout: float = 30.0,
     ) -> None:
@@ -47,18 +49,29 @@ class BaseClient:
         self._auth = (email, api_token)
         self.bitbucket_base = bitbucket_base.rstrip("/")
         self._bb_auth = bitbucket_auth
+        self.github_base = github_base.rstrip("/")
+        self._gh_token = github_token
         self._backoffs = backoffs
         self._client = client or httpx.AsyncClient(timeout=timeout)
+
+    @property
+    def github_web(self) -> str:
+        """Browser base for a `github_base` API host — `https://<host>` for GHE `.../api/v3`,
+        else public `https://github.com` (used only to build a human-facing `source_url`)."""
+        return self.github_base[:-len("/api/v3")] if self.github_base.endswith("/api/v3") else "https://github.com"
 
     async def _request(
         self, url: str, params: dict | None = None, auth: tuple[str, str] | None = None,
         *, accept: str | None = "application/json", follow_redirects: bool = False,
+        headers: dict | None = None,
     ) -> httpx.Response:
         """GET `url` with bounded retry on transient failures."""
-        headers = {"Accept": accept} if accept else {}
+        hdrs = {"Accept": accept} if accept else {}
+        if headers:
+            hdrs.update(headers)
         for attempt in range(len(self._backoffs) + 1):
             try:
-                resp = await self._client.get(url, params=params, auth=auth, headers=headers,
+                resp = await self._client.get(url, params=params, auth=auth, headers=hdrs,
                                               follow_redirects=follow_redirects)
                 resp.raise_for_status()
                 return resp

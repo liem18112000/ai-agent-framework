@@ -44,13 +44,16 @@ class FakeBucket:
         return FakeBlob(self, name) if name in self.store else None
 
 
-def _issue(key, links_to=(), bitbucket=False):
+def _issue(key, links_to=(), bitbucket=False, github=False):
     content = []
     for lk in links_to:
         pass
     if bitbucket:
         content.append({"type": "paragraph", "content": [
             {"type": "inlineCard", "attrs": {"url": "https://bitbucket.org/acme/r/src/main/F.java"}}]})
+    if github:
+        content.append({"type": "paragraph", "content": [
+            {"type": "inlineCard", "attrs": {"url": "https://github.com/acme/r/blob/main/F.java"}}]})
     return {
         "key": key,
         "fields": {
@@ -80,6 +83,11 @@ class FakeClient:
 
     async def get_bitbucket_src(self, ws, repo, path, ref="main"):
         return self.files[(ws, repo, ref, path)]
+
+    github_web = "https://github.com"
+
+    async def get_github_src(self, owner, repo, path, ref="main"):
+        return self.files[(owner, repo, ref, path)]
 
 
 def test_normalize_seed():
@@ -142,6 +150,24 @@ async def test_follows_bitbucket_file_only_when_in_scope():
     default = await crawl(FakeClient(issues, files=src), MemoryBank(FakeBucket()),
                           "LUZ-1", depth=1, run_id="t")
     assert not any(n.type == BITBUCKET for n in default.notes)
+
+
+async def test_follows_github_file_only_when_in_scope():
+    from common.models import CONFLUENCE_PAGE, GITHUB, JIRA_ISSUE, Scope
+
+    issues = {"LUZ-1": _issue("LUZ-1", github=True)}
+    src = {("acme", "r", "main", "F.java"): "class F { void extractAllZipFile() {} }"}
+
+    scope = Scope(follow_types=(JIRA_ISSUE, CONFLUENCE_PAGE, GITHUB))
+    result = await crawl(FakeClient(issues, files=src), MemoryBank(FakeBucket()),
+                         "LUZ-1", depth=1, scope=scope, run_id="t")
+    assert "github:acme/r/blob/main/F.java" in {n.id for n in result.notes}
+    gh = next(n for n in result.notes if n.type == GITHUB)
+    assert "extractAllZipFile" in gh.synopsis
+
+    default = await crawl(FakeClient(issues, files=src), MemoryBank(FakeBucket()),
+                          "LUZ-1", depth=1, run_id="t")
+    assert not any(n.type == GITHUB for n in default.notes)
 
 
 async def test_extra_seeds_are_crawled_at_depth_zero():

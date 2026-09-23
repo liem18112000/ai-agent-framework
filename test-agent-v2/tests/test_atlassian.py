@@ -206,6 +206,56 @@ async def test_get_bitbucket_src_returns_raw_text():
     await c.aclose()
 
 
+# --- GitHub: Bearer-token auth + raw Contents API (public github.com + Enterprise Server) ---------
+
+def _gh_client(handler, **kw) -> AtlassianClient:
+    transport = httpx.MockTransport(handler)
+    return AtlassianClient(
+        "https://example.atlassian.net", "user@example.com", "token",
+        github_token="ghp_x", client=httpx.AsyncClient(transport=transport), **kw,
+    )
+
+
+async def test_get_github_src_uses_bearer_and_raw_media_type():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "api.github.com"
+        assert request.url.path == "/repos/acme/luz-docs/contents/FileUtil.java"
+        assert request.url.params["ref"] == "main"
+        assert request.headers.get("authorization") == "Bearer ghp_x"
+        assert request.headers.get("accept") == "application/vnd.github.raw"
+        return httpx.Response(200, text="class FileUtil {}")
+
+    c = _gh_client(handler)
+    src = await c.get_github_src("acme", "luz-docs", "FileUtil.java")
+    assert "class FileUtil" in src
+    await c.aclose()
+
+
+async def test_get_github_src_enterprise_base_and_web_host():
+    """GHE: API at <host>/api/v3, and github_web strips it back to the browser host."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "github.acme.com"
+        assert request.url.path == "/api/v3/repos/acme/r/contents/F.java"
+        return httpx.Response(200, text="ok")
+
+    c = _gh_client(handler, github_base="https://github.acme.com/api/v3")
+    assert await c.get_github_src("acme", "r", "F.java") == "ok"
+    assert c.github_web == "https://github.acme.com"
+    await c.aclose()
+
+
+async def test_get_github_src_anonymous_when_no_token():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "authorization" not in request.headers
+        return httpx.Response(200, text="public")
+
+    transport = httpx.MockTransport(handler)
+    c = AtlassianClient("https://example.atlassian.net", "user@example.com", "token",
+                        client=httpx.AsyncClient(transport=transport))
+    assert await c.get_github_src("acme", "r", "F.java") == "public"
+    await c.aclose()
+
+
 # --- download_bytes: SSRF guard (CLD-01) + streaming byte cap (CLD-02) ------------------------
 
 async def test_download_bytes_blocks_ssrf_to_internal_literal():
