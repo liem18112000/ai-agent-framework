@@ -64,3 +64,23 @@ async def test_run_suite_stub_default(monkeypatch):
     store = InMemoryExecStore()
     run = await run_suite(store, "CTX", "dev", scenarios=[{"methodology": "api"}])
     assert run["signals"].get("stub") is True
+
+
+async def test_load_scenarios_reads_bank(monkeypatch):
+    from common.memory import MemoryBank
+    from common.store.memory import InMemoryObjectStore
+    from common.testplan import memory as tp_store
+    from common.testplan.models import TestScenario
+    from test_executor import runner
+
+    bank = MemoryBank(InMemoryObjectStore())
+    tp_store.write_scenarios(bank, "CTX", [
+        TestScenario(id="s1", plan_id="p", title="charge happy", methodology="api"),
+        TestScenario(id="s2", plan_id="p", title="login UI", methodology="ui"),
+    ])
+    monkeypatch.setattr("common.memory.factory.build_bank", lambda: bank)
+    scenarios = await runner.load_scenarios("CTX")
+    assert len(scenarios) == 2
+    assert {s["methodology"] for s in scenarios} == {"api", "ui"}
+    # unknown context → empty, never a crash
+    assert await runner.load_scenarios("NOPE") == []

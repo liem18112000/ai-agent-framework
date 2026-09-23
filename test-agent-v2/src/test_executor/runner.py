@@ -46,10 +46,22 @@ def triage(failures: list[dict]) -> list[dict]:
 
 
 async def load_scenarios(context_id: str) -> list[dict]:
-    """The scenario source for a run. TODO(P1): read the persisted scenarios for `context_id` from the
-    shared memory bank (the same store TPD's get_scenarios reads). Injected directly in tests today."""
-    log.info("load_scenarios: bank read not wired yet for %s — inject scenarios or wire the bank", context_id)
-    return []
+    """Read the persisted scenarios for `context_id` from the shared memory bank — the same
+    `scenarios.json` TPD writes via `common.testplan.memory.write_scenarios`. Returns dicts (carrying
+    the `methodology` routing key); [] when none / no bank. Blocking bank I/O runs off the event loop."""
+    import asyncio
+    from dataclasses import asdict
+
+    def _read() -> list[dict]:
+        from common.memory.factory import build_bank
+        from common.testplan import memory as tp_store
+        return [asdict(s) for s in tp_store.read_scenarios(build_bank(), context_id)]
+
+    try:
+        return await asyncio.to_thread(_read)
+    except Exception as exc:  # noqa: BLE001 — a missing/empty bank degrades to [], never crashes the run
+        log.warning("load_scenarios(%s) failed: %s", context_id, exc)
+        return []
 
 
 async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[dict] | None = None,
