@@ -6,12 +6,22 @@ inlined at their sole call sites: the P4 judge in ``assured.py``, steps in ``ste
 from __future__ import annotations
 
 import asyncio
+import os
 
 from common.adk import agent_model
 from common.testplan.llm.adk import build_generator_agent, run_json_agent
 from common.testplan.llm.prompts import pack_block, scenarios_prompt, scope_classify_prompt
 from common.testplan.llm.schemas import InScope, Scenarios
-from common.testplan.models import TestData, TestPlan, TestScenario
+from common.testplan.models import (
+    BOUNDARY,
+    ERROR,
+    HAPPY,
+    NEGATIVE,
+    TestData,
+    TestPlan,
+    TestScenario,
+    effective_kinds,
+)
 from test_plan_definition.implement.generate import workers
 from test_plan_definition.monitoring import get_logger
 
@@ -56,6 +66,17 @@ _BATCH_UNITS = 3        # grounded units per generation call — small so verbos
 # (A validated concurrency>1 fix was tried and reverted — it fixed the empty-batch bug but Vertex is
 # throughput-bound so it bought no speedup; the real lever is the Phase B batch API. See docs.)
 _BATCH_CONCURRENCY = 1
+# Cap serial LLM batches per round (≈36 units) so one round can't exceed the ~300s MCP idle ceiling on a
+# big UNCLASSIFIED pack (classify_in_scope=None). Overflow units get heuristic scenarios — coverage kept,
+# just not LLM-quality for the tail. Normal (classified) packs are far under this. Env: TPD_GEN_MAX_BATCHES.
+_DEFAULT_MAX_BATCHES = 12
+
+
+def _max_llm_batches() -> int:
+    try:
+        return max(1, int(os.environ.get("TPD_GEN_MAX_BATCHES", _DEFAULT_MAX_BATCHES)))
+    except ValueError:
+        return _DEFAULT_MAX_BATCHES
 
 
 async def claude_scenarios(plan: TestPlan, plan_pack, test_data: list[TestData], *,
@@ -86,9 +107,19 @@ async def claude_scenarios(plan: TestPlan, plan_pack, test_data: list[TestData],
             plan, plan_pack, test_data, batches=batches, now=now, reflections=reflections,
             max_tokens=_SCEN_MAX_TOKENS, run=uuid.uuid4().hex[:12])
         if distributed:
+            distributed = distributed + await _crosscutting_scenarios(
+                plan, plan_pack, test_data, model=model, now=now, reflections=reflections)
             valid = {n.id for n in plan_pack.pack.notes} | set(plan.scope)
             return refine_scenarios(distributed, valid) or distributed or None
         log.info("TPD_GEN_MODE=workers produced nothing; using synchronous generation")
+
+    # Bound serial LLM batches so one round stays under the MCP idle ceiling; overflow → heuristic (below).
+    overflow_ids: set[str] = set()
+    if len(batches) > (cap := _max_llm_batches()):
+        overflow_ids = {u for b in batches[cap:] if b for u in b}
+        log.warning("scenarios: %d batches over the %d cap; %d overflow units heuristic-filled",
+                    len(batches), cap, len(overflow_ids))
+        batches = batches[:cap]
 
     sem = asyncio.Semaphore(_BATCH_CONCURRENCY)
 
@@ -116,7 +147,38 @@ async def claude_scenarios(plan: TestPlan, plan_pack, test_data: list[TestData],
             if s.id not in seen:
                 seen.add(s.id)
                 merged.append(s)
+    if overflow_ids:  # units beyond the per-round batch cap → heuristic coverage (never dropped silently)
+        for s in heuristic_scenarios(plan, plan_pack, test_data, now=now, only_ids=overflow_ids):
+            if s.id not in seen:
+                seen.add(s.id)
+                merged.append(s)
+    merged = merged + await _crosscutting_scenarios(
+        plan, plan_pack, test_data, model=model, now=now, reflections=reflections)
     # P2 post-gen cleanup: drop invented citations + near-duplicates against the real pack ids (lifts
     # the judge's traceability + non_duplication). Fall back to the raw merge if a strict pass empties it.
     valid_ids = {n.id for n in plan_pack.pack.notes} | set(plan.scope)
     return refine_scenarios(merged, valid_ids) or merged or None
+
+
+async def _crosscutting_scenarios(plan: TestPlan, plan_pack, test_data: list[TestData], *,
+                                  model, now: str, reflections: list[str] | None) -> list[TestScenario]:
+    """Generate the plan's CROSS-CUTTING kinds — anything beyond happy/negative/boundary/error, e.g.
+    security, i18n/encoding, concurrency, performance — in ONE dedicated call. These apply to the whole
+    feature, not a single pack node, so the per-node batches never emit them and the score stalls on
+    missing coverage; the plan's test-design methods name the concrete risks (zip bomb, symlink,
+    CP437/NFD, pool-size-N, size boundaries…). Returns [] when there are no extra kinds, the model is
+    unconfigured, or the output is empty/invalid — never raises, so it can't break the main suite."""
+    cross = [k for k in effective_kinds(plan) if k not in (HAPPY, NEGATIVE, BOUNDARY, ERROR)]
+    if not cross or model is None:
+        return []
+    summary = plan_pack.summary_text()
+    agent = build_generator_agent(name="tpd_crosscutting_gen", system=pack_block(summary),
+                                  output_schema=Scenarios, output_key="tpd_scenarios", model=model)
+    data = await run_json_agent(agent, output_key="tpd_scenarios",
+                                user=scenarios_prompt(plan, summary, test_data, reflections,
+                                                      include_context=False, crosscutting_kinds=cross))
+    if data and (scs := Scenarios(**data).to_scenarios(plan, now)):
+        log.info("crosscutting: %d scenario(s) for kinds %s", len(scs), cross)
+        return scs
+    log.info("crosscutting: no scenarios generated (kinds %s)", cross)
+    return []

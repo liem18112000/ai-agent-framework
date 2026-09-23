@@ -180,13 +180,25 @@ def _plan_params(plan: TestPlan) -> dict:
 
 def scenarios_prompt(plan: TestPlan, summary: str, test_data: list[TestData],
                      reflections: list[str] | None = None, *, include_context: bool = True,
-                     focus_units: list[str] | None = None) -> str:
+                     focus_units: list[str] | None = None,
+                     crosscutting_kinds: list[str] | None = None) -> str:
     # A "generate the whole uncapped suite in ONE call" ask overruns the model's max output on a rich
     # pack -> the JSON array truncates -> schema-invalid -> silent heuristic fallback. The caller
     # batches the pack's units and passes one batch here per call; `focus_units` scopes THIS call's
     # output to a handful of ids so the array always fits. The full pack rides in the cached prefix.
+    # `crosscutting_kinds` is the ORTHOGONAL axis: security/i18n/concurrency/performance apply to the
+    # feature as a whole, not one pack node, so the per-node batches never emit them — this variant asks
+    # for one scenario per distinct risk NAMED in the test-design methods, across those kinds only.
     focus = ""
-    if focus_units:
+    if crosscutting_kinds:
+        focus = ("\nGENERATE ONLY cross-cutting scenarios for these kinds: "
+                 f"{', '.join(crosscutting_kinds)}. They apply to the WHOLE feature, not a single pack "
+                 "unit — cover EACH distinct risk named in the test-design methods above (e.g. every "
+                 "listed security / encoding / concurrency / performance case: zip-slip, zip bomb, deep "
+                 "nesting, symlink, duplicate entries, CP437-vs-UTF-8, NFC-vs-NFD, pool-size-N, size "
+                 "boundaries, …), ONE scenario per distinct risk. Do NOT emit plain happy / negative / "
+                 "boundary / error cases here — those are generated separately.\n")
+    elif focus_units:
         focus = ("\nGENERATE ONLY for these pack unit ids — one scenario per applicable kind for EACH, "
                  "and NONE for any id not listed here (the rest of the pack is context to draw on, not "
                  f"to cover in this call):\n{', '.join(focus_units)}\n")
