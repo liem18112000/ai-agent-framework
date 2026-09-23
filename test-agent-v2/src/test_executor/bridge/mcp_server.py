@@ -20,9 +20,14 @@ def register_tools(mcp: MCPServer, session: BridgeSession) -> dict:
         """[EXECUTION] Run the scenarios implemented for this run against a target environment and
         record the run to the shared ledger. Call it AFTER get_scenarios. `env` names the target
         (e.g. dev / staging / a Cloud Run revision / a tenant); omit it for the default environment —
-        a new environment is registered on first sight. NOTE: slice 0 is a STUB run (records the env +
-        run row with a placeholder result); the real Playwright/behave/Schemathesis execution is the
-        next slice. Read the outcome with get_run_report."""
+        a new environment is registered on first sight.
+
+        MULTI-TURN: the run is chunked so one call stays under the MCP idle timeout. If the reply
+        starts `[state: in_progress]`, call run_suite(context_id) again (no new args) to run the next
+        chunk — repeat until `[state: done]`, then read the outcome with get_run_report.
+
+        Execution is opt-in via EXEC_RUNNER=auto (routes each scenario to the engine that fits its
+        nature); the default is a one-shot stub that records the env + run row."""
         return (await session.ask(f"run {context_id} {env}".strip(), context_id=context_id)).text
 
     @mcp.tool()

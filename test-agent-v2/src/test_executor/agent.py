@@ -51,7 +51,9 @@ class ExecutorRouter(RouterAgent):
         if not ctx:
             return "Provide a context id: run <ctx> [env]."
         run = await runner.run_suite(build_store(), ctx, env.strip())
-        return "Executed (stub).\n" + ops.render_run(run)
+        # MULTI-TURN: the run is chunked; the client re-invokes `run <ctx>` until [state: done].
+        state = "done" if run.get("status") == "done" else "in_progress"
+        return f"[state: {state}]\n" + ops.render_run(run)
 
     async def _triage(self, rest: str) -> str:
         if not rest:

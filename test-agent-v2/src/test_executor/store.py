@@ -124,6 +124,16 @@ class ExecStore:
             await conn.execute(sql, {"id": rid, "context_id": context_id, "environment_id": environment_id})
         return rid
 
+    async def save_progress(self, run_id: str, *, summary: dict, signals: dict) -> None:
+        """Checkpoint a still-running chunked run (status stays in_progress; no finished_at)."""
+        from sqlalchemy import text
+        await self._ensure()
+        sql = text("UPDATE exec_run SET status='in_progress', summary=CAST(:summary AS jsonb), "
+                   "signals=CAST(:signals AS jsonb) WHERE id=:id")
+        async with self._engine.begin() as conn:
+            await conn.execute(sql, {"id": run_id, "summary": json.dumps(summary),
+                                     "signals": json.dumps(signals)})
+
     async def finish_run(self, run_id: str, *, status: str, summary: dict, signals: dict,
                          triage: list | None = None, trace_uri: str | None = None) -> None:
         from sqlalchemy import text
@@ -194,6 +204,11 @@ class InMemoryExecStore:
                            "status": "in_progress", "summary": {}, "signals": {}, "triage": [],
                            "trace_uri": None, "started_at": _now(), "finished_at": None}
         return rid
+
+    async def save_progress(self, run_id, *, summary, signals) -> None:
+        r = self._runs.get(run_id)
+        if r is not None:
+            r.update({"status": "in_progress", "summary": summary, "signals": signals})
 
     async def finish_run(self, run_id, *, status, summary, signals, triage=None, trace_uri=None) -> None:
         r = self._runs.get(run_id)

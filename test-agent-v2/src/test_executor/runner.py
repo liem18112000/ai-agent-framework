@@ -111,19 +111,30 @@ async def load_scenarios(context_id: str) -> list[dict]:
         return []
 
 
+_CHUNK_DEFAULT = 5
+
+
+def _chunk_size() -> int:
+    try:
+        return max(1, int(os.environ.get("EXEC_CHUNK", str(_CHUNK_DEFAULT))))
+    except ValueError:
+        return _CHUNK_DEFAULT
+
+
 async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[dict] | None = None,
                     base_url: str = "") -> dict:
-    """Execute the scenarios against `env` and record the run. Returns the finished run dict.
+    """Advance the execution run for a context by ONE chunk; return the run dict (status 'in_progress'
+    while chunks remain, else 'done'). The run is POLLED — the client re-invokes until done (like
+    implement_plan) so no single call blocks past the Cloud Run request timeout.
 
-    EXEC_RUNNER gates execution: `stub` (default) records an honest placeholder — the whole agent + DB
-    + gateway path is real without touching a live environment; `auto` routes each scenario to the
-    engine that fits its nature (`runners.select_engine`) and aggregates real pass/fail + failures."""
-    name = env.strip() or "default"
+    EXEC_RUNNER gates execution. `stub` (default): a one-shot honest placeholder (no live system).
+    `auto`: route each scenario to the engine that fits its nature and aggregate real pass/fail —
+    EXEC_CHUNK scenarios at a time, checkpointed to the ledger so a resume CONTINUES, not restarts."""
     base_url = base_url or os.environ.get("EXEC_BASE_URL", "")
-    environment_id = await store.upsert_env(context_id, name, base_url=base_url)
-    run_id = await store.start_run(context_id, environment_id)
 
     if os.environ.get("EXEC_RUNNER", "stub").lower() != "auto":
+        environment_id = await store.upsert_env(context_id, env.strip() or "default", base_url=base_url)
+        run_id = await store.start_run(context_id, environment_id)
         await store.finish_run(run_id, status="done",
                                summary={"passed": 0, "failed": 0, "executed": 0},
                                signals={"stub": True,
@@ -133,17 +144,27 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
 
     if scenarios is None:
         scenarios = await load_scenarios(context_id)
+    total = len(scenarios)
 
-    # ponytail: cap LLM translations per run — serial per-scenario model calls in this (still inline)
-    # handler could otherwise blow the Cloud Run request ceiling (see: implement serial Vertex →
-    # timeout). Raise EXEC_LLM_MAX, or move to a polled background job (P1), for larger suites.
+    latest = await store.get_run(context_id=context_id)
+    if latest and latest.get("status") == "in_progress":       # resume the running chunked run
+        run_id = latest["id"]
+        s, prog = latest.get("summary") or {}, latest.get("signals") or {}
+        passed, failed, unbound = int(s.get("passed", 0)), int(s.get("failed", 0)), int(s.get("unbound", 0))
+        by_engine = dict(s.get("by_engine") or {})
+        cursor, llm_used = int(prog.get("cursor", 0)), int(prog.get("llm_used", 0))
+        failures = list(prog.get("failures") or [])
+    else:                                                       # start a fresh run
+        environment_id = await store.upsert_env(context_id, env.strip() or "default", base_url=base_url)
+        run_id = await store.start_run(context_id, environment_id)
+        passed = failed = unbound = cursor = llm_used = 0
+        by_engine, failures = {}, []
+
     llm_max = int(os.environ.get("EXEC_LLM_MAX", "8"))
-    passed = failed = unbound = llm_used = 0
-    failures: list[dict] = []
-    by_engine: dict[str, int] = {}
-    for sc in scenarios:
+    for sc in scenarios[cursor:cursor + _chunk_size()]:
         name = select_engine(sc)
         by_engine[name] = by_engine.get(name, 0) + 1
+        cursor += 1
         if _needs_llm(name, sc):
             if llm_used >= llm_max:
                 unbound += 1
@@ -152,8 +173,7 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
         res = await ENGINES[name].run(sc, base_url=base_url)
         if not res.ran:
             unbound += 1
-            continue
-        if res.passed:
+        elif res.passed:
             passed += 1
         else:
             failed += 1
@@ -162,7 +182,13 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
 
     summary = {"passed": passed, "failed": failed, "unbound": unbound,
                "executed": passed + failed, "by_engine": by_engine}
-    verdicts = await asyncio.to_thread(triage, failures)   # JEV cascade is sync/blocking — run off-loop
+    if cursor < total:                                         # more chunks remain → checkpoint + poll
+        await store.save_progress(run_id, summary=summary,
+                                  signals={"cursor": cursor, "total": total, "failures": failures,
+                                           "llm_used": llm_used})
+        return await store.get_run(run_id=run_id) or {"id": run_id, "status": "in_progress"}
+
+    verdicts = await asyncio.to_thread(triage, failures)       # JEV cascade is sync/blocking — off-loop
     await store.finish_run(run_id, status="done", summary=summary,
-                           signals={"failures": failures}, triage=verdicts)
+                           signals={"failures": failures, "total": total}, triage=verdicts)
     return await store.get_run(run_id=run_id) or {"id": run_id, "status": "done"}

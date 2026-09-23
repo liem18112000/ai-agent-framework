@@ -180,3 +180,20 @@ async def test_browser_engine_llm_translates_nl(monkeypatch):
     res = await runners.BrowserEngine().run({"methodology": "ui", "title": "user logs in"}, base_url="http://svc")
     assert res.ran and res.passed
     assert ("goto", "http://svc/login") in driver.actions       # LLM-translated plan actually executed
+
+
+async def test_run_suite_chunks_and_resumes(monkeypatch):
+    monkeypatch.setenv("EXEC_RUNNER", "auto")
+    monkeypatch.setenv("EXEC_CHUNK", "1")                       # one scenario per poll
+    monkeypatch.setattr(runners, "_transport", httpx.MockTransport(lambda r: httpx.Response(200, json={})))
+    store = InMemoryExecStore()
+    scs = [{"title": f"s{i}", "methodology": "api", "request": {"path": f"/{i}", "expect_status": 200}}
+           for i in range(3)]
+    r1 = await run_suite(store, "CTX", "dev", scenarios=scs, base_url="http://svc")
+    assert r1["status"] == "in_progress" and r1["summary"]["executed"] == 1
+    r2 = await run_suite(store, "CTX", scenarios=scs, base_url="http://svc")     # poll → resume
+    assert r2["status"] == "in_progress" and r2["summary"]["executed"] == 2 and r2["id"] == r1["id"]
+    r3 = await run_suite(store, "CTX", scenarios=scs, base_url="http://svc")     # poll → done
+    assert r3["status"] == "done" and r3["summary"]["passed"] == 3 and r3["summary"]["executed"] == 3
+    r4 = await run_suite(store, "CTX", "dev", scenarios=scs, base_url="http://svc")  # after done → fresh run
+    assert r4["id"] != r3["id"] and r4["status"] == "in_progress"
