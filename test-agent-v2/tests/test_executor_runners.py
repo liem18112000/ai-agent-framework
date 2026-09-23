@@ -11,9 +11,10 @@ from test_executor.store import InMemoryExecStore
 
 
 def test_select_engine_routes_by_methodology():
-    assert select_engine({"methodology": "api"}) == "api"
-    assert select_engine({"methodology": "rest"}) == "api"
-    assert select_engine({}) == "api"                       # default methodology is "api"
+    assert select_engine({"methodology": "api", "request": {"path": "/x"}}) == "api"   # bound → deterministic
+    assert select_engine({"methodology": "rest", "request": {"path": "/x"}}) == "api"
+    assert select_engine({"methodology": "api"}) == "llm"   # NL api (no request) → translate via the LLM
+    assert select_engine({}) == "llm"                       # default api, no binding → LLM
     assert select_engine({"methodology": "ui"}) == "browser"
     assert select_engine({"methodology": "e2e"}) == "browser"
     assert select_engine({"methodology": "exploratory"}) == "llm"

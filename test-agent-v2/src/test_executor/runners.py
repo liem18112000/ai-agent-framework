@@ -324,10 +324,15 @@ _API = {"api", "rest", "http", "service", ""}
 
 
 def select_engine(scenario: dict) -> str:
-    """Route a scenario to an engine by its declared `methodology` (the nature of the test)."""
+    """Route a scenario to an engine by its declared `methodology` (the nature of the test).
+
+    An `api` scenario runs on ApiEngine only when it carries a structured `request`; a natural-language
+    api scenario (no binding — the TPD default) routes to the LLM engine so it is translated → executed
+    rather than reported unbound."""
     m = str(scenario.get("methodology") or "api").lower()
     if m in _UI:
         return "browser"
     if m in _API:
-        return "api"
+        req = scenario.get("request")
+        return "api" if isinstance(req, dict) and req.get("path") else "llm"
     return "llm"

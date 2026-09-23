@@ -355,8 +355,16 @@ module "exec" {
         [
           { name = "AGENT", value = "test_executor" },
           { name = "GCS_BUCKET", value = google_storage_bucket.memory.name },
+          # LLM provider — the LlmEngine/BrowserEngine translate NL scenarios into executable plans.
+          { name = "VERTEX_PROJECT", value = var.project_id },
+          { name = "VERTEX_LOCATION", value = var.vertex_region },
+          { name = "VERTEX_MODEL", value = var.vertex_model },
           { name = "A2A_BEARER_TOKEN", secret = google_secret_manager_secret.a2a_bearer.secret_id },
-        ]
+          # Real execution: `auto` routes scenarios to the engines; EXEC_BASE_URL is the target system.
+          { name = "EXEC_RUNNER", value = var.exec_runner },
+          { name = "EXEC_BASE_URL", value = var.exec_base_url },
+        ],
+        local.decision_env, # JEV triage cascade — inert unless tpd_decision_backend set (default OFF)
       )
     },
   ]

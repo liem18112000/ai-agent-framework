@@ -293,6 +293,16 @@ variable "exec_service_name" {
   description = "test_executor Cloud Run service name (A2A execution agent, ingress :8080)."
   default     = "test-executor-agent-v2"
 }
+variable "exec_runner" {
+  type        = string
+  description = "test_executor execution mode: 'stub' (record only) or 'auto' (route scenarios to engines)."
+  default     = "stub"
+}
+variable "exec_base_url" {
+  type        = string
+  description = "Target system base URL the executor runs scenarios against (EXEC_BASE_URL). Empty = none."
+  default     = ""
+}
 variable "deploy_admin" {
   type        = bool
   description = "Create the admin_agent Cloud Run service (memory & history operator utility)."
