@@ -22,6 +22,15 @@ def render_run(run: dict | None) -> str:
     return "\n".join(lines)
 
 
+def render_heal(result: dict) -> str:
+    """A heal_step proposal → readable lines. The patch is a proposal for a human Yes/No, not applied."""
+    status = "HEALED — patch verified (re-run passed)" if result.get("healed") else "NOT healed"
+    lines = [f"Heal: {status}", f"  {result.get('note', '')}"]
+    if result.get("patch"):
+        lines.append(f"  proposed patch ({result.get('engine')}): {result['patch']}")
+    return "\n".join(lines)
+
+
 def render_envs(envs: list[dict]) -> str:
     """The environments seen for a context → one line each."""
     if not envs:

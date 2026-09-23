@@ -192,3 +192,30 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
     await store.finish_run(run_id, status="done", summary=summary,
                            signals={"failures": failures, "total": total}, triage=verdicts)
     return await store.get_run(run_id=run_id) or {"id": run_id, "status": "done"}
+
+
+async def heal_step(store, context_id: str, step_id: str, *, base_url: str = "",
+                    scenarios: list[dict] | None = None) -> dict:
+    """Propose + verify a fix for ONE failed step of the latest run (§3.1 self-heal). Finds the failure
+    by `step_id` (its scenario title/id), re-translates the scenario with the failure fed back, and
+    re-runs to check the patch works. Returns {healed, engine, patch, note} — the patch is a PROPOSAL,
+    surfaced for a human Yes/No; it is NEVER applied here (no silent retarget)."""
+    from test_executor import runners
+
+    base_url = base_url or os.environ.get("EXEC_BASE_URL", "")
+    run = await store.get_run(context_id=context_id)
+    failures = ((run or {}).get("signals") or {}).get("failures") or []
+    fail = next((f for f in failures if str(f.get("scenario")) == step_id), None)
+    if fail is None:
+        return {"healed": False, "note": f"no failed step '{step_id}' in the latest run to heal"}
+    from common.adk.model import model_configured
+    if not (base_url and model_configured()):
+        return {"healed": False, "note": "healing needs a model provider + base_url (EXEC_BASE_URL)"}
+    if scenarios is None:
+        scenarios = await load_scenarios(context_id)
+    sc = next((s for s in scenarios if step_id in (s.get("title"), s.get("id"))), None)
+    if sc is None:
+        return {"healed": False, "note": f"scenario '{step_id}' not found in the bank to heal"}
+    plan, res = await runners.heal(sc, fail.get("message", ""), base_url=base_url)
+    return {"healed": bool(res.ran and res.passed), "engine": res.engine, "patch": plan,
+            "note": "PROPOSED patch — surfaced for human Yes/No; not applied automatically (no silent retarget)."}

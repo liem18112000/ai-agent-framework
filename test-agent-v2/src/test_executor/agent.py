@@ -71,9 +71,7 @@ class ExecutorRouter(RouterAgent):
         ctx, _, step = rest.partition(" ")
         if not (ctx and step.strip()):
             return "Usage: heal <ctx> <step_id>."
-        # The replay+patch healer is the one Executor tool still unbuilt; surface the human-gated contract.
-        return (f"heal {step.strip()}: the replay+patch healer is not built yet. Every heal will be "
-                "surfaced for a human Yes/No — never a silent retarget.")
+        return ops.render_heal(await runner.heal_step(build_store(), ctx, step.strip()))
 
     async def _report(self, rest: str) -> str:
         ctx, _, run_id = rest.partition(" ")

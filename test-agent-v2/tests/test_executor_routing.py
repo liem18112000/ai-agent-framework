@@ -40,3 +40,8 @@ async def test_environments_listed(mem):
 
 async def test_triage_without_run(mem):
     assert "call run first" in (await drive_adk(build_root_agent, "triage CTX")).lower()
+
+
+async def test_heal_usage_and_no_failure(mem):
+    assert "Usage: heal" in await drive_adk(build_root_agent, "heal CTX")
+    assert "NOT healed" in await drive_adk(build_root_agent, "heal CTX s1")   # no run/failure to heal

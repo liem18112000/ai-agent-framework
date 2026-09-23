@@ -39,9 +39,11 @@ def register_tools(mcp: MCPServer, session: BridgeSession) -> dict:
 
     @mcp.tool()
     async def heal_step(context_id: str, step_id: str) -> str:
-        """[EXECUTION] Propose a locator/wait/data patch for one failing step and re-run it. Every heal
-        is surfaced for a human Yes/No — never a silent retarget (that can mask a real regression).
-        NOTE: slice 0 returns guidance only; the real replay+patch healer is the next slice."""
+        """[EXECUTION] Heal one FAILED step of the latest run: the model proposes a corrected plan
+        (locator/wait/request) with the failure fed back, and it is re-run to verify the fix. `step_id`
+        is the failed scenario's title/id (from get_run_report). Returns the proposed patch + whether it
+        now passes. The patch is surfaced for a human Yes/No — it is NEVER applied automatically (a
+        silent retarget can mask a real regression). Needs a model provider + a base URL."""
         return (await session.ask(f"heal {context_id} {step_id}", context_id=context_id)).text
 
     @mcp.tool()

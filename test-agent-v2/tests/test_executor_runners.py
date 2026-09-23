@@ -5,7 +5,7 @@ from __future__ import annotations
 import httpx
 
 from test_executor import runners
-from test_executor.runner import run_suite
+from test_executor.runner import heal_step, run_suite
 from test_executor.runners import ENGINES, ApiEngine, LlmEngine, select_engine
 from test_executor.store import InMemoryExecStore
 
@@ -197,3 +197,39 @@ async def test_run_suite_chunks_and_resumes(monkeypatch):
     assert r3["status"] == "done" and r3["summary"]["passed"] == 3 and r3["summary"]["executed"] == 3
     r4 = await run_suite(store, "CTX", "dev", scenarios=scs, base_url="http://svc")  # after done → fresh run
     assert r4["id"] != r3["id"] and r4["status"] == "in_progress"
+
+
+async def _seed_failed_run(message: str) -> InMemoryExecStore:
+    store = InMemoryExecStore()
+    eid = await store.upsert_env("CTX", "dev")
+    rid = await store.start_run("CTX", eid)
+    await store.finish_run(rid, status="done", summary={"failed": 1},
+                           signals={"failures": [{"scenario": "s1", "message": message}]}, triage=[])
+    return store
+
+
+async def test_heal_step_proposes_and_verifies(monkeypatch):
+    from tests.conftest import fake_model
+    monkeypatch.setattr("common.adk.model.model_configured", lambda: True)
+    monkeypatch.setattr("common.adk.model.agent_model",
+                        lambda **k: fake_model('{"method":"GET","path":"/fixed","expect_status":200}'))
+    monkeypatch.setattr(runners, "_transport", httpx.MockTransport(lambda r: httpx.Response(200, json={})))
+    store = await _seed_failed_run("500 server error")
+    result = await heal_step(store, "CTX", "s1", scenarios=[{"title": "s1", "methodology": "api"}],
+                             base_url="http://svc")
+    assert result["healed"] is True and result["engine"] == "api" and result["patch"]["path"] == "/fixed"
+
+
+async def test_heal_step_no_failure_to_heal():
+    store = InMemoryExecStore()
+    rid = await store.start_run("CTX", None)
+    await store.finish_run(rid, status="done", summary={}, signals={"failures": []}, triage=[])
+    result = await heal_step(store, "CTX", "s1", scenarios=[{"title": "s1"}], base_url="http://svc")
+    assert result["healed"] is False and "no failed step" in result["note"]
+
+
+async def test_heal_step_needs_provider(monkeypatch):
+    monkeypatch.setattr("common.adk.model.model_configured", lambda: False)
+    store = await _seed_failed_run("selector #btn not found")
+    result = await heal_step(store, "CTX", "s1", scenarios=[{"title": "s1"}], base_url="http://svc")
+    assert result["healed"] is False and "provider" in result["note"]

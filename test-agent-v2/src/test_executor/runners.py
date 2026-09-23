@@ -239,24 +239,53 @@ _BROWSER_TRANSLATE_SYSTEM = (
 )
 
 
-def _scenario_task(scenario: dict) -> str:
+def _scenario_task(scenario: dict, *, extra: str = "") -> str:
     parts = [f"title: {scenario.get('title', '')}", f"kind: {scenario.get('kind', '')}"]
     if scenario.get("description"):
         parts.append(f"description: {scenario['description']}")
     pre = scenario.get("preconditions") or []
     if pre:
         parts.append("preconditions: " + "; ".join(map(str, pre)))
+    if extra:                                        # heal feedback: the prior failure to correct
+        parts.append(extra)
     return "\n".join(parts)
 
 
-async def _llm_translate(scenario: dict, *, system: str, schema, output_key: str) -> dict | None:
+def _request_from_plan(plan: dict) -> dict:
+    """A RequestPlan dict → the ApiEngine `request` shape (shared by LlmEngine + heal)."""
+    return {"method": plan.get("method", "GET"), "path": plan.get("path", ""), "json": plan.get("body"),
+            "expect_status": plan.get("expect_status", 0), "expect_contains": plan.get("expect_contains", "")}
+
+
+async def _llm_translate(scenario: dict, *, system: str, schema, output_key: str,
+                         extra: str = "") -> dict | None:
     """One structured-output LLM call: translate a scenario into `schema` (an API request or a browser
-    plan), returning the validated dict or None on degrade. Shared by LlmEngine and BrowserEngine."""
+    plan), returning the validated dict or None on degrade. `extra` appends heal feedback (the prior
+    failure to fix). Shared by LlmEngine, BrowserEngine, and heal()."""
     from common.adk.model import agent_model
     from common.testplan.llm.adk import build_generator_agent, run_json_agent
     agent = build_generator_agent(name="exec_translate", system=system, output_schema=schema,
                                   output_key=output_key, model=agent_model())
-    return await run_json_agent(agent, output_key=output_key, user=_scenario_task(scenario))
+    return await run_json_agent(agent, output_key=output_key, user=_scenario_task(scenario, extra=extra))
+
+
+async def heal(scenario: dict, failure_message: str, *, base_url: str) -> tuple[dict | None, EngineResult]:
+    """Propose a corrected plan for a FAILED scenario (one LLM call with the failure fed back) and
+    re-run it to verify. Returns (proposed_plan, result). The plan is a PROPOSAL — the caller surfaces
+    it for a human Yes/No; it is never persisted/applied here (no silent retarget). Routes by the
+    scenario's nature: browser → BrowserPlan, else → RequestPlan."""
+    feedback = (f"The previous attempt FAILED with: {failure_message}. Produce a CORRECTED plan that "
+                "fixes the failing selector / wait / request so the scenario passes.")
+    engine_name = select_engine(scenario)
+    if engine_name == "browser":
+        plan = await _llm_translate(scenario, system=_BROWSER_TRANSLATE_SYSTEM, schema=BrowserPlan,
+                                    output_key="browser", extra=feedback)
+        healed = {**scenario, "browser": plan} if plan else scenario
+    else:
+        plan = await _llm_translate(scenario, system=_TRANSLATE_SYSTEM, schema=RequestPlan,
+                                    output_key="request", extra=feedback)
+        healed = {**scenario, "request": _request_from_plan(plan)} if plan else scenario
+    return plan, await ENGINES[engine_name].run(healed, base_url=base_url)
 
 
 class LlmEngine:
@@ -277,9 +306,7 @@ class LlmEngine:
         plan = await self._translate(scenario)
         if not plan or not plan.get("path"):
             return EngineResult(self.name, ran=False, note="the model could not translate this scenario to a request")
-        request = {"method": plan.get("method", "GET"), "path": plan["path"], "json": plan.get("body"),
-                   "expect_status": plan.get("expect_status", 0), "expect_contains": plan.get("expect_contains", "")}
-        res = await ApiEngine().run({**scenario, "request": request}, base_url=base_url)
+        res = await ApiEngine().run({**scenario, "request": _request_from_plan(plan)}, base_url=base_url)
         return EngineResult(self.name, ran=res.ran, outcomes=res.outcomes, note=res.note)
 
     async def _translate(self, scenario: dict) -> dict | None:
