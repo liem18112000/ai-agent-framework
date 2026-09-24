@@ -302,8 +302,34 @@ def test_render_run_shows_rows_and_prompts_for_the_report():
     out = render_run(run)
     assert "[passed] green one" in out and "covers=jira:AC-1" in out and "GET /ok" in out
     assert "results (1 scenarios" in out
-    assert "test completion report" in out            # the completion cue the client acts on
+    assert "TEST COMPLETION REPORT" in out            # the completion cue the client acts on
     assert "'results':" not in out                    # not dumped as a raw k=v blob
 
     # an in-progress run must NOT prompt for the report yet
-    assert "test completion report" not in render_run({**run, "status": "in_progress"})
+    assert "TEST COMPLETION REPORT" not in render_run({**run, "status": "in_progress"})
+
+
+
+def test_render_run_surfaces_scope_and_period_for_the_report():
+    """Report template §1 (Scope: tested item + version + environment) and §3 (test period) must be
+    readable off the run — they were stored or knowable but never surfaced."""
+    from test_executor.ops import render_run
+    out = render_run({
+        "id": "r1", "status": "done", "environment_id": "CTX:luz-dev",
+        "started_at": "2026-09-24T10:00:00Z", "finished_at": "2026-09-24T10:02:30Z",
+        "summary": {"passed": 2, "failed": 0},
+        "signals": {"total": 2, "results": [],
+                    "target": {"env": "luz-dev", "base_url": "http://svc:8080/luz_docs",
+                               "item": "luz_docs.war", "item_version": "0.01.18.00"}}})
+    assert "item=luz_docs.war" in out and "item_version=0.01.18.00" in out   # §1 test item + version
+    assert "base_url=http://svc:8080/luz_docs" in out                         # §1 environment
+    assert "2026-09-24T10:00:00Z → 2026-09-24T10:02:30Z" in out               # §3 test period
+
+
+async def test_run_records_the_target_scope(monkeypatch):
+    monkeypatch.setenv("EXEC_RUNNER", "auto")
+    monkeypatch.setattr(runners, "_transport", httpx.MockTransport(lambda r: httpx.Response(200, json={})))
+    run = await run_suite(InMemoryExecStore(), "CTX", "dev", base_url="https://svc",
+                          scenarios=[{"id": "s", "title": "t", "methodology": "api",
+                                      "request": {"method": "GET", "path": "/x", "expect_status": 200}}])
+    assert run["signals"]["target"] == {"env": "dev", "base_url": "https://svc"}

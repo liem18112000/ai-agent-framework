@@ -341,6 +341,9 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
         failures = []
         results = []
 
+    # Report template §1 (Scope): WHAT was tested and WHERE. base_url + env name are known here; the
+    # tested item's name/version comes from the OpenAPI `info` block below when a spec is available.
+    target = {"env": env.strip() or "default", "base_url": base_url}
     # Prepare auth once per chunk (§4 prepare phase). ponytail: a bearer_fetch re-fetches each poll —
     # fine at chunk cadence; cache on the run if token cost matters.
     from test_executor.environments import authenticate
@@ -355,6 +358,9 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
         if raw_spec:
             spec_ctx = {"spec": raw_spec, "ops": parse_operations(raw_spec)}
             await _persist_spec(context_id, raw_spec, env_cfg["spec_url"])
+            info = raw_spec.get("info") or {}          # the SUT's own name+version = the tested item
+            target.update({k: v for k, v in (("item", info.get("title")),
+                                             ("item_version", info.get("version"))) if v})
 
     llm_max = int(os.environ.get("EXEC_LLM_MAX", "8"))
     for sc in scenarios[cursor:cursor + _chunk_size()]:
@@ -406,13 +412,15 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
         await store.save_progress(run_id, summary=summ.as_dict(),
                                   signals={"cursor": cursor, "total": total,
                                            "failures": [f.as_dict() for f in failures], "llm_used": llm_used,
-                                           "results": [r.as_dict() for r in results]})
+                                           "results": [r.as_dict() for r in results],
+                                           "target": target})
         return await store.get_run(run_id=run_id) or {"id": run_id, "status": "in_progress"}
 
     verdicts = await asyncio.to_thread(triage, failures)       # JEV cascade is sync/blocking — off-loop
     await store.finish_run(run_id, status="done", summary=summ.as_dict(),
                            signals={"failures": [f.as_dict() for f in failures], "total": total,
-                                    "results": [r.as_dict() for r in results]},
+                                    "results": [r.as_dict() for r in results],
+                                    "target": target},
                            triage=[v.as_dict() for v in verdicts])
     return await store.get_run(run_id=run_id) or {"id": run_id, "status": "done"}
 

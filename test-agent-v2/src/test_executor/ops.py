@@ -14,6 +14,12 @@ def render_run(run: dict | None) -> str:
         lines.append("  summary: " + ", ".join(f"{k}={v}" for k, v in summary.items()))
     signals = dict(run.get("signals") or {})
     results = signals.pop("results", None) or []      # rendered as rows below, not as a k=v blob
+    target = signals.pop("target", None) or {}
+    if target:                                        # report §1 Scope — the tested item + where it ran
+        lines.append("  target: " + ", ".join(f"{k}={v}" for k, v in target.items() if v))
+    period = " → ".join(str(run[k]) for k in ("started_at", "finished_at") if run.get(k))
+    if period:                                        # report §3 Testing Performed — the test period
+        lines.append(f"  period: {period}")
     if signals:
         lines.append("  signals: " + ", ".join(f"{k}={v}" for k, v in signals.items()))
     if results:
@@ -34,11 +40,21 @@ def render_run(run: dict | None) -> str:
         # The agent does not render documents — it hands the client the data + the cue (same split as the
         # pipeline's preview reports). Offering it here is what makes the report a routine step, not an
         # afterthought someone remembers to ask for.
-        lines.append("\n  The run is COMPLETE. Ask the user whether to produce the test completion report "
-                     "now (a client rendering skill builds it — e.g. `write-test-completion-report`). "
-                     "Everything it needs is above plus `get_run_report`: per-scenario results with their "
-                     "covered requirement ids, triage verdicts, the environment, and the counts. The report "
-                     "still needs the story's acceptance criteria from Jira for the coverage matrix.")
+        lines.append(
+            "\n  The run is COMPLETE. Ask the user whether to produce the TEST COMPLETION REPORT now "
+            "(ISO/IEC/IEEE 29119-3 / ISTQB CTFL v4.0; a client skill renders it — e.g. "
+            "`write-test-completion-report`). This run supplies:\n"
+            "    - Scope (§1) ......... target: tested item + version + environment + base URL\n"
+            "    - Testing performed (§3) . period: started → finished; by_engine shows the test types\n"
+            "    - Test metrics (§6) ...... planned=total, executed/passed/failed, blocked=unbound, "
+            "per-scenario duration_ms\n"
+            "    - Open defects (§8) ...... triage verdicts (Bug); Impediments (§7) = Environment verdicts; "
+            "flaky=true rows are the non-blocking failures\n"
+            "    - Coverage rows .......... each result's source_refs = the requirement it covers\n"
+            "  NOT derivable here — the client must supply: the story's ACCEPTANCE CRITERIA from Jira "
+            "(without them an UNCOVERED AC silently vanishes from the matrix instead of showing as a GAP), "
+            "the exit criteria to evaluate against (§5), deviations from plan (§4), lessons learned (§11), "
+            "and the release recommendation (§12). The executor knows what RAN, not what was PROMISED.")
     return "\n".join(lines)
 
 
