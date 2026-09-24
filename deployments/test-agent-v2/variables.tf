@@ -303,6 +303,11 @@ variable "exec_base_url" {
   description = "Single-target base URL the executor runs scenarios against (EXEC_BASE_URL). Empty = none."
   default     = ""
 }
+variable "exec_vpc_connector" {
+  type        = string
+  description = "VPC Access connector for the executor's egress to INTERNAL test targets (full resource path or name). It must sit on the same VPC as those targets — e.g. a GKE internal LB is NOT reachable from a connector on another network. Empty/null = fall back to the Redis connector."
+  default     = null
+}
 variable "exec_environments" {
   type        = string
   description = "Multi-env registry JSON for the executor (EXEC_ENVIRONMENTS): {name:{base_url,auth}}. Empty = none."

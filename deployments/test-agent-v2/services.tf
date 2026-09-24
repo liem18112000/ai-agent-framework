@@ -329,9 +329,12 @@ module "exec" {
   max_instances         = 1
   cloudsql_instance     = local.cloudsql_connection_name
   allow_unauthenticated = var.bridge_allow_unauthenticated
-  # Slice B: put the executor on the VPC connector (reuses the Redis one) so it can egress to internal
-  # test targets (e.g. the GKE api-forwarder) — the only agent that dials real systems under test.
-  vpc_connector = var.deploy_redis ? google_vpc_access_connector.redis[0].id : ""
+  # Slice B: the executor is the only agent that dials real systems under test, so it needs VPC egress to
+  # INTERNAL targets. `exec_vpc_connector` names the connector on the VPC those targets live on — the
+  # Redis connector is on a DIFFERENT network than the GKE internal LBs, so it cannot reach them (that was
+  # the "exec can't reach the api-forwarder" bug). Falls back to the Redis connector, then to none.
+  vpc_connector = coalesce(var.exec_vpc_connector,
+  var.deploy_redis ? google_vpc_access_connector.redis[0].id : "")
 
   containers = [
     {
