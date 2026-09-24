@@ -24,11 +24,8 @@ _HEAL_HINTS = ("selector", "locator", "not found", "no element", "timeout waitin
 _ENV_HINTS = ("connection refused", "econnrefused", "dns", "unreachable", "503", "cert", "ssl", "auth")
 
 _BUCKETS = ["Bug", "Heal", "Flaky", "Environment"]     # JEV Choice options / heuristic outputs
-_TRIAGE_INSTRUCTIONS = (
-    "Classify this test failure into exactly one bucket: Bug (a real product defect), Heal (a UI/"
-    "selector change the test should adapt to), Flaky (non-deterministic, not a real failure), or "
-    "Environment (infrastructure / connectivity / auth, not the code under test)."
-)
+# The classifier instruction now lives in the store-backed registry (`exec.triage`, test_executor.prompts)
+# so it is DB-publishable/versioned like tpd.report/kga.report; the compiled default is the offline fallback.
 
 
 def classify_failure(failure: dict) -> str:
@@ -52,7 +49,8 @@ def _jev_bucket(failure: dict, provider, conf_min: float) -> str | None:
     """JEV Choice over the four buckets — returns the chosen bucket only when confident, else None so
     the caller falls back to the heuristic. Any decision error → None (never breaks triage)."""
     try:
-        v = provider.choice(str(failure.get("message", "")), _BUCKETS, _TRIAGE_INSTRUCTIONS)
+        from test_executor.prompts import triage_instructions
+        v = provider.choice(str(failure.get("message", "")), _BUCKETS, triage_instructions())
     except Exception as exc:  # noqa: BLE001 — a decision-backend failure must never break triage
         log.warning("triage: JEV choice failed (%s) → heuristic", exc)
         return None

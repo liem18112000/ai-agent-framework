@@ -30,8 +30,9 @@ def _registries() -> list[dict]:
     from common.llm import templates as engine
     from common.testplan.llm import templates as tpd
     from knowledge_gathering.gather.explore.planners import templates as kga
+    from test_executor import prompts as exec_prompts
 
-    return [tpd.DEFAULTS, engine.DEFAULTS, kga.DEFAULTS, bridge.DEFAULTS]
+    return [tpd.DEFAULTS, engine.DEFAULTS, kga.DEFAULTS, bridge.DEFAULTS, exec_prompts.DEFAULTS]
 
 
 def _all_keys() -> dict:
