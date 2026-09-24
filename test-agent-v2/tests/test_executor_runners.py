@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 
 from test_executor import runners
@@ -333,3 +335,24 @@ async def test_run_records_the_target_scope(monkeypatch):
                           scenarios=[{"id": "s", "title": "t", "methodology": "api",
                                       "request": {"method": "GET", "path": "/x", "expect_status": 200}}])
     assert run["signals"]["target"] == {"env": "dev", "base_url": "https://svc"}
+
+
+async def test_target_labels_the_spec_version_not_the_build(monkeypatch):
+    """Found on a LIVE run: the OpenAPI info.version is the CONTRACT's version (SmallRye defaults it to
+    '1.0') while the service reported 0.01.18.00-SNAPSHOT. Reporting it as the tested BUILD version would
+    put a wrong version in the report's Scope section, so it is labelled spec_version."""
+    monkeypatch.setenv("EXEC_RUNNER", "auto")
+    monkeypatch.setenv("EXEC_ENVIRONMENTS", '{"e":{"base_url":"https://svc","spec_url":"/openapi"}}')
+    spec = {"openapi": "3.0.3", "info": {"title": "luz_docs.war", "version": "1.0"}, "paths": {}}
+
+    async def fake_fetch(spec_url, *, base_url, headers=None):
+        return spec
+    monkeypatch.setattr("test_executor.oracle.fetch_spec", fake_fetch)
+    monkeypatch.setattr("test_executor.runners.suite._persist_spec",
+                        lambda *a, **k: asyncio.sleep(0))
+    monkeypatch.setattr(runners, "_transport", httpx.MockTransport(lambda r: httpx.Response(200, json={})))
+
+    run = await run_suite(InMemoryExecStore(), "CTX", "e", scenarios=[])
+    t = run["signals"]["target"]
+    assert t["item"] == "luz_docs.war" and t["spec_version"] == "1.0"
+    assert "item_version" not in t          # never claim the spec version is the build version

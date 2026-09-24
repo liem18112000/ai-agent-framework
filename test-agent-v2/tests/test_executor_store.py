@@ -81,3 +81,14 @@ async def test_upsert_env_idempotent():
     await s.upsert_env("CTX", "dev", base_url="http://x")
     envs = await s.list_environments("CTX")
     assert len(envs) == 1 and envs[0]["base_url"] == "http://x"
+
+
+def test_triage_ignores_status_codes_quoted_from_the_spec():
+    """Found on a LIVE run: a conformance failure embeds the operation's DECLARED status list, and the
+    bare '503' hint matched the '503' inside it — filing a real Bug under Environment. The declared list
+    is the contract, not evidence of what happened."""
+    msg = "GET /api/x: status 400 not declared in the spec (declared: ['200', '404', '500', '503'])"
+    assert classify_failure(Failure(message=msg)) == "Bug"
+    # a genuine 503 is still Environment, and a number embedded in a path is not a status code
+    assert classify_failure(Failure(message="upstream returned 503")) == "Environment"
+    assert classify_failure(Failure(message="GET /api/doc5039: status 500")) == "Bug"

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import time
 from dataclasses import dataclass, field
 
@@ -118,6 +119,17 @@ class TriageVerdict:
         return {"message": self.message, "verdict": self.verdict}
 
 
+def _evidence(message: str) -> str:
+    """The part of a failure message that is EVIDENCE, with quoted spec metadata stripped.
+
+    A conformance failure embeds the operation's declared status list — "status 400 not declared in the
+    spec (declared: ['200', '404', '500', '503'])". Those codes are the CONTRACT, not what happened, and
+    a bare substring scan matched the '503' in that list and filed a real Bug under Environment. Drop the
+    parenthetical before classifying."""
+    import re
+    return re.sub(r"\(declared:[^)]*\)", "", message).lower()
+
+
 def classify_failure(failure: Failure) -> str:
     """Map one failure to a triage bucket: Bug | Heal | Flaky | Environment.
 
@@ -125,8 +137,10 @@ def classify_failure(failure: Failure) -> str:
     loud — a real regression must not be silently healed/quarantined)."""
     if failure.flaky:
         return "Flaky"
-    msg = str(failure.message).lower()
-    if any(h in msg for h in _ENV_HINTS):
+    msg = _evidence(str(failure.message))
+    # A numeric hint must match as a WHOLE token: '503' must not fire on /api/doc5039 (nor, before
+    # _evidence strips it, on a status code quoted in the spec's declared list). Word hints stay plain.
+    if any((h in re.findall("[0-9]+", msg) if h.isdigit() else h in msg) for h in _ENV_HINTS):
         return "Environment"
     if any(h in msg for h in _HEAL_HINTS):
         return "Heal"
@@ -358,9 +372,12 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
         if raw_spec:
             spec_ctx = {"spec": raw_spec, "ops": parse_operations(raw_spec)}
             await _persist_spec(context_id, raw_spec, env_cfg["spec_url"])
-            info = raw_spec.get("info") or {}          # the SUT's own name+version = the tested item
+            info = raw_spec.get("info") or {}
+            # The spec's `info.version` is the CONTRACT's version, not the deployed build's (SmallRye
+            # defaults it to "1.0" while the service reports 0.01.18.00-SNAPSHOT). Label it as such —
+            # a completion report that pins the wrong build version is worse than one that omits it.
             target.update({k: v for k, v in (("item", info.get("title")),
-                                             ("item_version", info.get("version"))) if v})
+                                             ("spec_version", info.get("version"))) if v})
 
     llm_max = int(os.environ.get("EXEC_LLM_MAX", "8"))
     for sc in scenarios[cursor:cursor + _chunk_size()]:
