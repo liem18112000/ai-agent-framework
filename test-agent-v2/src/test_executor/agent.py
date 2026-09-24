@@ -63,8 +63,9 @@ class ExecutorRouter(RouterAgent):
         if not run:
             return "No run to triage — call run first."
         failures = (run.get("signals") or {}).get("failures") or []
-        # finish_run already persisted the triage verdicts — reuse them; only recompute if absent (JEV/blocking).
-        verdicts = run.get("triage") or await asyncio.to_thread(runner.triage, failures)
+        # finish_run already persisted the triage verdicts (store dicts) — reuse them; only recompute if
+        # absent (JEV/blocking), converting the fresh TriageVerdicts to dicts to match the persisted shape.
+        verdicts = run.get("triage") or [v.as_dict() for v in await asyncio.to_thread(runner.triage, failures)]
         if not verdicts:
             return f"Run {run.get('id')}: no failures to triage (status {run.get('status')})."
         return "Triage:\n" + "\n".join(f"  - {v['verdict']}: {v['message']}" for v in verdicts)

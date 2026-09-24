@@ -40,7 +40,7 @@ class LlmEngine:
         # Pillar 3: when the target's OpenAPI is available, ground the translation on its real operations.
         catalog = ""
         if isinstance(spec, dict) and spec.get("ops"):
-            from test_executor.openapi import operation_catalog
+            from test_executor.oracle import operation_catalog
             catalog = operation_catalog(spec["ops"])
         return await _llm_translate(scenario, system=_TRANSLATE_SYSTEM, schema=RequestPlan,
                                     output_key="request", catalog=catalog)

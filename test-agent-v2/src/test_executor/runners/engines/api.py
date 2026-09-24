@@ -79,7 +79,7 @@ class ApiEngine:
             outcomes.append(StepOutcome(False, f"{where}: response missing expected {want!r}"))
         # Pillar 3: OpenAPI conformance oracle — status + response-schema declared by the spec
         if isinstance(spec, dict) and spec.get("spec"):
-            from test_executor.openapi import conformance_failures, match_operation
+            from test_executor.oracle import conformance_failures, match_operation
             op = match_operation(spec.get("ops") or [], method, path.split("?", 1)[0])
             if op is not None:
                 for msg in conformance_failures(spec["spec"], op, status=status, body_text=text, content_type=ctype):

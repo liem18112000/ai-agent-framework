@@ -70,7 +70,7 @@ def test_exec_triage_uses_jev_choice_when_configured(monkeypatch):
     fake = FakeDecisionProvider(choice=Verdict(value="Heal", probs=None, confidence=0.9))
     monkeypatch.setattr("common.adk.providers.get_decision_provider", lambda: fake)
     out = runner.triage([{"message": "element not found"}])
-    assert out == [{"message": "element not found", "verdict": "Heal"}]   # JEV Choice bucket, not the heuristic
+    assert [v.as_dict() for v in out] == [{"message": "element not found", "verdict": "Heal"}]  # JEV bucket, not heuristic
 
 
 def test_semantic_judge_noul_threshold_is_configurable(monkeypatch):

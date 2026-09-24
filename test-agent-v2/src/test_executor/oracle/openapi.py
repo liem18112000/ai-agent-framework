@@ -11,6 +11,7 @@ and degrades (no spec → the LLM falls back to its ungrounded guess; bad schema
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 
 from common.monitoring import get_logger
 
@@ -52,22 +53,33 @@ async def fetch_spec(spec_url: str, *, base_url: str, headers: dict | None = Non
         return None
 
 
-def parse_operations(spec: dict) -> list[dict]:
-    """Flatten `spec.paths` → `[{method, path, summary, op}]` for the real operations the target exposes."""
-    out: list[dict] = []
+@dataclass(frozen=True)
+class Operation:
+    """One OpenAPI operation the target exposes — its `METHOD path` identity plus the raw spec `op`
+    object (responses / parameters / requestBody) the conformance oracle reads."""
+
+    method: str
+    path: str
+    summary: str
+    op: dict
+
+
+def parse_operations(spec: dict) -> list[Operation]:
+    """Flatten `spec.paths` → the real `Operation`s the target exposes."""
+    out: list[Operation] = []
     for path, item in (spec.get("paths") or {}).items():
         if not isinstance(item, dict):
             continue
         for method, op in item.items():
             if method.lower() in _METHODS and isinstance(op, dict):
-                out.append({"method": method.upper(), "path": path,
-                            "summary": op.get("summary") or op.get("operationId") or "", "op": op})
+                out.append(Operation(method=method.upper(), path=path,
+                                     summary=op.get("summary") or op.get("operationId") or "", op=op))
     return out
 
 
-def operation_catalog(ops: list[dict], *, limit: int = 60) -> str:
+def operation_catalog(ops: list[Operation], *, limit: int = 60) -> str:
     """A compact `METHOD path — summary` list to ground the LLM's translation on real endpoints."""
-    return "\n".join(f"{o['method']} {o['path']} — {o['summary']}" for o in ops[:limit])
+    return "\n".join(f"{o.method} {o.path} — {o.summary}" for o in ops[:limit])
 
 
 def _path_matches(template: str, actual: str) -> bool:
@@ -78,22 +90,22 @@ def _path_matches(template: str, actual: str) -> bool:
     return all(seg.startswith("{") and seg.endswith("}") or seg == a[i] for i, seg in enumerate(t))
 
 
-def match_operation(ops: list[dict], method: str, path: str) -> dict | None:
+def match_operation(ops: list[Operation], method: str, path: str) -> Operation | None:
     """Find the spec operation for a concrete request (exact path first, then a templated match)."""
     method = method.upper()
     path = path.split("?", 1)[0]
     for o in ops:
-        if o["method"] == method and o["path"] == path:
+        if o.method == method and o.path == path:
             return o
     for o in ops:
-        if o["method"] == method and _path_matches(o["path"], path):
+        if o.method == method and _path_matches(o.path, path):
             return o
     return None
 
 
-def _response_schema(op: dict, status: int, spec: dict) -> dict | None:
+def _response_schema(op: Operation, status: int, spec: dict) -> dict | None:
     """The declared JSON response schema for `status` (or the 2xx / default), if any."""
-    responses = op.get("op", {}).get("responses", {}) or {}
+    responses = op.op.get("responses", {}) or {}
     key = next((k for k in (str(status), f"{status // 100}XX", f"{status // 100}xx", "default") if k in responses), None)
     body = responses.get(key) if key else None
     content = (body or {}).get("content", {}) if isinstance(body, dict) else {}
@@ -103,11 +115,11 @@ def _response_schema(op: dict, status: int, spec: dict) -> dict | None:
     return None
 
 
-def conformance_failures(spec: dict, op: dict, *, status: int, body_text: str, content_type: str) -> list[str]:
+def conformance_failures(spec: dict, op: Operation, *, status: int, body_text: str, content_type: str) -> list[str]:
     """Pillar-3 oracle: status-code + response-schema conformance against the spec. Returns failure
     messages (empty = conforms). Best-effort — a validator error degrades to no schema check, not a crash."""
     fails: list[str] = []
-    responses = op.get("op", {}).get("responses", {}) or {}
+    responses = op.op.get("responses", {}) or {}
     declared = {str(k) for k in responses}
     if declared:
         ok = (str(status) in declared or f"{status // 100}XX" in declared

@@ -5,7 +5,7 @@ from __future__ import annotations
 import httpx
 
 from test_executor import runners
-from test_executor.openapi import (
+from test_executor.oracle import (
     conformance_failures,
     match_operation,
     operation_catalog,
@@ -30,15 +30,15 @@ _SPEC = {
 
 def test_parse_and_catalog():
     ops = parse_operations(_SPEC)
-    assert {(o["method"], o["path"]) for o in ops} == {("POST", "/documents"), ("GET", "/documents/{id}")}
+    assert {(o.method, o.path) for o in ops} == {("POST", "/documents"), ("GET", "/documents/{id}")}
     cat = operation_catalog(ops)
     assert "POST /documents — create a document" in cat
 
 
 def test_match_operation_exact_and_templated():
     ops = parse_operations(_SPEC)
-    assert match_operation(ops, "POST", "/documents")["path"] == "/documents"
-    assert match_operation(ops, "GET", "/documents/abc123")["path"] == "/documents/{id}"   # templated
+    assert match_operation(ops, "POST", "/documents").path == "/documents"
+    assert match_operation(ops, "GET", "/documents/abc123").path == "/documents/{id}"   # templated
     assert match_operation(ops, "DELETE", "/documents") is None                            # method not in spec
 
 

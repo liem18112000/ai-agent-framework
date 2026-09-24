@@ -5,8 +5,7 @@ from __future__ import annotations
 import httpx
 
 from test_executor import runners
-from test_executor.auth import AuthContext, authenticate
-from test_executor.environments import resolve_env
+from test_executor.environments import AuthContext, authenticate, resolve_env
 from test_executor.runners import ApiEngine, BrowserEngine, run_suite
 from test_executor.store import InMemoryExecStore
 

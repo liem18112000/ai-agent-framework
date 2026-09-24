@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from dataclasses import dataclass, field
 
 from common.monitoring import get_logger
 from test_executor.runners.select import ENGINES, select_engine
@@ -28,14 +29,66 @@ _BUCKETS = ["Bug", "Heal", "Flaky", "Environment"]     # JEV Choice options / he
 # so it is DB-publishable/versioned like tpd.report/kga.report; the compiled default is the offline fallback.
 
 
-def classify_failure(failure: dict) -> str:
+@dataclass
+class Failure:
+    """One failed step the run surfaces — the unit triage consumes and the ledger persists (JSON, in the
+    run's `signals.failures`). `flaky` = a proven-oscillating step (a deterministic Flaky signal)."""
+
+    message: str
+    scenario: str | None = None
+    flaky: bool = False
+
+    def as_dict(self) -> dict:
+        return {"message": self.message, "flaky": self.flaky, "scenario": self.scenario}
+
+    @classmethod
+    def from_row(cls, d: Failure | dict) -> Failure:
+        """Accept an in-loop `Failure` unchanged or rehydrate one from a store-read JSON dict."""
+        if isinstance(d, Failure):
+            return d
+        return cls(message=str(d.get("message", "")), scenario=d.get("scenario"), flaky=bool(d.get("flaky")))
+
+
+@dataclass
+class Summary:
+    """The run's rolled-up counts — persisted (JSON) as the ledger `summary`, read back on resume."""
+
+    passed: int = 0
+    failed: int = 0
+    unbound: int = 0
+    by_engine: dict = field(default_factory=dict)
+
+    def as_dict(self) -> dict:
+        return {"passed": self.passed, "failed": self.failed, "unbound": self.unbound,
+                "executed": self.passed + self.failed, "by_engine": self.by_engine}
+
+    @classmethod
+    def from_row(cls, d: dict | None) -> Summary:
+        d = d or {}
+        return cls(passed=int(d.get("passed", 0)), failed=int(d.get("failed", 0)),
+                   unbound=int(d.get("unbound", 0)), by_engine=dict(d.get("by_engine") or {}))
+
+
+@dataclass
+class TriageVerdict:
+    """One failure's triage outcome (§5 cascade): its message + the chosen bucket. Persisted (JSON) as
+    the ledger `triage`; rendered by the agent/report from the store-read dict."""
+
+    message: str
+    verdict: str
+
+    def as_dict(self) -> dict:
+        return {"message": self.message, "verdict": self.verdict}
+
+
+def classify_failure(failure: Failure) -> str:
     """Map one failure to a triage bucket: Bug | Heal | Flaky | Environment.
 
-    `failure` = {message, flaky?}. A confirmed-oscillating step is Flaky; otherwise the message text
-    routes it. Defaults to Bug (fail loud — a real regression must not be silently healed/quarantined)."""
-    if failure.get("flaky"):
+    A confirmed-oscillating step is Flaky; otherwise the message text routes it. Defaults to Bug (fail
+    loud — a real regression must not be silently healed/quarantined)."""
+    if failure.flaky:
         return "Flaky"
-    msg = str(failure.get("message", "")).lower()
+    msg = str(failure.message).lower()
     if any(h in msg for h in _ENV_HINTS):
         return "Environment"
     if any(h in msg for h in _HEAL_HINTS):
@@ -45,12 +98,12 @@ def classify_failure(failure: dict) -> str:
     return "Bug"
 
 
-def _jev_bucket(failure: dict, provider, conf_min: float) -> str | None:
+def _jev_bucket(failure: Failure, provider, conf_min: float) -> str | None:
     """JEV Choice over the four buckets — returns the chosen bucket only when confident, else None so
     the caller falls back to the heuristic. Any decision error → None (never breaks triage)."""
     try:
         from test_executor.prompts import triage_instructions
-        v = provider.choice(str(failure.get("message", "")), _BUCKETS, triage_instructions())
+        v = provider.choice(str(failure.message), _BUCKETS, triage_instructions())
     except Exception as exc:  # noqa: BLE001 — a decision-backend failure must never break triage
         log.warning("triage: JEV choice failed (%s) → heuristic", exc)
         return None
@@ -59,11 +112,12 @@ def _jev_bucket(failure: dict, provider, conf_min: float) -> str | None:
     return None
 
 
-def triage(failures: list[dict]) -> list[dict]:
+def triage(failures: list) -> list[TriageVerdict]:
     """Classify each failure Bug/Heal/Flaky/Environment (§5 cascade). A configured, confident JEV
     `DecisionProvider` (TPD_DECISION_BACKEND) FRONTS the deterministic heuristic; otherwise, or on the
     low-confidence tail / any error, the heuristic decides — strictly additive, default OFF. SYNC
-    (JEV is blocking) — call via asyncio.to_thread from an event loop."""
+    (JEV is blocking) — call via asyncio.to_thread from an event loop. Accepts `Failure`s or store-read
+    dicts (the agent's fallback path passes the persisted JSON)."""
     from common.adk.providers import get_decision_provider
     provider = get_decision_provider()
     use_jev = provider is not None and provider.is_configured()
@@ -72,11 +126,11 @@ def triage(failures: list[dict]) -> list[dict]:
     except ValueError:
         conf_min = 0.6
     out = []
-    for f in failures:
+    for f in map(Failure.from_row, failures):
         verdict = None
-        if use_jev and not f.get("flaky"):    # a proven-flaky is a deterministic signal — don't re-judge
+        if use_jev and not f.flaky:    # a proven-flaky is a deterministic signal — don't re-judge
             verdict = _jev_bucket(f, provider, conf_min)
-        out.append({"message": f.get("message", ""), "verdict": verdict or classify_failure(f)})
+        out.append(TriageVerdict(message=f.message, verdict=verdict or classify_failure(f)))
     return out
 
 
@@ -200,28 +254,28 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
     latest = await store.get_run(context_id=context_id)
     if latest and latest.get("status") == "in_progress":       # resume the running chunked run
         run_id = latest["id"]
-        s, prog = latest.get("summary") or {}, latest.get("signals") or {}
-        passed, failed, unbound = int(s.get("passed", 0)), int(s.get("failed", 0)), int(s.get("unbound", 0))
-        by_engine = dict(s.get("by_engine") or {})
+        prog = latest.get("signals") or {}
+        summ = Summary.from_row(latest.get("summary"))
         cursor, llm_used = int(prog.get("cursor", 0)), int(prog.get("llm_used", 0))
-        failures = list(prog.get("failures") or [])
+        failures = [Failure.from_row(f) for f in prog.get("failures") or []]
     else:                                                       # start a fresh run
         environment_id = await store.upsert_env(context_id, env.strip() or "default", base_url=base_url,
                                                  creds_ref=creds_ref)
         run_id = await store.start_run(context_id, environment_id)
-        passed = failed = unbound = cursor = llm_used = 0
-        by_engine, failures = {}, []
+        summ = Summary()
+        cursor = llm_used = 0
+        failures = []
 
     # Prepare auth once per chunk (§4 prepare phase). ponytail: a bearer_fetch re-fetches each poll —
     # fine at chunk cadence; cache on the run if token cost matters.
-    from test_executor.auth import authenticate
+    from test_executor.environments import authenticate
     auth = await authenticate(auth_cfg, base_url=base_url)
 
     # Pillar 3: ground API execution on the target's OpenAPI spec (env `spec_url`, e.g. /v3/api-docs),
     # fetched once per chunk with the run's auth. None → engines fall back to ungrounded LLM guesses.
     spec_ctx = None
     if env_cfg.get("spec_url"):
-        from test_executor.openapi import fetch_spec, parse_operations
+        from test_executor.oracle import fetch_spec, parse_operations
         raw_spec = await fetch_spec(env_cfg["spec_url"], base_url=base_url, headers=getattr(auth, "headers", None))
         if raw_spec:
             spec_ctx = {"spec": raw_spec, "ops": parse_operations(raw_spec)}
@@ -229,42 +283,41 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
     llm_max = int(os.environ.get("EXEC_LLM_MAX", "8"))
     for sc in scenarios[cursor:cursor + _chunk_size()]:
         name = select_engine(sc)
-        by_engine[name] = by_engine.get(name, 0) + 1
+        summ.by_engine[name] = summ.by_engine.get(name, 0) + 1
         cursor += 1
+        title = sc.get("title") or sc.get("id")
         if _needs_llm(name, sc):
             if llm_used >= llm_max:
-                unbound += 1
+                summ.unbound += 1
                 continue                 # over the per-run LLM budget — record unbound, make no call
             llm_used += 1
         try:
             res = await ENGINES[name].run(sc, base_url=base_url, auth=auth, spec=spec_ctx,
                                           path_vars=env_cfg.get("path_vars") or {})
         except Exception as exc:  # noqa: BLE001 — one scenario's crash must not wedge the whole chunked run
-            log.warning("exec: scenario %r crashed engine %s: %s", sc.get("title") or sc.get("id"), name, exc)
-            failed += 1
-            failures.append({"message": f"engine {name} crashed: {type(exc).__name__}", "flaky": False,
-                             "scenario": sc.get("title") or sc.get("id")})
+            log.warning("exec: scenario %r crashed engine %s: %s", title, name, exc)
+            summ.failed += 1
+            failures.append(Failure(message=f"engine {name} crashed: {type(exc).__name__}", scenario=title))
             continue                  # cursor already advanced above → the run progresses, never re-wedges
         if not res.ran:
-            unbound += 1
+            summ.unbound += 1
         elif res.passed:
-            passed += 1
+            summ.passed += 1
         else:
-            failed += 1
-            failures += [{"message": o.message, "flaky": o.flaky,
-                          "scenario": sc.get("title") or sc.get("id")} for o in res.outcomes if not o.ok]
+            summ.failed += 1
+            failures += [Failure(message=o.message, flaky=o.flaky, scenario=title)
+                         for o in res.outcomes if not o.ok]
 
-    summary = {"passed": passed, "failed": failed, "unbound": unbound,
-               "executed": passed + failed, "by_engine": by_engine}
     if cursor < total:                                         # more chunks remain → checkpoint + poll
-        await store.save_progress(run_id, summary=summary,
-                                  signals={"cursor": cursor, "total": total, "failures": failures,
-                                           "llm_used": llm_used})
+        await store.save_progress(run_id, summary=summ.as_dict(),
+                                  signals={"cursor": cursor, "total": total,
+                                           "failures": [f.as_dict() for f in failures], "llm_used": llm_used})
         return await store.get_run(run_id=run_id) or {"id": run_id, "status": "in_progress"}
 
     verdicts = await asyncio.to_thread(triage, failures)       # JEV cascade is sync/blocking — off-loop
-    await store.finish_run(run_id, status="done", summary=summary,
-                           signals={"failures": failures, "total": total}, triage=verdicts)
+    await store.finish_run(run_id, status="done", summary=summ.as_dict(),
+                           signals={"failures": [f.as_dict() for f in failures], "total": total},
+                           triage=[v.as_dict() for v in verdicts])
     return await store.get_run(run_id=run_id) or {"id": run_id, "status": "done"}
 
 
