@@ -110,7 +110,8 @@ async def claude_scenarios(plan: TestPlan, plan_pack, test_data: list[TestData],
             distributed = distributed + await _crosscutting_scenarios(
                 plan, plan_pack, test_data, model=model, now=now, reflections=reflections)
             valid = {n.id for n in plan_pack.pack.notes} | set(plan.scope)
-            return refine_scenarios(distributed, valid) or distributed or None
+            # refine_scenarios → dedup_by_behaviour does a BLOCKING Vertex embed + O(n²) cosine → off-loop
+            return (await asyncio.to_thread(refine_scenarios, distributed, valid)) or distributed or None
         log.info("TPD_GEN_MODE=workers produced nothing; using synchronous generation")
 
     # Bound serial LLM batches so one round stays under the MCP idle ceiling; overflow → heuristic (below).
@@ -157,7 +158,8 @@ async def claude_scenarios(plan: TestPlan, plan_pack, test_data: list[TestData],
     # P2 post-gen cleanup: drop invented citations + near-duplicates against the real pack ids (lifts
     # the judge's traceability + non_duplication). Fall back to the raw merge if a strict pass empties it.
     valid_ids = {n.id for n in plan_pack.pack.notes} | set(plan.scope)
-    return refine_scenarios(merged, valid_ids) or merged or None
+    # refine_scenarios → dedup_by_behaviour does a BLOCKING Vertex embed + O(n²) cosine → off-loop
+    return (await asyncio.to_thread(refine_scenarios, merged, valid_ids)) or merged or None
 
 
 async def _crosscutting_scenarios(plan: TestPlan, plan_pack, test_data: list[TestData], *,

@@ -14,10 +14,12 @@ from knowledge_gathering.bridge.mcp_server import register_tools as register_kga
 from test_evaluation.bridge.mcp_server import register_tools as register_tev
 from test_plan_definition.bridge.mcp_server import register_tools as register_tpd
 
-try:  # the test_executor agent is WIP — the gateway still serves the other agents when it's absent
+try:  # the test_executor agent is WIP — the gateway still serves the other agents when it's absent OR broken
     from test_executor.bridge.mcp_server import register_tools as register_exec
-except ModuleNotFoundError:
+except Exception as exc:  # noqa: BLE001 — a broken WIP module (ImportError/SyntaxError/…) must not down the gateway
+    import logging
     register_exec = None
+    logging.getLogger("gateway").warning("test_executor tools unavailable (%s)", exc)
 
 TOKEN = os.environ.get("A2A_BEARER_TOKEN")
 KGA_URL = os.environ.get("KGA_A2A_URL", "http://localhost:8081/")
