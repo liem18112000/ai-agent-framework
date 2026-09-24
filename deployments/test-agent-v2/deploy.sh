@@ -48,7 +48,9 @@ build_and_push() {  # <image> — build via Cloud Build, tolerant of the log-str
   # `builds submit` exits non-zero on "can only stream logs if you are Viewer/Owner" even though
   # the build itself SUCCEEDS server-side — so we poll `builds describe` for the real status and
   # only fail on an actual terminal failure.
-  id=$(gcloud builds submit ../../test-agent-v2 --tag "$img" --async --format='value(id)')
+  # --timeout 30m: the image installs Playwright chromium (INSTALL_BROWSER=true) — the browser layer
+  # alone is ~11min, past Cloud Build's 10min default, which would abort as TIMEOUT.
+  id=$(gcloud builds submit ../../test-agent-v2 --tag "$img" --timeout=1800s --async --format='value(id)')
   [ -n "$id" ] || { echo "ERROR: Cloud Build returned no build id" >&2; return 1; }
   echo "    build id: $id  (console: https://console.cloud.google.com/cloud-build/builds/$id)"
   while true; do
