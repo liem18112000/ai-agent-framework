@@ -3,21 +3,22 @@
 from __future__ import annotations
 
 from test_executor.runners import classify_failure, triage
+from test_executor.runners.suite import Failure
 from test_executor.store import InMemoryExecStore, env_id
 
 
 def test_classify_failure_buckets():
-    assert classify_failure({"flaky": True}) == "Flaky"
-    assert classify_failure({"message": "Connection refused"}) == "Environment"
-    assert classify_failure({"message": "selector not found: #btn"}) == "Heal"
-    assert classify_failure({"message": "AssertionError: expected 3"}) == "Bug"
+    assert classify_failure(Failure(message="", flaky=True)) == "Flaky"
+    assert classify_failure(Failure(message="Connection refused")) == "Environment"
+    assert classify_failure(Failure(message="selector not found: #btn")) == "Heal"
+    assert classify_failure(Failure(message="AssertionError: expected 3")) == "Bug"
     # unknown text defaults to Bug — a real regression must fail loud, never silently heal/quarantine
-    assert classify_failure({"message": "totally unrecognised"}) == "Bug"
+    assert classify_failure(Failure(message="totally unrecognised")) == "Bug"
 
 
 def test_triage_maps_all():
     out = triage([{"message": "timeout waiting for element"}, {"message": "expected 200"}])
-    assert [v["verdict"] for v in out] == ["Heal", "Bug"]
+    assert [v.verdict for v in out] == ["Heal", "Bug"]
 
 
 class _FakeDecision:
@@ -45,22 +46,22 @@ class _FakeDecision:
 def test_triage_jev_confident_overrides_heuristic(monkeypatch):
     # message reads Bug by heuristic; a confident JEV Choice wins
     monkeypatch.setattr("common.adk.providers.get_decision_provider", lambda: _FakeDecision("Environment", 0.9))
-    assert triage([{"message": "AssertionError: expected 3"}])[0]["verdict"] == "Environment"
+    assert triage([{"message": "AssertionError: expected 3"}])[0].verdict == "Environment"
 
 
 def test_triage_jev_low_confidence_falls_back(monkeypatch):
     monkeypatch.setattr("common.adk.providers.get_decision_provider", lambda: _FakeDecision("Environment", 0.2))
-    assert triage([{"message": "AssertionError: expected 3"}])[0]["verdict"] == "Bug"  # heuristic tail
+    assert triage([{"message": "AssertionError: expected 3"}])[0].verdict == "Bug"  # heuristic tail
 
 
 def test_triage_flaky_not_rejudged_by_jev(monkeypatch):
     monkeypatch.setattr("common.adk.providers.get_decision_provider", lambda: _FakeDecision("Bug", 0.99))
-    assert triage([{"message": "x", "flaky": True}])[0]["verdict"] == "Flaky"  # proven-flaky short-circuits
+    assert triage([{"message": "x", "flaky": True}])[0].verdict == "Flaky"  # proven-flaky short-circuits
 
 
 def test_triage_default_off_is_heuristic(monkeypatch):
     monkeypatch.setattr("common.adk.providers.get_decision_provider", lambda: None)
-    assert triage([{"message": "selector not found"}])[0]["verdict"] == "Heal"
+    assert triage([{"message": "selector not found"}])[0].verdict == "Heal"
 
 
 async def test_ledger_roundtrip():
