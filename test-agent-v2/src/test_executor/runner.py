@@ -129,11 +129,20 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
 
     EXEC_RUNNER gates execution. `stub` (default): a one-shot honest placeholder (no live system).
     `auto`: route each scenario to the engine that fits its nature and aggregate real pass/fail —
-    EXEC_CHUNK scenarios at a time, checkpointed to the ledger so a resume CONTINUES, not restarts."""
-    base_url = base_url or os.environ.get("EXEC_BASE_URL", "")
+    EXEC_CHUNK scenarios at a time, checkpointed to the ledger so a resume CONTINUES, not restarts.
+
+    Multi-env (§4): `env` NAMES a target in EXEC_ENVIRONMENTS ({base_url, auth}); its base_url + auth are
+    resolved from there, falling back to the `base_url` arg / EXEC_BASE_URL. The ledger records base_url +
+    the auth KIND (creds_ref), never the secret."""
+    from test_executor.environments import resolve_env
+    env_cfg = resolve_env(env)
+    base_url = base_url or env_cfg.get("base_url") or os.environ.get("EXEC_BASE_URL", "")
+    auth_cfg = env_cfg.get("auth") or {}
+    creds_ref = str(auth_cfg.get("type", "")) or None      # the auth KIND for the ledger (never the secret)
 
     if os.environ.get("EXEC_RUNNER", "stub").lower() != "auto":
-        environment_id = await store.upsert_env(context_id, env.strip() or "default", base_url=base_url)
+        environment_id = await store.upsert_env(context_id, env.strip() or "default", base_url=base_url,
+                                                 creds_ref=creds_ref)
         run_id = await store.start_run(context_id, environment_id)
         await store.finish_run(run_id, status="done",
                                summary={"passed": 0, "failed": 0, "executed": 0},
@@ -155,10 +164,16 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
         cursor, llm_used = int(prog.get("cursor", 0)), int(prog.get("llm_used", 0))
         failures = list(prog.get("failures") or [])
     else:                                                       # start a fresh run
-        environment_id = await store.upsert_env(context_id, env.strip() or "default", base_url=base_url)
+        environment_id = await store.upsert_env(context_id, env.strip() or "default", base_url=base_url,
+                                                 creds_ref=creds_ref)
         run_id = await store.start_run(context_id, environment_id)
         passed = failed = unbound = cursor = llm_used = 0
         by_engine, failures = {}, []
+
+    # Prepare auth once per chunk (§4 prepare phase). ponytail: a bearer_fetch re-fetches each poll —
+    # fine at chunk cadence; cache on the run if token cost matters.
+    from test_executor.auth import authenticate
+    auth = await authenticate(auth_cfg, base_url=base_url)
 
     llm_max = int(os.environ.get("EXEC_LLM_MAX", "8"))
     for sc in scenarios[cursor:cursor + _chunk_size()]:
@@ -170,7 +185,14 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
                 unbound += 1
                 continue                 # over the per-run LLM budget — record unbound, make no call
             llm_used += 1
-        res = await ENGINES[name].run(sc, base_url=base_url)
+        try:
+            res = await ENGINES[name].run(sc, base_url=base_url, auth=auth)
+        except Exception as exc:  # noqa: BLE001 — one scenario's crash must not wedge the whole chunked run
+            log.warning("exec: scenario %r crashed engine %s: %s", sc.get("title") or sc.get("id"), name, exc)
+            failed += 1
+            failures.append({"message": f"engine {name} crashed: {type(exc).__name__}", "flaky": False,
+                             "scenario": sc.get("title") or sc.get("id")})
+            continue                  # cursor already advanced above → the run progresses, never re-wedges
         if not res.ran:
             unbound += 1
         elif res.passed:

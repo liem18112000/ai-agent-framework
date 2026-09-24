@@ -70,7 +70,7 @@ class EngineResult:
 class RunnerEngine(Protocol):
     name: str
 
-    async def run(self, scenario: dict, *, base_url: str) -> EngineResult: ...
+    async def run(self, scenario: dict, *, base_url: str, auth: object = None) -> EngineResult: ...
 
 
 class ApiEngine:
@@ -81,7 +81,7 @@ class ApiEngine:
 
     name = "api"
 
-    async def run(self, scenario: dict, *, base_url: str) -> EngineResult:
+    async def run(self, scenario: dict, *, base_url: str, auth: object = None) -> EngineResult:
         req = scenario.get("request")
         if not (base_url and isinstance(req, dict) and req.get("path")):
             return EngineResult(self.name, ran=False,
@@ -95,8 +95,9 @@ class ApiEngine:
         expect = int(req.get("expect_status", 0))
         outcomes: list[StepOutcome] = []
         try:
+            headers = getattr(auth, "headers", None) or None   # AuthContext.headers (bearer), if any
             async with httpx.AsyncClient(timeout=30, transport=_transport) as client, \
-                    client.stream(method, url, json=req.get("json")) as resp:
+                    client.stream(method, url, json=req.get("json"), headers=headers) as resp:
                 declared = resp.headers.get("content-length")
                 if declared and declared.isdigit() and int(declared) > _MAX_RESPONSE_BYTES:
                     return EngineResult(self.name, ran=True, outcomes=[StepOutcome(
@@ -186,6 +187,18 @@ def _get_browser_driver():
     return PlaywrightDriver() if importlib.util.find_spec("playwright") is not None else None
 
 
+async def _do_login(driver, login: dict, *, base_url: str) -> None:
+    """Run a browser login plan before the scenario: open the login page (same-host), fill the
+    username/password fields, submit. Best-effort — a missing selector/cred just skips that action."""
+    await driver.goto(base_url.rstrip("/") + "/" + str(login.get("path", "")).lstrip("/"))
+    if login.get("user_selector") and login.get("username"):
+        await driver.act("fill", login["user_selector"], login["username"])
+    if login.get("pass_selector") and login.get("password"):
+        await driver.act("fill", login["pass_selector"], login["password"])
+    if login.get("submit_selector"):
+        await driver.act("click", login["submit_selector"])
+
+
 class BrowserEngine:
     """Drive a UI/E2E scenario via a BrowserDriver. The scenario's structured browser plan
     (`scenario["browser"]` = {url_path, steps:[{action, selector, value}], expect_text}) is run and the
@@ -194,7 +207,7 @@ class BrowserEngine:
 
     name = "browser"
 
-    async def run(self, scenario: dict, *, base_url: str) -> EngineResult:
+    async def run(self, scenario: dict, *, base_url: str, auth: object = None) -> EngineResult:
         plan = scenario.get("browser")
         if not plan and base_url:                            # NL UI scenario → translate via the LLM
             from common.adk.model import model_configured
@@ -211,6 +224,9 @@ class BrowserEngine:
         import httpx
         outcomes: list[StepOutcome] = []
         try:
+            login = getattr(auth, "login", None)     # AuthContext.login — a UI login plan, if configured
+            if isinstance(login, dict):
+                await _do_login(driver, login, base_url=base_url)
             await driver.goto(base_url.rstrip("/") + "/" + str(plan.get("url_path", "")).lstrip("/"))
             for step in plan.get("steps", []):
                 action = step.get("action", "")
@@ -309,9 +325,11 @@ async def _llm_translate(scenario: dict, *, system: str, schema, output_key: str
 
 async def heal(scenario: dict, failure_message: str, *, base_url: str) -> tuple[dict | None, EngineResult]:
     """Propose a corrected plan for a FAILED scenario (one LLM call with the failure fed back) and
-    re-run it to verify. Returns (proposed_plan, result). The plan is a PROPOSAL — the caller surfaces
-    it for a human Yes/No; it is never persisted/applied here (no silent retarget). Routes by the
-    scenario's nature: browser → BrowserPlan, else → RequestPlan."""
+    re-run it against the live SUT to verify. NOTE: the proposed plan IS executed once here to verify it
+    — bounded to the run's `base_url` host by the engines' egress allow-list (`_same_site`), exactly as
+    `run_suite` already executes scenarios against this test env. What's human-gated is the PATCH: the
+    proposal is returned for a Yes/No and is never persisted/applied to retarget future runs (no silent
+    retarget). Routes by the scenario's nature: browser → BrowserPlan, else → RequestPlan."""
     feedback = (f"The previous attempt FAILED with: {failure_message}. Produce a CORRECTED plan that "
                 "fixes the failing selector / wait / request so the scenario passes.")
     engine_name = select_engine(scenario)
@@ -333,10 +351,10 @@ class LlmEngine:
 
     name = "llm"
 
-    async def run(self, scenario: dict, *, base_url: str) -> EngineResult:
+    async def run(self, scenario: dict, *, base_url: str, auth: object = None) -> EngineResult:
         req = scenario.get("request")
         if isinstance(req, dict) and req.get("path"):        # already bound → just execute
-            return await ApiEngine().run(scenario, base_url=base_url)
+            return await ApiEngine().run(scenario, base_url=base_url, auth=auth)
         from common.adk.model import model_configured
         if not (base_url and model_configured()):
             return EngineResult(self.name, ran=False,
@@ -344,7 +362,7 @@ class LlmEngine:
         plan = await self._translate(scenario)
         if not plan or not plan.get("path"):
             return EngineResult(self.name, ran=False, note="the model could not translate this scenario to a request")
-        res = await ApiEngine().run({**scenario, "request": _request_from_plan(plan)}, base_url=base_url)
+        res = await ApiEngine().run({**scenario, "request": _request_from_plan(plan)}, base_url=base_url, auth=auth)
         return EngineResult(self.name, ran=res.ran, outcomes=res.outcomes, note=res.note)
 
     async def _translate(self, scenario: dict) -> dict | None:
