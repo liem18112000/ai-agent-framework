@@ -147,3 +147,31 @@ def test_build_diagrams_is_grounded_and_mermaid():
     nocov = build_diagrams(plan, {})
     assert set(nocov) == {"architecture", "scope"}                        # gaps drop when none
     assert "api, ui surface" in nocov["architecture"]                     # methodology deduped, no "api, api"
+
+
+async def test_implement_emits_conformance_from_the_executor_cached_spec(pack_bucket):
+    """THE SEAM: the executor caches the target's OpenAPI spec to the bank; a later implement_plan must
+    (a) generate conformance scenarios from it and (b) NOT delete it by regenerating test_data over it.
+    Regression — a fresh implement rebuilds test_data from scratch and writes it back, which silently
+    dropped both."""
+    from common.testplan.memory.writers import read_test_data, write_test_data
+    from common.testplan.models import TestData
+
+    bank = MemoryBank(pack_bucket)
+    await _confirmed(bank)
+    spec = {"openapi": "3.0.3", "paths": {
+        "/api/version": {"get": {"responses": {"200": {}}}},
+        "/api/{tenant-id}/things/{id}": {"get": {"responses": {"200": {}, "404": {}}}}}}
+    write_test_data(bank, "run-6f2a", [TestData(id="test-data:run-6f2a:openapi", kind="openapi",
+                                                spec={"openapi_spec": spec, "spec_url": "/api/openapi"})])
+
+    res = await implement_plan(bank, "run-6f2a")
+
+    conf = [s for s in res.scenarios if "conformance" in s.id]
+    assert {s.request["path"] for s in conf} == {"/api/version",
+                                                 "/api/{tenant-id}/things/000000000000000000000000"}
+    ver = next(s for s in conf if s.request["path"] == "/api/version")
+    assert ver.request["expect_status"] == 0      # spec is the oracle, not a guessed 200
+    # the captured fixture SURVIVES the regeneration (still in the result and still in the bank)
+    assert any(d.kind == "openapi" for d in res.test_data)
+    assert any(d.kind == "openapi" for d in read_test_data(bank, "run-6f2a"))

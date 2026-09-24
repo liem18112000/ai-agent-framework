@@ -28,6 +28,12 @@ log = get_logger("implement.generate")
 
 
 
+#: Test-data kinds the planner does NOT generate — they are CAPTURED from the live system by another
+#: stage (today: the executor caching the target's OpenAPI spec). A fresh implement must carry them
+#: forward instead of regenerating over them.
+_CAPTURED_KINDS = ("openapi",)
+
+
 def _spec_fixture(test_data: list) -> dict:
     """The target's OpenAPI spec, if the bank carries it as a `TestData(kind="openapi")` fixture whose
     `spec["openapi_spec"]` holds the parsed document.
@@ -72,8 +78,16 @@ async def implement_plan(bank, context_id: str, *, run_id: str = "implement", no
     # isn't repeated on every step; persist it up front so the next step can read it back.
     saved = await asyncio.to_thread(store.read_assured_state, bank, context_id)
     resuming = bool(saved.get("iterations")) and not saved.get("accepted")
-    test_data = (await asyncio.to_thread(store.read_test_data, bank, context_id) if resuming else []) \
+    persisted = await asyncio.to_thread(store.read_test_data, bank, context_id)
+    test_data = (persisted if resuming else []) \
         or await generate_test_data(plan, plan_pack, now=now, detail=detail, model=model)
+    # CAPTURED fixtures are not regenerable — they come from outside the planner (the executor caches the
+    # target's real OpenAPI spec after a run, because only it can reach an internal system). A fresh
+    # implement rebuilds test_data from scratch and then WRITES it back, which would both drop the spec
+    # from this pass (no conformance scenarios) and delete it from the bank. Carry them forward.
+    for d in persisted:
+        if d.kind in _CAPTURED_KINDS and not any(x.id == d.id for x in test_data):
+            test_data.append(d)
     # A file-upload requirement → a bound multipart scenario + its file fixture (executable, not prose).
     upload_data, upload_scenarios = upload_cases(plan, plan_pack, now=now)
     for f in upload_data:                                   # dedupe by id so a resume/re-run doesn't duplicate
