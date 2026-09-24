@@ -62,6 +62,17 @@ def test_semantic_judge_noul_rejects_below_half(monkeypatch):
     assert judge_mod.build_semantic_judge()("Is X covered?", "nope") is False
 
 
+def test_exec_triage_uses_jev_choice_when_configured(monkeypatch):
+    """Regression: the executor's failure triage calls provider.choice() — restore/keep that primitive.
+    (choice() was once deleted as dead; the executor re-introduced this caller.)"""
+    from test_executor import runner
+
+    fake = FakeDecisionProvider(choice=Verdict(value="Heal", probs=None, confidence=0.9))
+    monkeypatch.setattr("common.adk.providers.get_decision_provider", lambda: fake)
+    out = runner.triage([{"message": "element not found"}])
+    assert out == [{"message": "element not found", "verdict": "Heal"}]   # JEV Choice bucket, not the heuristic
+
+
 def test_semantic_judge_noul_threshold_is_configurable(monkeypatch):
     from test_evaluation.eval import judge as judge_mod
 

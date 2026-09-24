@@ -289,15 +289,18 @@ class FakeDecisionProvider:
 
     name = "fake-decision"
 
-    def __init__(self, *, verdict=None, score=None, noul=None, configured=True):
+    def __init__(self, *, verdict=None, score=None, noul=None, choice=None, configured=True):
         from common.adk.providers.decision import Verdict
 
         default = verdict or Verdict(value=True, probs={"true": 0.9, "false": 0.1}, confidence=0.9)
-        self._score, self._noul = score or default, noul or default
+        self._score, self._noul, self._choice = score or default, noul or default, choice or default
         self._configured = configured
 
     def is_configured(self):
         return self._configured
+
+    def choice(self, state, options, instructions):
+        return self._choice
 
     def score(self, state, instructions, levels):
         return self._score

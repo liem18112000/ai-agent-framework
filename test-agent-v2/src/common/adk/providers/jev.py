@@ -32,6 +32,9 @@ class JevProvider:
     def is_configured(self) -> bool:
         return bool(os.environ.get("TYPESAFE_API_KEY", "").strip())
 
+    def choice(self, state: str, options: list[str], instructions: str) -> Verdict:
+        return self._call("choice", state, options=options, instructions=instructions)
+
     def score(self, state: str, instructions: str, levels: list[str]) -> Verdict:
         return self._call("score", state, instructions=instructions, levels=levels)
 
@@ -39,9 +42,10 @@ class JevProvider:
         return self._call("noul", state, statement=statement)
 
     def _call(self, primitive: str, state: str, **spec) -> Verdict:
-        from typesafe_sdk import Noul, Score, TypeSafeClient
+        from typesafe_sdk import Choice, Noul, Score, TypeSafeClient
 
         question = {
+            "choice": lambda: Choice(instructions=spec["instructions"], criteria={o: None for o in spec["options"]}),
             "score": lambda: Score(instructions=spec["instructions"], criteria=list(spec["levels"])),
             "noul": lambda: Noul(instructions=spec["statement"]),
         }[primitive]()
@@ -52,6 +56,9 @@ class JevProvider:
 
 def _verdict(primitive: str, result, spec: dict) -> Verdict:
     """Map one System-1 result row onto a typed ``Verdict`` (value + defensive probs/confidence)."""
+    if primitive == "choice":
+        r = result.choices[_QKEY]
+        return Verdict(value=r.choice, probs=_probs(r), confidence=_conf(r))
     if primitive == "noul":
         p = float(result.nouls[_QKEY].noul)  # SDK 0.7.1: NoulAnswer.noul IS P(true); no probs/confidence field
         return Verdict(value=(p >= 0.5), probs={"true": p}, confidence=abs(p - 0.5) * 2.0)

@@ -49,6 +49,11 @@ class DecisionProvider(Protocol):
         `ModelProvider.is_configured`)."""
         ...
 
+    def choice(self, state: str, options: list[str], instructions: str) -> Verdict:
+        """Pick one of ``options`` for ``state`` under ``instructions``; ``value`` is the chosen option
+        (used by the executor's failure triage — Bug/Heal/Flaky/Environment)."""
+        ...
+
     def score(self, state: str, instructions: str, levels: list[str]) -> Verdict:
         """Grade ``state`` on the ordinal ``levels`` scale; ``value`` is a 0–1 float."""
         ...
