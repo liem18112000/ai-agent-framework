@@ -150,10 +150,15 @@ async def _resolve_upload_refs(scenarios: list[dict], context_id: str) -> None:
     for s in need:
         up = s["request"]["upload"]
         spec = getattr(by_id.get(up["data_ref"]), "spec", {}) or {}
-        if spec.get("b64"):
+        if not spec.get("b64"):
+            continue
+        try:
             up["content"] = base64.b64decode(spec["b64"])
-            up.setdefault("filename", spec.get("filename"))
-            up.setdefault("content_type", spec.get("content_type"))
+        except (ValueError, TypeError):  # a malformed fixture degrades THIS upload, not the whole run
+            log.warning("exec: bad base64 in upload fixture %s — leaving unresolved", up.get("data_ref"))
+            continue
+        up.setdefault("filename", spec.get("filename"))
+        up.setdefault("content_type", spec.get("content_type"))
 
 
 async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[dict] | None = None,
@@ -172,6 +177,9 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
     from test_executor.environments import resolve_env
     env_cfg = resolve_env(env)
     base_url = base_url or env_cfg.get("base_url") or os.environ.get("EXEC_BASE_URL", "")
+    if base_url and "@" in base_url:  # strip any inline userinfo/creds so they never hit the ledger/reply
+        import httpx
+        base_url = str(httpx.URL(base_url).copy_with(username=None, password=None))
     auth_cfg = env_cfg.get("auth") or {}
     creds_ref = str(auth_cfg.get("type", "")) or None      # the auth KIND for the ledger (never the secret)
 
@@ -231,7 +239,8 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
                 continue                 # over the per-run LLM budget — record unbound, make no call
             llm_used += 1
         try:
-            res = await ENGINES[name].run(sc, base_url=base_url, auth=auth, spec=spec_ctx)
+            res = await ENGINES[name].run(sc, base_url=base_url, auth=auth, spec=spec_ctx,
+                                          path_vars=env_cfg.get("path_vars") or {})
         except Exception as exc:  # noqa: BLE001 — one scenario's crash must not wedge the whole chunked run
             log.warning("exec: scenario %r crashed engine %s: %s", sc.get("title") or sc.get("id"), name, exc)
             failed += 1

@@ -30,16 +30,24 @@ _MAX_RESPONSE_BYTES = 8 * 1024 * 1024  # cap a SUT response body read into RAM (
 
 
 def _same_site(url: str, base_url: str) -> bool:
-    """Per-run egress allow-list: True iff `url` is http(s) on the SAME host as `base_url`. The executor
-    legitimately targets INTERNAL / localhost test envs, so `common.net.host_blocked` (which blocks
-    private/loopback) is the wrong guard here — the run must only reach its own base_url host, which is
-    what blocks metadata / file:// / foreign-host pivots that scenario text could otherwise reach."""
+    """Per-run egress allow-list: True iff `url` shares `base_url`'s exact http(s) ORIGIN
+    (scheme + host + port). The executor legitimately targets INTERNAL / localhost test envs, so
+    `common.net.host_blocked` (which blocks private/loopback) is the wrong guard here — the run must
+    only reach its own base_url origin, which blocks metadata / file:// / foreign-host pivots AND
+    same-host different-PORT pivots (e.g. a co-located docker/admin port) that scenario text could reach."""
     import httpx
-    try:
-        u = httpx.URL(url)
-    except Exception:  # noqa: BLE001 — a malformed URL is not same-site
-        return False
-    return u.scheme in ("http", "https") and bool(u.host) and u.host == httpx.URL(base_url).host
+
+    def _origin(x: str):
+        try:
+            u = httpx.URL(x)
+        except Exception:  # noqa: BLE001 — a malformed URL has no valid origin
+            return None
+        if u.scheme not in ("http", "https") or not u.host:
+            return None
+        return (u.scheme, u.host, u.port or (443 if u.scheme == "https" else 80))
+
+    o = _origin(url)
+    return o is not None and o == _origin(base_url)
 
 #: Test seam — an httpx transport override (MockTransport/ASGITransport) so ApiEngine runs offline.
 _transport = None
@@ -71,7 +79,7 @@ class RunnerEngine(Protocol):
     name: str
 
     async def run(self, scenario: dict, *, base_url: str, auth: object = None,
-                  spec: dict | None = None) -> EngineResult: ...
+                  spec: dict | None = None, path_vars: dict | None = None) -> EngineResult: ...
 
 
 class ApiEngine:
@@ -83,15 +91,16 @@ class ApiEngine:
     name = "api"
 
     async def run(self, scenario: dict, *, base_url: str, auth: object = None,
-                  spec: dict | None = None) -> EngineResult:
+                  spec: dict | None = None, path_vars: dict | None = None) -> EngineResult:
         req = scenario.get("request")
         if not (base_url and isinstance(req, dict) and req.get("path")):
             return EngineResult(self.name, ran=False,
                                 note="no executable request binding (need OpenAPI/LLM) or no base_url")
         import httpx
         method = str(req.get("method", "GET")).upper()
-        url = base_url.rstrip("/") + "/" + str(req["path"]).lstrip("/")
-        where = f"{method} {req['path']}"  # host-free: keeps any base_url userinfo/creds out of the ledger + reply
+        path = _subst_path(str(req["path"]), path_vars)   # {tenant}/{id} → the env's path_vars values
+        url = base_url.rstrip("/") + "/" + path.lstrip("/")
+        where = f"{method} {req['path']}"  # host-free ledger label: keeps the PATH TEMPLATE, not the injected id
         if not _same_site(url, base_url):  # egress allow-list — the request must stay on the run's base_url host
             return EngineResult(self.name, ran=True, outcomes=[StepOutcome(False, f"{where}: blocked off-site target")])
         expect = int(req.get("expect_status", 0))
@@ -116,10 +125,11 @@ class ApiEngine:
             log.warning("exec api %s failed: %s", where, exc)  # full detail server-side only
             return EngineResult(self.name, ran=True,
                                 outcomes=[StepOutcome(False, f"{where}: request failed ({type(exc).__name__})")])
-        # status conformance: an explicit expect wins; else any non-5xx is acceptable
-        ok_status = (status == expect) if expect else (status < 500)
+        # status conformance: an explicit expect wins; else any non-5xx is acceptable EXCEPT an
+        # unexpected 401/403 — those are never a pass (a broken-creds run must fail, not report green).
+        ok_status = (status == expect) if expect else (status < 500 and status not in (401, 403))
         outcomes.append(StepOutcome(ok_status,
-                        "" if ok_status else f"{where}: status {status} (expected {expect or '<500'})"))
+                        "" if ok_status else f"{where}: status {status} (expected {expect or '<500, authorized'})"))
         # content conformance: a JSON content-type must parse
         if "json" in ctype:
             try:
@@ -133,7 +143,7 @@ class ApiEngine:
         # Pillar 3: OpenAPI conformance oracle — status + response-schema declared by the spec
         if isinstance(spec, dict) and spec.get("spec"):
             from test_executor.openapi import conformance_failures, match_operation
-            op = match_operation(spec.get("ops") or [], method, str(req["path"]).split("?", 1)[0])
+            op = match_operation(spec.get("ops") or [], method, path.split("?", 1)[0])
             if op is not None:
                 for msg in conformance_failures(spec["spec"], op, status=status, body_text=text, content_type=ctype):
                     outcomes.append(StepOutcome(False, f"{where}: {msg}"))
@@ -217,7 +227,7 @@ class BrowserEngine:
     name = "browser"
 
     async def run(self, scenario: dict, *, base_url: str, auth: object = None,
-                  spec: dict | None = None) -> EngineResult:     # spec is API-only; browser ignores it
+                  spec: dict | None = None, path_vars: dict | None = None) -> EngineResult:     # spec is API-only; browser ignores it
         plan = scenario.get("browser")
         if not plan and base_url:                            # NL UI scenario → translate via the LLM
             from common.adk.model import model_configured
@@ -252,7 +262,8 @@ class BrowserEngine:
             ok = (want in await driver.text()) if want else True
             outcomes.append(StepOutcome(ok, "" if ok else f"page missing expected text {want!r}"))
         except Exception as exc:  # noqa: BLE001 — a browser/driver failure is a real failure to triage
-            outcomes.append(StepOutcome(False, f"browser run failed: {exc}"))
+            log.warning("exec browser run failed: %s", exc)  # full detail server-side only (may include a filled value)
+            outcomes.append(StepOutcome(False, f"browser run failed: {type(exc).__name__}"))
         finally:
             with contextlib.suppress(Exception):
                 await driver.close()
@@ -325,22 +336,25 @@ def _request_from_plan(plan: dict) -> dict:
             "expect_status": plan.get("expect_status", 0), "expect_contains": plan.get("expect_contains", "")}
 
 
+def _subst_path(path: str, path_vars: dict | None) -> str:
+    """Substitute `{var}` templates in a request path from the environment's `path_vars` (e.g. a grounded
+    OpenAPI path `/api/{tenant-id}/import-jobs/upload-zip` → the env's real tenant). Var names may contain
+    hyphens (OpenAPI uses `{tenant-id}`). An UNKNOWN template is left literal — it surfaces as a real 404,
+    never a silent pass. No path_vars / no template → returns the path unchanged."""
+    if not path_vars or "{" not in path:
+        return path
+    import re
+    return re.sub(r"\{([\w-]+)\}", lambda m: str(path_vars.get(m.group(1), m.group(0))), path)
+
+
 def _send_kwargs(req: dict) -> dict:
     """The httpx body kwargs for a request: a multipart file upload when the scenario supplies an
-    `upload` ({field, content?|path?, filename?, content_type?, data?}), else a JSON body. The bytes
-    come from `content` (resolved from a bank TestData fixture by run_suite) or a local `path` (read into
-    memory; fine for test-fixture zips, stream if a huge upload is ever needed). A missing file raises
-    here and is caught by the caller as a real request failure."""
+    `upload` ({field, content, filename?, content_type?, data?}), else a JSON body. The bytes come from
+    inline `content` only (resolved from a bank TestData fixture by run_suite) — never a local filesystem
+    path, so scenario/ticket-derived content can't turn into an arbitrary-file read + exfil to the SUT."""
     up = req.get("upload")
-    if isinstance(up, dict) and (up.get("content") is not None or up.get("path")):
-        import os
-        content = up.get("content")
-        name = up.get("filename")
-        if content is None:                                   # local file path (offline/CLI use)
-            with open(up["path"], "rb") as fh:
-                content = fh.read()
-            name = name or os.path.basename(up["path"])
-        files = {up.get("field", "file"): (name or "upload.bin", content,
+    if isinstance(up, dict) and up.get("content") is not None:
+        files = {up.get("field", "file"): (up.get("filename") or "upload.bin", up["content"],
                                            up.get("content_type") or "application/octet-stream")}
         return {"files": files, "data": up.get("data") or None}   # extra form fields alongside the file
     return {"json": req.get("json")}
@@ -389,10 +403,10 @@ class LlmEngine:
     name = "llm"
 
     async def run(self, scenario: dict, *, base_url: str, auth: object = None,
-                  spec: dict | None = None) -> EngineResult:
+                  spec: dict | None = None, path_vars: dict | None = None) -> EngineResult:
         req = scenario.get("request")
         if isinstance(req, dict) and req.get("path"):        # already bound → just execute
-            return await ApiEngine().run(scenario, base_url=base_url, auth=auth, spec=spec)
+            return await ApiEngine().run(scenario, base_url=base_url, auth=auth, spec=spec, path_vars=path_vars)
         from common.adk.model import model_configured
         if not (base_url and model_configured()):
             return EngineResult(self.name, ran=False,
@@ -401,7 +415,7 @@ class LlmEngine:
         if not plan or not plan.get("path"):
             return EngineResult(self.name, ran=False, note="the model could not translate this scenario to a request")
         res = await ApiEngine().run({**scenario, "request": _request_from_plan(plan)},
-                                    base_url=base_url, auth=auth, spec=spec)
+                                    base_url=base_url, auth=auth, spec=spec, path_vars=path_vars)
         return EngineResult(self.name, ran=res.ran, outcomes=res.outcomes, note=res.note)
 
     async def _translate(self, scenario: dict, *, spec: dict | None = None) -> dict | None:
