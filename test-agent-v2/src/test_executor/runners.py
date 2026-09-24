@@ -70,7 +70,8 @@ class EngineResult:
 class RunnerEngine(Protocol):
     name: str
 
-    async def run(self, scenario: dict, *, base_url: str, auth: object = None) -> EngineResult: ...
+    async def run(self, scenario: dict, *, base_url: str, auth: object = None,
+                  spec: dict | None = None) -> EngineResult: ...
 
 
 class ApiEngine:
@@ -81,7 +82,8 @@ class ApiEngine:
 
     name = "api"
 
-    async def run(self, scenario: dict, *, base_url: str, auth: object = None) -> EngineResult:
+    async def run(self, scenario: dict, *, base_url: str, auth: object = None,
+                  spec: dict | None = None) -> EngineResult:
         req = scenario.get("request")
         if not (base_url and isinstance(req, dict) and req.get("path")):
             return EngineResult(self.name, ran=False,
@@ -128,6 +130,13 @@ class ApiEngine:
         want = str(req.get("expect_contains", ""))
         if want and want not in text:
             outcomes.append(StepOutcome(False, f"{where}: response missing expected {want!r}"))
+        # Pillar 3: OpenAPI conformance oracle — status + response-schema declared by the spec
+        if isinstance(spec, dict) and spec.get("spec"):
+            from test_executor.openapi import conformance_failures, match_operation
+            op = match_operation(spec.get("ops") or [], method, str(req["path"]).split("?", 1)[0])
+            if op is not None:
+                for msg in conformance_failures(spec["spec"], op, status=status, body_text=text, content_type=ctype):
+                    outcomes.append(StepOutcome(False, f"{where}: {msg}"))
         return EngineResult(self.name, ran=True, outcomes=outcomes)
 
 
@@ -207,7 +216,8 @@ class BrowserEngine:
 
     name = "browser"
 
-    async def run(self, scenario: dict, *, base_url: str, auth: object = None) -> EngineResult:
+    async def run(self, scenario: dict, *, base_url: str, auth: object = None,
+                  spec: dict | None = None) -> EngineResult:     # spec is API-only; browser ignores it
         plan = scenario.get("browser")
         if not plan and base_url:                            # NL UI scenario → translate via the LLM
             from common.adk.model import model_configured
@@ -293,7 +303,7 @@ _BROWSER_TRANSLATE_SYSTEM = (
 )
 
 
-def _scenario_task(scenario: dict, *, extra: str = "") -> str:
+def _scenario_task(scenario: dict, *, extra: str = "", catalog: str = "") -> str:
     parts = [f"title: {scenario.get('title', '')}", f"kind: {scenario.get('kind', '')}"]
     if scenario.get("description"):
         parts.append(f"description: {scenario['description']}")
@@ -302,6 +312,9 @@ def _scenario_task(scenario: dict, *, extra: str = "") -> str:
         parts.append("preconditions: " + "; ".join(map(str, pre)))
     if extra:                                        # heal feedback: the prior failure to correct
         parts.append(extra)
+    if catalog:                                      # Pillar 3: ground the call on the target's REAL operations
+        parts.append("Choose the ONE operation below that matches and use its EXACT method + path "
+                     "(fill path params with realistic values):\n" + catalog)
     return "\n".join(parts)
 
 
@@ -312,15 +325,17 @@ def _request_from_plan(plan: dict) -> dict:
 
 
 async def _llm_translate(scenario: dict, *, system: str, schema, output_key: str,
-                         extra: str = "") -> dict | None:
+                         extra: str = "", catalog: str = "") -> dict | None:
     """One structured-output LLM call: translate a scenario into `schema` (an API request or a browser
     plan), returning the validated dict or None on degrade. `extra` appends heal feedback (the prior
-    failure to fix). Shared by LlmEngine, BrowserEngine, and heal()."""
+    failure to fix); `catalog` grounds the call on the target's real OpenAPI operations (Pillar 3).
+    Shared by LlmEngine, BrowserEngine, and heal()."""
     from common.adk.model import agent_model
     from common.testplan.llm.adk import build_generator_agent, run_json_agent
     agent = build_generator_agent(name="exec_translate", system=system, output_schema=schema,
                                   output_key=output_key, model=agent_model())
-    return await run_json_agent(agent, output_key=output_key, user=_scenario_task(scenario, extra=extra))
+    return await run_json_agent(agent, output_key=output_key,
+                                user=_scenario_task(scenario, extra=extra, catalog=catalog))
 
 
 async def heal(scenario: dict, failure_message: str, *, base_url: str) -> tuple[dict | None, EngineResult]:
@@ -351,22 +366,30 @@ class LlmEngine:
 
     name = "llm"
 
-    async def run(self, scenario: dict, *, base_url: str, auth: object = None) -> EngineResult:
+    async def run(self, scenario: dict, *, base_url: str, auth: object = None,
+                  spec: dict | None = None) -> EngineResult:
         req = scenario.get("request")
         if isinstance(req, dict) and req.get("path"):        # already bound → just execute
-            return await ApiEngine().run(scenario, base_url=base_url, auth=auth)
+            return await ApiEngine().run(scenario, base_url=base_url, auth=auth, spec=spec)
         from common.adk.model import model_configured
         if not (base_url and model_configured()):
             return EngineResult(self.name, ran=False,
                                 note="no provider/base_url — needs a model provider to translate the scenario")
-        plan = await self._translate(scenario)
+        plan = await self._translate(scenario, spec=spec)
         if not plan or not plan.get("path"):
             return EngineResult(self.name, ran=False, note="the model could not translate this scenario to a request")
-        res = await ApiEngine().run({**scenario, "request": _request_from_plan(plan)}, base_url=base_url, auth=auth)
+        res = await ApiEngine().run({**scenario, "request": _request_from_plan(plan)},
+                                    base_url=base_url, auth=auth, spec=spec)
         return EngineResult(self.name, ran=res.ran, outcomes=res.outcomes, note=res.note)
 
-    async def _translate(self, scenario: dict) -> dict | None:
-        return await _llm_translate(scenario, system=_TRANSLATE_SYSTEM, schema=RequestPlan, output_key="request")
+    async def _translate(self, scenario: dict, *, spec: dict | None = None) -> dict | None:
+        # Pillar 3: when the target's OpenAPI is available, ground the translation on its real operations.
+        catalog = ""
+        if isinstance(spec, dict) and spec.get("ops"):
+            from test_executor.openapi import operation_catalog
+            catalog = operation_catalog(spec["ops"])
+        return await _llm_translate(scenario, system=_TRANSLATE_SYSTEM, schema=RequestPlan,
+                                    output_key="request", catalog=catalog)
 
 
 ENGINES: dict[str, RunnerEngine] = {

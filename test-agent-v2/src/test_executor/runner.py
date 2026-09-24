@@ -175,6 +175,15 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
     from test_executor.auth import authenticate
     auth = await authenticate(auth_cfg, base_url=base_url)
 
+    # Pillar 3: ground API execution on the target's OpenAPI spec (env `spec_url`, e.g. /v3/api-docs),
+    # fetched once per chunk with the run's auth. None → engines fall back to ungrounded LLM guesses.
+    spec_ctx = None
+    if env_cfg.get("spec_url"):
+        from test_executor.openapi import fetch_spec, parse_operations
+        raw_spec = await fetch_spec(env_cfg["spec_url"], base_url=base_url, headers=getattr(auth, "headers", None))
+        if raw_spec:
+            spec_ctx = {"spec": raw_spec, "ops": parse_operations(raw_spec)}
+
     llm_max = int(os.environ.get("EXEC_LLM_MAX", "8"))
     for sc in scenarios[cursor:cursor + _chunk_size()]:
         name = select_engine(sc)
@@ -186,7 +195,7 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
                 continue                 # over the per-run LLM budget — record unbound, make no call
             llm_used += 1
         try:
-            res = await ENGINES[name].run(sc, base_url=base_url, auth=auth)
+            res = await ENGINES[name].run(sc, base_url=base_url, auth=auth, spec=spec_ctx)
         except Exception as exc:  # noqa: BLE001 — one scenario's crash must not wedge the whole chunked run
             log.warning("exec: scenario %r crashed engine %s: %s", sc.get("title") or sc.get("id"), name, exc)
             failed += 1
