@@ -27,7 +27,14 @@ def register_tools(mcp: MCPServer, session: BridgeSession) -> dict:
         chunk — repeat until `[state: done]`, then read the outcome with get_run_report.
 
         Execution is opt-in via EXEC_RUNNER=auto (routes each scenario to the engine that fits its
-        nature); the default is a one-shot stub that records the env + run row."""
+        nature); the default is a one-shot stub that records the env + run row.
+
+        ON `[state: done]` the reply asks you to offer the user a TEST COMPLETION REPORT. Do ask — the
+        run carries a per-scenario result row (status, engine, the requirement ids it covers, what was
+        called, duration) plus triage verdicts and the environment, which is what a report's coverage
+        matrix is built from. YOU render it with a client skill (e.g. `write-test-completion-report`);
+        the agent emits data, never documents. Pull the story's acceptance criteria yourself — the
+        executor knows what ran, not what was promised."""
         return (await session.ask(f"run {context_id} {env}".strip(), context_id=context_id)).text
 
     @mcp.tool()

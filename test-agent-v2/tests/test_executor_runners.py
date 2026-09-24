@@ -252,3 +252,58 @@ async def test_heal_step_needs_provider(monkeypatch):
     store = await _seed_failed_run("selector #btn not found")
     result = await heal_step(store, "CTX", "s1", scenarios=[{"title": "s1"}], base_url="http://svc")
     assert result["healed"] is False and "provider" in result["note"]
+
+
+# --- per-scenario results: the rows a test-completion report is built from -------------------------
+async def test_run_records_a_result_row_for_every_scenario_including_passes(monkeypatch):
+    """A coverage matrix is `requirement -> covering scenario -> result -> evidence`, so the run must
+    keep a row per scenario INCLUDING the passes — counts alone cannot produce one."""
+    monkeypatch.setenv("EXEC_RUNNER", "auto")
+    monkeypatch.setattr(runners, "_transport", httpx.MockTransport(
+        lambda r: httpx.Response(200 if r.url.path == "/ok" else 500, json={})))
+    store = InMemoryExecStore()
+    scs = [{"id": "s1", "title": "green one", "kind": "happy", "methodology": "api",
+            "source_refs": ["jira:AC-1"], "request": {"method": "GET", "path": "/ok", "expect_status": 200}},
+           {"id": "s2", "title": "red one", "kind": "negative", "methodology": "api",
+            "source_refs": ["jira:AC-2"], "request": {"method": "GET", "path": "/bad", "expect_status": 200}}]
+    run = await run_suite(store, "CTX", "", scenarios=scs, base_url="https://svc")
+
+    rows = {r["id"]: r for r in run["signals"]["results"]}
+    assert set(rows) == {"s1", "s2"}                        # the PASS is recorded, not just the failure
+    assert rows["s1"]["status"] == "passed" and rows["s1"]["messages"] == []
+    assert rows["s1"]["source_refs"] == ["jira:AC-1"]       # traceability back to the requirement
+    assert rows["s1"]["method"] == "GET" and rows["s1"]["path"] == "/ok"   # what was exercised
+    assert rows["s2"]["status"] == "failed" and rows["s2"]["messages"]
+    assert all(r["engine"] == "api" and r["duration_ms"] >= 0 for r in rows.values())
+
+
+async def test_results_survive_the_chunked_resume(monkeypatch):
+    """Rows accumulate across polls — a long run's report must cover every chunk, not just the last."""
+    monkeypatch.setenv("EXEC_RUNNER", "auto")
+    monkeypatch.setenv("EXEC_CHUNK", "1")
+    monkeypatch.setattr(runners, "_transport", httpx.MockTransport(lambda r: httpx.Response(200, json={})))
+    store = InMemoryExecStore()
+    scs = [{"id": f"s{i}", "title": f"t{i}", "methodology": "api",
+            "request": {"method": "GET", "path": f"/p{i}", "expect_status": 200}} for i in range(3)]
+    for _ in range(3):
+        run = await run_suite(store, "CTX", "", scenarios=scs, base_url="https://svc")
+    assert run["status"] == "done"
+    assert [r["id"] for r in run["signals"]["results"]] == ["s0", "s1", "s2"]
+
+
+def test_render_run_shows_rows_and_prompts_for_the_report():
+    from test_executor.ops import render_run
+    run = {"id": "r1", "status": "done", "environment_id": "CTX:dev",
+           "summary": {"passed": 1, "failed": 0},
+           "signals": {"total": 1, "results": [
+               {"id": "s1", "title": "green one", "status": "passed", "engine": "api", "kind": "happy",
+                "source_refs": ["jira:AC-1"], "method": "GET", "path": "/ok", "messages": [],
+                "duration_ms": 12}]}}
+    out = render_run(run)
+    assert "[passed] green one" in out and "covers=jira:AC-1" in out and "GET /ok" in out
+    assert "results (1 scenarios" in out
+    assert "test completion report" in out            # the completion cue the client acts on
+    assert "'results':" not in out                    # not dumped as a raw k=v blob
+
+    # an in-progress run must NOT prompt for the report yet
+    assert "test completion report" not in render_run({**run, "status": "in_progress"})

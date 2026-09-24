@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from dataclasses import dataclass, field
 
 from common.monitoring import get_logger
@@ -67,6 +68,42 @@ class Summary:
         d = d or {}
         return cls(passed=int(d.get("passed", 0)), failed=int(d.get("failed", 0)),
                    unbound=int(d.get("unbound", 0)), by_engine=dict(d.get("by_engine") or {}))
+
+
+@dataclass
+class ScenarioResult:
+    """ONE scenario's outcome — the unit a test-completion report is built from.
+
+    The run summary counts outcomes and `failures` lists what broke, but a report needs a row per
+    scenario INCLUDING the passes: its coverage matrix is `requirement -> covering scenario -> result ->
+    evidence`, which cannot be written from counts alone. `source_refs` carries the requirement/AC ids the
+    scenario cites (the traceability link), and `method`/`path` record what was actually exercised."""
+
+    id: str
+    title: str
+    status: str                                   # passed | failed | unbound
+    engine: str = ""
+    kind: str = ""
+    source_refs: list = field(default_factory=list)   # the AC / pack-note ids this scenario covers
+    method: str = ""
+    path: str = ""                                 # the PATH TEMPLATE (host-free, no injected ids)
+    messages: list = field(default_factory=list)   # failure detail; empty when passed
+    duration_ms: int = 0
+
+    def as_dict(self) -> dict:
+        return {"id": self.id, "title": self.title, "status": self.status, "engine": self.engine,
+                "kind": self.kind, "source_refs": self.source_refs, "method": self.method,
+                "path": self.path, "messages": self.messages, "duration_ms": self.duration_ms}
+
+    @classmethod
+    def from_row(cls, d: ScenarioResult | dict) -> ScenarioResult:
+        if isinstance(d, ScenarioResult):
+            return d
+        return cls(id=str(d.get("id", "")), title=str(d.get("title", "")), status=str(d.get("status", "")),
+                   engine=str(d.get("engine", "")), kind=str(d.get("kind", "")),
+                   source_refs=list(d.get("source_refs") or []), method=str(d.get("method", "")),
+                   path=str(d.get("path", "")), messages=list(d.get("messages") or []),
+                   duration_ms=int(d.get("duration_ms", 0)))
 
 
 @dataclass
@@ -294,6 +331,7 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
         summ = Summary.from_row(latest.get("summary"))
         cursor, llm_used = int(prog.get("cursor", 0)), int(prog.get("llm_used", 0))
         failures = [Failure.from_row(f) for f in prog.get("failures") or []]
+        results = [ScenarioResult.from_row(r) for r in prog.get("results") or []]
     else:                                                       # start a fresh run
         environment_id = await store.upsert_env(context_id, env.strip() or "default", base_url=base_url,
                                                  creds_ref=creds_ref)
@@ -301,6 +339,7 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
         summ = Summary()
         cursor = llm_used = 0
         failures = []
+        results = []
 
     # Prepare auth once per chunk (§4 prepare phase). ponytail: a bearer_fetch re-fetches each poll —
     # fine at chunk cadence; cache on the run if token cost matters.
@@ -323,9 +362,21 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
         summ.by_engine[name] = summ.by_engine.get(name, 0) + 1
         cursor += 1
         title = sc.get("title") or sc.get("id")
+        req = sc.get("request") if isinstance(sc.get("request"), dict) else {}
+
+        def _row(status: str, msgs: list, started: float, *, sc=sc, name=name, title=title, req=req):
+            """One report row for this scenario — recorded on EVERY outcome path, passes included."""
+            results.append(ScenarioResult(
+                id=str(sc.get("id") or ""), title=str(title or ""), status=status, engine=name,
+                kind=str(sc.get("kind") or ""), source_refs=list(sc.get("source_refs") or []),
+                method=str(req.get("method", "") or ""), path=str(req.get("path", "") or ""),
+                messages=msgs, duration_ms=int((time.monotonic() - started) * 1000)))
+
+        t0 = time.monotonic()
         if _needs_llm(name, sc):
             if llm_used >= llm_max:
                 summ.unbound += 1
+                _row("unbound", [f"over the per-run LLM budget ({llm_max})"], t0)
                 continue                 # over the per-run LLM budget — record unbound, make no call
             llm_used += 1
         try:
@@ -334,26 +385,34 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
         except Exception as exc:  # noqa: BLE001 — one scenario's crash must not wedge the whole chunked run
             log.warning("exec: scenario %r crashed engine %s: %s", title, name, exc)
             summ.failed += 1
-            failures.append(Failure(message=f"engine {name} crashed: {type(exc).__name__}", scenario=title))
+            msg = f"engine {name} crashed: {type(exc).__name__}"
+            failures.append(Failure(message=msg, scenario=title))
+            _row("failed", [msg], t0)
             continue                  # cursor already advanced above → the run progresses, never re-wedges
         if not res.ran:
             summ.unbound += 1
+            _row("unbound", [res.note] if res.note else [], t0)
         elif res.passed:
             summ.passed += 1
+            _row("passed", [], t0)
         else:
             summ.failed += 1
+            msgs = [o.message for o in res.outcomes if not o.ok]
             failures += [Failure(message=o.message, flaky=o.flaky, scenario=title)
                          for o in res.outcomes if not o.ok]
+            _row("failed", msgs, t0)
 
     if cursor < total:                                         # more chunks remain → checkpoint + poll
         await store.save_progress(run_id, summary=summ.as_dict(),
                                   signals={"cursor": cursor, "total": total,
-                                           "failures": [f.as_dict() for f in failures], "llm_used": llm_used})
+                                           "failures": [f.as_dict() for f in failures], "llm_used": llm_used,
+                                           "results": [r.as_dict() for r in results]})
         return await store.get_run(run_id=run_id) or {"id": run_id, "status": "in_progress"}
 
     verdicts = await asyncio.to_thread(triage, failures)       # JEV cascade is sync/blocking — off-loop
     await store.finish_run(run_id, status="done", summary=summ.as_dict(),
-                           signals={"failures": [f.as_dict() for f in failures], "total": total},
+                           signals={"failures": [f.as_dict() for f in failures], "total": total,
+                                    "results": [r.as_dict() for r in results]},
                            triage=[v.as_dict() for v in verdicts])
     return await store.get_run(run_id=run_id) or {"id": run_id, "status": "done"}
 
