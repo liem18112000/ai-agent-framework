@@ -100,6 +100,16 @@ async def test_recall_structural_then_semantic(store):
     assert "shared lesson" in await store.recall(seed_refs=set(), q_embed=_vec(5))
 
 
+async def test_recall_semantic_reaches_a_captured_context_scoped_lesson(store):
+    """R0 regression, pg arm — the mirror of the InMemoryVectorStore case. `capture_lessons` mints
+    every auto-captured lesson at scope="context"; the semantic leg used to filter scope='shared',
+    which nothing in src/ ever writes, so the vector arm could never return a captured lesson."""
+    await store.upsert_node(_node("insight:cap", type="insight", kind="lesson",
+                                  synopsis="captured lesson", scope="context"))
+    await store.set_embedding("insight:cap", _vec(7))
+    assert "captured lesson" in await store.recall(seed_refs=set(), q_embed=_vec(7))
+
+
 async def test_ensure_ann_index_idempotent(store):
     await store.upsert_node(_node("n1", synopsis="s"))
     await store.set_embedding("n1", _vec(1))

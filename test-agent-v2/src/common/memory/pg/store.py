@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from common.memory.pg.schema import HNSW_INDEX_SQL, SCHEMA_SQL
+from common.memory.vector_store import DEFAULT_SCOPES
 from common.monitoring import get_logger
 
 log = get_logger("memory.pg")
@@ -114,7 +115,7 @@ class PgMemoryStore:
     async def search(self, *, q_text: str = "", q_embed: list[float] | None = None, types: list[str] | None = None, scopes: list[str] | None = None, k: int = 40) -> list[dict]:
         """Hybrid recall (M4): vector-nearest `embedding <=> q` ∪ full-text `tsv @@ q`, RRF-fused."""
         await self._ensure()
-        scopes = scopes or ["context", "shared"]
+        scopes = scopes or list(DEFAULT_SCOPES)
         if not q_text and q_embed is None:
             return await self._recent(types, scopes, k)  # MEM-03: browse only on an EMPTY query
         vec_ids = await self._vector_ids(q_embed, types, scopes, k) if q_embed else []
@@ -200,11 +201,12 @@ class PgMemoryStore:
         if q_embed and len(out) < limit:
             sql = text(
                 "SELECT id, synopsis FROM memory_node "
-                "WHERE status='active' AND scope='shared' AND kind IN ('lesson','correction','gotcha') "
+                "WHERE status='active' AND scope = ANY(:scopes) AND kind IN ('lesson','correction','gotcha') "
                 "AND embedding IS NOT NULL ORDER BY embedding <=> CAST(:q AS vector) LIMIT :lim"
             )
             async with self._engine.connect() as conn:
-                for rid, syn in (await conn.execute(sql, {"q": _vec_literal(q_embed), "lim": limit})).all():
+                for rid, syn in (await conn.execute(sql, {"q": _vec_literal(q_embed), "lim": limit,
+                                                          "scopes": list(DEFAULT_SCOPES)})).all():
                     if syn and rid not in seen:
                         seen.add(rid); out.append(syn)
         return out[:limit]

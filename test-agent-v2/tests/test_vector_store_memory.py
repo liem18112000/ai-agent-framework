@@ -152,6 +152,21 @@ async def test_recall_structural_then_semantic():
     assert "shared lesson" in await store.recall(seed_refs=set(), q_embed=[0.0, 0.0, 1.0])
 
 
+async def test_recall_semantic_reaches_a_captured_context_scoped_lesson():
+    """R0 regression: `capture_lessons` mints EVERY auto-captured lesson at scope="context", but the
+    semantic leg used to filter scope='shared' — which nothing in src/ ever writes. That made the
+    vector arm dead on arrival: only the structural (edge) arm could ever return anything. The leg
+    must span DEFAULT_SCOPES, so a captured lesson with no edge to the seed is still reachable."""
+    store = InMemoryVectorStore()
+    # exactly what capture.py writes: scope="context", and NO edge to the run's seed refs
+    await store.upsert_node(_node("insight:cap", type="insight", kind="lesson",
+                                  synopsis="captured lesson", scope="context"))
+    await store.set_embedding("insight:cap", [0.0, 1.0, 0.0])
+
+    hits = await store.recall(seed_refs=set(), q_embed=[0.0, 1.0, 0.0])
+    assert "captured lesson" in hits
+
+
 async def test_recall_high_confidence_first():
     store = InMemoryVectorStore()
     await store.upsert_node(_node("insight:lo", type="insight", kind="lesson",

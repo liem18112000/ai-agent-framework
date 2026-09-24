@@ -12,6 +12,7 @@ from __future__ import annotations
 import math
 
 from common.memory.pg.store import rrf_fuse  # reuse the pure fusion helper — do NOT fork it
+from common.memory.vector_store import DEFAULT_SCOPES
 
 # The projected columns PgMemoryStore.upsert_node persists (mirrors its INSERT column list).
 _NODE_COLS = (
@@ -19,7 +20,6 @@ _NODE_COLS = (
     "run_id", "context_id", "scope", "status", "confidence",
 )
 _LESSON_KINDS = ("lesson", "correction", "gotcha")
-_DEFAULT_SCOPES = ("context", "shared")
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
@@ -158,7 +158,7 @@ class InMemoryVectorStore:
         types: list[str] | None = None, scopes: list[str] | None = None, k: int = 40,
     ) -> list[dict]:
         """Hybrid recall: vector-nearest ∪ lexical, RRF-fused (empty query → most-recent), pg-shape rows."""
-        scopes = scopes or list(_DEFAULT_SCOPES)
+        scopes = scopes or list(DEFAULT_SCOPES)
         if not q_text and q_embed is None:
             return self._recent(types, scopes, k)  # MEM-03: browse only on an EMPTY query
         vec_ids = self._vector_ids(q_embed, types, scopes, k) if q_embed else []
@@ -201,7 +201,8 @@ class InMemoryVectorStore:
         if q_embed and len(out) < limit:
             sem = [
                 n for n in self._nodes.values()
-                if n.get("status", "active") == "active" and n.get("scope") == "shared"
+                if n.get("status", "active") == "active"
+                and n.get("scope", "context") in DEFAULT_SCOPES
                 and n.get("kind") in _LESSON_KINDS and self._emb.get(n["id"]) is not None
             ]
             sem.sort(key=lambda n: (-self._cosine_to(n["id"], q_embed), n["id"]))

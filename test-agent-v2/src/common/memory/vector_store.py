@@ -9,6 +9,12 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
+#: The scopes a read spans by default, for EVERY adapter. `capture_lessons` mints every auto-captured
+#: lesson at scope="context", so a leg restricted to 'shared' can never return one — that is exactly
+#: what left the semantic arm of `recall` dead on arrival. Widening the READ is the fix; promoting a
+#: lesson TO 'shared' stays an authored act, never a side-effect of capture.
+DEFAULT_SCOPES = ("context", "shared")
+
 
 @runtime_checkable
 class VectorStore(Protocol):
