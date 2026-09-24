@@ -41,11 +41,17 @@ async def authenticate(cfg: dict | None, *, base_url: str) -> AuthContext:
             return AuthContext()
         if kind == "bearer":
             token = os.environ.get(cfg.get("token_env", ""), "")
+            if not token:  # a configured-but-empty token is a broken-creds run, not "no auth" — say so loudly
+                log.warning("bearer token env %r resolved EMPTY — run proceeds UNAUTHENTICATED",
+                            cfg.get("token_env", ""))
             return AuthContext(headers=_bearer(token))
         if kind == "bearer_fetch":
             return AuthContext(headers=_bearer(await _fetch_token(cfg, base_url=base_url)))
         if kind == "login":
-            return AuthContext(login=_login_plan(cfg))
+            plan = _login_plan(cfg)
+            if not (plan["username"] and plan["password"]):
+                log.warning("login creds resolved EMPTY (username_env/password_env) — login will fail")
+            return AuthContext(login=plan)
         log.warning("unknown auth type %r — proceeding unauthenticated", kind)
     except Exception as exc:  # noqa: BLE001 — auth failure must not crash the run; the SUT's 401s will show
         log.warning("authenticate(%s) failed: %s — proceeding unauthenticated", kind, type(exc).__name__)

@@ -17,6 +17,7 @@ from common.monitoring import get_logger
 log = get_logger("exec.openapi")
 
 _METHODS = ("get", "post", "put", "patch", "delete")
+_MAX_SPEC_BYTES = 8 * 1024 * 1024  # cap the (untrusted SUT) OpenAPI spec body read into RAM (OOM guard)
 
 
 async def fetch_spec(spec_url: str, *, base_url: str, headers: dict | None = None) -> dict | None:
@@ -30,14 +31,22 @@ async def fetch_spec(spec_url: str, *, base_url: str, headers: dict | None = Non
         log.warning("spec_url %r is off-site for base_url — refusing to fetch", spec_url)
         return None
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(url, headers=headers or None)
-        resp.raise_for_status()
+        async with httpx.AsyncClient(timeout=30) as client, \
+                client.stream("GET", url, headers=headers or None) as resp:
+            resp.raise_for_status()
+            body = bytearray()
+            async for chunk in resp.aiter_bytes():
+                body += chunk
+                if len(body) > _MAX_SPEC_BYTES:  # a SUT spec is untrusted → cap before it OOMs the 2Gi agent
+                    log.warning("spec %s exceeds %d bytes — skipping grounding", spec_url, _MAX_SPEC_BYTES)
+                    return None
+            text = bytes(body).decode(resp.charset_encoding or "utf-8", errors="replace")
         try:
-            return resp.json()
+            return json.loads(text)
         except ValueError:
             import yaml
-            return yaml.safe_load(resp.text)
+            # ponytail: safe_load blocks code exec but not YAML anchor bombs; the byte cap bounds the input
+            return yaml.safe_load(text)
     except Exception as exc:  # noqa: BLE001 — no spec is a soft failure (ungrounded fallback), never a crash
         log.warning("fetch_spec(%s) failed: %s", spec_url, type(exc).__name__)
         return None
@@ -111,7 +120,13 @@ def conformance_failures(spec: dict, op: dict, *, status: int, body_text: str, c
             import jsonschema
             from jsonschema.validators import Draft7Validator, RefResolver
             body = json.loads(body_text)
-            Draft7Validator(schema, resolver=RefResolver.from_schema(spec)).validate(body)
+
+            def _no_remote(uri):  # SINK-01: a tampered SUT spec must not fetch http(s)/file:// $refs
+                raise RuntimeError(f"remote $ref blocked: {uri}")  # (SSRF / local-file read); #/... refs still work
+
+            resolver = RefResolver.from_schema(spec)
+            resolver.resolve_remote = _no_remote
+            Draft7Validator(schema, resolver=resolver).validate(body)
         except jsonschema.ValidationError as exc:
             fails.append(f"response body does not conform to the declared schema ({exc.message[:120]})")
         except Exception as exc:  # noqa: BLE001 — validator/ref-resolution issue → skip the schema check
