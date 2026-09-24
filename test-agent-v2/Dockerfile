@@ -17,7 +17,7 @@ COPY main.py ./
 # Phase C worker entrypoints: worker.py (Pub/Sub HTTP push) + redis_worker.py (Redis Streams consumer)
 COPY worker.py ./
 COPY redis_worker.py ./
-RUN pip install ".[bridge,gcp,jev]"
+RUN pip install ".[bridge,gcp,jev,exec]"
 
 # BrowserEngine (test_executor UI/E2E). Adds Playwright + chromium (+ its apt libs) — ~400MB shared
 # across every agent image, so it is gated by a build arg (default on; `--build-arg INSTALL_BROWSER=false`

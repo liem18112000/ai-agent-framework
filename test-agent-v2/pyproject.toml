@@ -50,6 +50,10 @@ jev = [
 # so the base install + offline tests never need it — BrowserEngine reports unbound without it. Enabling
 # in the image ALSO requires the chromium binary: `playwright install --with-deps chromium` (Dockerfile).
 browser = ["playwright>=1.40"]
+# The OpenAPI grounding + conformance oracle (test_executor Pillar 3). LAZY-imported in openapi.py, so
+# the base install + offline tests degrade cleanly to ungrounded execution without it; install in the
+# image where Pillar-3 grounding runs (`pip install .[exec]`).
+exec = ["jsonschema>=4", "pyyaml>=6"]
 # The GCP adapter for the CloudProvider port (KGA tiers 5/6/7 — discover/logs/relate). LAZY-imported
 # (like aiplatform), so the base install + offline tests never need these; install only where the gcp
 # adapter runs (deployed image). Enablement is config-presence: a non-empty KGA_GCP_ENV_MATRIX. Azure/AWS = future extras.
