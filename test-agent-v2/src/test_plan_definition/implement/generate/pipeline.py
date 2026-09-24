@@ -19,12 +19,30 @@ from common.testplan.models import (
 )
 from common.testplan.pack import load_plan_pack
 from test_plan_definition.implement.assured import run_assured_scenarios
-from test_plan_definition.implement.generate.scenarios import upload_cases
+from test_plan_definition.implement.generate.scenarios import conformance_cases, upload_cases
 from test_plan_definition.implement.generate.steps import generate_all_steps
 from test_plan_definition.implement.generate.testdata import generate_test_data
 from test_plan_definition.monitoring import get_logger
 
 log = get_logger("implement.generate")
+
+
+
+def _spec_fixture(test_data: list) -> dict:
+    """The target's OpenAPI spec, if the bank carries it as a `TestData(kind="openapi")` fixture whose
+    `spec["openapi_spec"]` holds the parsed document.
+
+    Why a bank fixture and not a fetch: TPD has no VPC egress to the internal systems under test (only the
+    executor does), so an implement-time fetch would silently yield nothing for exactly the targets that
+    matter — and would add an outbound-request surface to the planner. The fixture is populated the same
+    way the upload zip is (seeded, or attached by an earlier step). Returns {} when absent → no
+    conformance scenarios, never an error."""
+    for d in test_data or []:
+        if getattr(d, "kind", "") == "openapi":
+            spec = (getattr(d, "spec", None) or {}).get("openapi_spec")
+            if isinstance(spec, dict) and spec.get("paths"):
+                return spec
+    return {}
 
 
 async def implement_plan(bank, context_id: str, *, run_id: str = "implement", now: str = "",
@@ -70,6 +88,11 @@ async def implement_plan(bank, context_id: str, *, run_id: str = "implement", no
         bank, context_id, plan, plan_pack, test_data, now=now, model=model, guidance=guidance,
         max_rounds=max_rounds)
     for s in upload_scenarios:  # bound upload scenarios are deterministic — appended after the judged loop
+        if not any(x.id == s.id for x in scenarios):
+            scenarios.append(s)
+    # Pillar 3: when the target's OpenAPI spec is available as a bank fixture, generate the conformance
+    # suite FROM the contract (deterministic, zero LLM calls) and append it the same way.
+    for s in conformance_cases(_spec_fixture(test_data), plan, now=now):
         if not any(x.id == s.id for x in scenarios):
             scenarios.append(s)
     if pending:  # loop paused with rounds remaining — persist the partial scenarios, defer the finalize

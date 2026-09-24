@@ -9,6 +9,7 @@ import re
 import zipfile
 
 from common.memory.bank import _slug
+from common.openapi import Operation, parse_operations
 from common.testplan.models import (
     BOUNDARY,
     ERROR,
@@ -136,6 +137,69 @@ def _placeholder_zip_b64() -> str:
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("sample.txt", b"test-fixture")
     return base64.b64encode(buf.getvalue()).decode()
+
+
+# Placeholder ids for the `{param}` segments a conformance probe must fill. A WRONG id is fine here —
+# these cases assert the CONTRACT (what status the spec declares for a missing resource), not the data.
+_UNKNOWN_IDS = {"{id}": "000000000000000000000000", "{document-id}": "000000000000000000000000",
+                "{folder-id}": "000000000000000000000000", "{group-id}": "00000000-0000-0000-0000-000000000000",
+                "{file-name}": "no-such-file.pdf"}
+_READ_ONLY = "GET"     # only safe verbs are auto-generated; a write probe must be authored deliberately
+
+
+def _concrete(op: Operation) -> str:
+    """The operation path with every non-tenant `{param}` filled by a deliberately-unknown id. `{tenant-id}`
+    is LEFT templated — the executor substitutes it per environment (path_vars)."""
+    path = op.path
+    for t in op.path_templates:
+        if t in ("{tenant-id}", "{tenant}"):
+            continue
+        path = path.replace(t, _UNKNOWN_IDS.get(t, "unknown"))
+    return path
+
+
+def conformance_cases(spec: dict, plan: TestPlan, *, now: str = "") -> list[TestScenario]:
+    """Spec-driven OpenAPI conformance scenarios (Pillar 3) — one suite generated FROM the contract.
+
+    Three shapes, all READ-ONLY (GET; a write probe must be authored deliberately, never auto-generated
+    against a live system):
+      * reachable happy path (no id to invent) -> `expect_status=0`, so the SPEC is the oracle: the
+        executor asserts the status is DECLARED and the body matches the declared schema. Deliberately
+        not a guessed 200 — a guess can only re-state what the author already believed.
+      * unknown id + the op declares 404 -> assert that 404. This catches a service that silently
+        succeeds (or 400s) on a missing resource.
+      * unknown id + NO 404 declared -> `expect_status=0` again; conformance then flags any status the
+        spec never declared, which catches the MIRROR defect (the service is right, the spec is stale).
+    Empty when the spec has no GET operations."""
+    out: list[TestScenario] = []
+    for op in parse_operations(spec):
+        if op.method != _READ_ONLY:
+            continue
+        needs_id = [t for t in op.path_templates if t not in ("{tenant-id}", "{tenant}")]
+        declares_404 = "404" in op.declared_statuses
+        sid = f"scenario:{plan.context_id}:conformance:{_slug(op.path)}"
+        if not needs_id:
+            out.append(TestScenario(
+                id=sid, plan_id=plan.id, methodology="api", kind=HAPPY,
+                title=f"GET {op.path} conforms to its OpenAPI contract",
+                description="The spec is the oracle: the response status must be declared and the body "
+                            "must match the declared schema.",
+                rationale="confirms the endpoint honours the contract it publishes",
+                source_refs=plan.source_refs[:1], created_at=now,
+                request={"method": "GET", "path": op.path, "expect_status": 0}))
+        else:
+            out.append(TestScenario(
+                id=f"{sid}:unknown", plan_id=plan.id, methodology="api", kind=NEGATIVE,
+                title=(f"GET {op.path} returns the declared 404 for an unknown id" if declares_404
+                       else f"GET {op.path} returns a DECLARED status for an unknown id"),
+                description=("The spec declares 404 for a missing resource."
+                             if declares_404 else
+                             "No 404 is declared; the status returned must still be one the spec lists."),
+                rationale="confirms the missing-resource path matches the published contract",
+                source_refs=plan.source_refs[:1], created_at=now,
+                request={"method": "GET", "path": _concrete(op),
+                         "expect_status": 404 if declares_404 else 0}))
+    return out
 
 
 def upload_cases(plan: TestPlan, plan_pack: PlanPack, *, now: str = "") -> tuple[list[TestData], list[TestScenario]]:

@@ -6,18 +6,21 @@ heavy dep. Schemathesis-style fuzzing is a future optional extra.
 A spec is fetched once per run from the environment's `spec_url` (e.g. Spring's `/v3/api-docs`),
 same-host-gated like every other request. Best-effort throughout: any parse/validation failure logs
 and degrades (no spec → the LLM falls back to its ungrounded guess; bad schema → no conformance check).
+
+Pure spec READING (Operation, parse_operations, operation_catalog, match_operation) lives in
+`common.openapi` — TPD generates conformance scenarios from the same primitives and the agents must
+never import each other. This module keeps the EXECUTION concerns: fetching and judging.
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 
 from common.monitoring import get_logger
+from common.openapi import Operation, match_operation, operation_catalog, parse_operations
 
 log = get_logger("exec.openapi")
 
-_METHODS = ("get", "post", "put", "patch", "delete")
 _MAX_SPEC_BYTES = 8 * 1024 * 1024  # cap the (untrusted SUT) OpenAPI spec body read into RAM (OOM guard)
 
 
@@ -51,56 +54,6 @@ async def fetch_spec(spec_url: str, *, base_url: str, headers: dict | None = Non
     except Exception as exc:  # noqa: BLE001 — no spec is a soft failure (ungrounded fallback), never a crash
         log.warning("fetch_spec(%s) failed: %s", spec_url, type(exc).__name__)
         return None
-
-
-@dataclass(frozen=True)
-class Operation:
-    """One OpenAPI operation the target exposes — its `METHOD path` identity plus the raw spec `op`
-    object (responses / parameters / requestBody) the conformance oracle reads."""
-
-    method: str
-    path: str
-    summary: str
-    op: dict
-
-
-def parse_operations(spec: dict) -> list[Operation]:
-    """Flatten `spec.paths` → the real `Operation`s the target exposes."""
-    out: list[Operation] = []
-    for path, item in (spec.get("paths") or {}).items():
-        if not isinstance(item, dict):
-            continue
-        for method, op in item.items():
-            if method.lower() in _METHODS and isinstance(op, dict):
-                out.append(Operation(method=method.upper(), path=path,
-                                     summary=op.get("summary") or op.get("operationId") or "", op=op))
-    return out
-
-
-def operation_catalog(ops: list[Operation], *, limit: int = 60) -> str:
-    """A compact `METHOD path — summary` list to ground the LLM's translation on real endpoints."""
-    return "\n".join(f"{o.method} {o.path} — {o.summary}" for o in ops[:limit])
-
-
-def _path_matches(template: str, actual: str) -> bool:
-    """True if a concrete `actual` path matches an OpenAPI `template` (…/{id}/… segments are wildcards)."""
-    t, a = template.strip("/").split("/"), actual.strip("/").split("/")
-    if len(t) != len(a):
-        return False
-    return all(seg.startswith("{") and seg.endswith("}") or seg == a[i] for i, seg in enumerate(t))
-
-
-def match_operation(ops: list[Operation], method: str, path: str) -> Operation | None:
-    """Find the spec operation for a concrete request (exact path first, then a templated match)."""
-    method = method.upper()
-    path = path.split("?", 1)[0]
-    for o in ops:
-        if o.method == method and o.path == path:
-            return o
-    for o in ops:
-        if o.method == method and _path_matches(o.path, path):
-            return o
-    return None
 
 
 def _response_schema(op: Operation, status: int, spec: dict) -> dict | None:
@@ -144,3 +97,9 @@ def conformance_failures(spec: dict, op: Operation, *, status: int, body_text: s
         except Exception as exc:  # noqa: BLE001 — validator/ref-resolution issue → skip the schema check
             log.warning("conformance schema check skipped: %s", type(exc).__name__)
     return fails
+
+
+#: Re-exported from `common.openapi` so `test_executor.oracle` stays the one import site for
+#: everything spec-related on the execution side.
+__all__ = ["Operation", "conformance_failures", "fetch_spec", "match_operation",
+           "operation_catalog", "parse_operations"]
