@@ -356,3 +356,34 @@ async def test_target_labels_the_spec_version_not_the_build(monkeypatch):
     t = run["signals"]["target"]
     assert t["item"] == "luz_docs.war" and t["spec_version"] == "1.0"
     assert "item_version" not in t          # never claim the spec version is the build version
+
+
+async def test_fetch_version_reads_the_build_version(monkeypatch):
+    """Report §1 wants the DEPLOYED build version. Field name varies per service, and an empty value
+    must yield "" so the caller omits it rather than reporting a blank version."""
+    from test_executor.runners.suite import _fetch_version
+    real = httpx.AsyncClient
+
+    def mock(payload):
+        monkeypatch.setattr(httpx, "AsyncClient",
+                            lambda **kw: real(transport=httpx.MockTransport(
+                                lambda r: httpx.Response(200, json=payload))))
+
+    mock({"luz_docs": "0.01.18.00-SNAPSHOT"})          # field auto-detected (first non-empty string)
+    assert await _fetch_version("/api/version", base_url="https://svc") == "0.01.18.00-SNAPSHOT"
+    mock({"a": "", "b": "2.1.0"})                       # skips the empty one
+    assert await _fetch_version("/api/version", base_url="https://svc") == "2.1.0"
+    mock({"x": "1.0", "build": "9.9"})                  # explicit field wins
+    assert await _fetch_version("/api/version", base_url="https://svc", field="build") == "9.9"
+    mock({"luz_docsimport": ""})                        # real case: the import service reports empty
+    assert await _fetch_version("/api/version", base_url="https://svc") == ""
+
+
+async def test_fetch_version_refuses_offsite_and_never_raises(monkeypatch):
+    from test_executor.runners.suite import _fetch_version
+    assert await _fetch_version("https://evil.example/v", base_url="https://svc") == ""   # egress gate
+    real = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient",
+                        lambda **kw: real(transport=httpx.MockTransport(
+                            lambda r: httpx.Response(500, text="boom"))))
+    assert await _fetch_version("/api/version", base_url="https://svc") == ""              # 500 → omit

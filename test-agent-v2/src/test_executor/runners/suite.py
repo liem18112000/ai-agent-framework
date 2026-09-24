@@ -300,6 +300,37 @@ async def _persist_spec(context_id: str, spec: dict, spec_url: str) -> None:
         log.warning("exec: could not cache the OpenAPI spec for %s: %s", context_id, type(exc).__name__)
 
 
+async def _fetch_version(version_url: str, *, base_url: str, headers: dict | None = None,
+                         field: str = "") -> str:
+    """GET the target's version endpoint → the deployed BUILD version, for report §1 (Scope).
+
+    The OpenAPI `info.version` is the contract's version, not the build's, so a report that wants to pin
+    what actually ran needs this. Field name varies per service ({"luz_docs": "0.01.18.00-SNAPSHOT"}), so
+    `version_field` names it; absent, the first non-empty string value is used. Same-host gated like every
+    other call. Returns "" on any failure OR an empty value — the caller then omits the version rather
+    than reporting a wrong or blank one."""
+    import httpx
+
+    from test_executor.runners import _same_site
+    url = str(httpx.URL(base_url).join(version_url))
+    if not _same_site(url, base_url):
+        log.warning("version_url %r is off-site for base_url — refusing to fetch", version_url)
+        return ""
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(url, headers=headers or None)
+        resp.raise_for_status()
+        data = resp.json()
+        if not isinstance(data, dict):
+            return str(data or "").strip()
+        if field:
+            return str(data.get(field) or "").strip()
+        return next((v.strip() for v in data.values() if isinstance(v, str) and v.strip()), "")
+    except Exception as exc:  # noqa: BLE001 — a missing version must not fail the run
+        log.warning("version fetch (%s) failed: %s", version_url, type(exc).__name__)
+        return ""
+
+
 async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[dict] | None = None,
                     base_url: str = "") -> dict:
     """Advance the execution run for a context by ONE chunk; return the run dict (status 'in_progress'
@@ -378,6 +409,13 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
             # a completion report that pins the wrong build version is worse than one that omits it.
             target.update({k: v for k, v in (("item", info.get("title")),
                                              ("spec_version", info.get("version"))) if v})
+    if env_cfg.get("version_url"):
+        # The DEPLOYED build version (report §1) — what actually ran, as opposed to the contract version.
+        build = await _fetch_version(env_cfg["version_url"], base_url=base_url,
+                                     headers=getattr(auth, "headers", None),
+                                     field=env_cfg.get("version_field", ""))
+        if build:
+            target["item_version"] = build
 
     llm_max = int(os.environ.get("EXEC_LLM_MAX", "8"))
     for sc in scenarios[cursor:cursor + _chunk_size()]:
