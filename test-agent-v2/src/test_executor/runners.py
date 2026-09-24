@@ -16,14 +16,30 @@ scenario (no executable binding / no provider); that is recorded honestly, never
 from __future__ import annotations
 
 import contextlib
+import json
 from dataclasses import dataclass, field
-from typing import Protocol, runtime_checkable
+from typing import Protocol
 
 from pydantic import BaseModel
 
 from common.monitoring import get_logger
 
 log = get_logger("exec.runners")
+
+_MAX_RESPONSE_BYTES = 8 * 1024 * 1024  # cap a SUT response body read into RAM (OOM guard on the 2Gi agent)
+
+
+def _same_site(url: str, base_url: str) -> bool:
+    """Per-run egress allow-list: True iff `url` is http(s) on the SAME host as `base_url`. The executor
+    legitimately targets INTERNAL / localhost test envs, so `common.net.host_blocked` (which blocks
+    private/loopback) is the wrong guard here — the run must only reach its own base_url host, which is
+    what blocks metadata / file:// / foreign-host pivots that scenario text could otherwise reach."""
+    import httpx
+    try:
+        u = httpx.URL(url)
+    except Exception:  # noqa: BLE001 — a malformed URL is not same-site
+        return False
+    return u.scheme in ("http", "https") and bool(u.host) and u.host == httpx.URL(base_url).host
 
 #: Test seam — an httpx transport override (MockTransport/ASGITransport) so ApiEngine runs offline.
 _transport = None
@@ -51,7 +67,6 @@ class EngineResult:
         return self.ran and all(o.ok for o in self.outcomes)
 
 
-@runtime_checkable
 class RunnerEngine(Protocol):
     name: str
 
@@ -74,32 +89,47 @@ class ApiEngine:
         import httpx
         method = str(req.get("method", "GET")).upper()
         url = base_url.rstrip("/") + "/" + str(req["path"]).lstrip("/")
+        where = f"{method} {req['path']}"  # host-free: keeps any base_url userinfo/creds out of the ledger + reply
+        if not _same_site(url, base_url):  # egress allow-list — the request must stay on the run's base_url host
+            return EngineResult(self.name, ran=True, outcomes=[StepOutcome(False, f"{where}: blocked off-site target")])
         expect = int(req.get("expect_status", 0))
         outcomes: list[StepOutcome] = []
         try:
-            async with httpx.AsyncClient(timeout=30, transport=_transport) as client:
-                resp = await client.request(method, url, json=req.get("json"))
+            async with httpx.AsyncClient(timeout=30, transport=_transport) as client, \
+                    client.stream(method, url, json=req.get("json")) as resp:
+                declared = resp.headers.get("content-length")
+                if declared and declared.isdigit() and int(declared) > _MAX_RESPONSE_BYTES:
+                    return EngineResult(self.name, ran=True, outcomes=[StepOutcome(
+                        False, f"{where}: response exceeds {_MAX_RESPONSE_BYTES} bytes")])
+                body = bytearray()
+                async for chunk in resp.aiter_bytes():
+                    body += chunk
+                    if len(body) > _MAX_RESPONSE_BYTES:  # cap before the body OOMs the 2Gi container
+                        return EngineResult(self.name, ran=True, outcomes=[StepOutcome(
+                            False, f"{where}: response exceeds {_MAX_RESPONSE_BYTES} bytes")])
+                text = bytes(body).decode(resp.charset_encoding or "utf-8", errors="replace")
+                status, ctype = resp.status_code, resp.headers.get("content-type", "")
         except Exception as exc:  # noqa: BLE001 — a transport failure is a real (Environment) failure to triage
+            log.warning("exec api %s failed: %s", where, exc)  # full detail server-side only
             return EngineResult(self.name, ran=True,
-                                outcomes=[StepOutcome(False, f"{method} {url}: request failed ({exc})")])
+                                outcomes=[StepOutcome(False, f"{where}: request failed ({type(exc).__name__})")])
         # status conformance: an explicit expect wins; else any non-5xx is acceptable
-        ok_status = (resp.status_code == expect) if expect else (resp.status_code < 500)
+        ok_status = (status == expect) if expect else (status < 500)
         outcomes.append(StepOutcome(ok_status,
-                        "" if ok_status else f"{method} {url}: status {resp.status_code} (expected {expect or '<500'})"))
+                        "" if ok_status else f"{where}: status {status} (expected {expect or '<500'})"))
         # content conformance: a JSON content-type must parse
-        if "json" in resp.headers.get("content-type", ""):
+        if "json" in ctype:
             try:
-                resp.json()
+                json.loads(text)
             except ValueError:
-                outcomes.append(StepOutcome(False, f"{method} {url}: malformed JSON body"))
+                outcomes.append(StepOutcome(False, f"{where}: malformed JSON body"))
         # oracle: the expected end-state must appear in the response (the scenario's `Then`)
         want = str(req.get("expect_contains", ""))
-        if want and want not in resp.text:
-            outcomes.append(StepOutcome(False, f"{method} {url}: response missing expected {want!r}"))
+        if want and want not in text:
+            outcomes.append(StepOutcome(False, f"{where}: response missing expected {want!r}"))
         return EngineResult(self.name, ran=True, outcomes=outcomes)
 
 
-@runtime_checkable
 class BrowserDriver(Protocol):
     """The browser BrowserEngine drives — one Protocol so the real Playwright driver and the offline
     test fake are interchangeable (the browser twin of ApiEngine's `_transport` seam)."""
@@ -131,13 +161,12 @@ class PlaywrightDriver:
         await (await self._ensure()).goto(url)
 
     async def act(self, action: str, selector: str = "", value: str = "") -> None:
+        # Navigation is NOT an `act` — it flows through `goto()` so BrowserEngine's egress allow-list gates it.
         page = await self._ensure()
         if action == "click":
             await page.click(selector)
         elif action == "fill":
             await page.fill(selector, value)
-        elif action == "goto":
-            await page.goto(value or selector)
 
     async def text(self) -> str:
         return await (await self._ensure()).inner_text("body")
@@ -179,11 +208,20 @@ class BrowserEngine:
         if driver is None:
             return EngineResult(self.name, ran=False,
                                 note="browser engine needs Playwright (pip install playwright && playwright install chromium)")
+        import httpx
         outcomes: list[StepOutcome] = []
         try:
             await driver.goto(base_url.rstrip("/") + "/" + str(plan.get("url_path", "")).lstrip("/"))
             for step in plan.get("steps", []):
-                await driver.act(step.get("action", ""), step.get("selector", ""), step.get("value", ""))
+                action = step.get("action", "")
+                if action == "goto":  # a nav step's target is untrusted scenario text — pin it to base_url's host
+                    target = str(httpx.URL(base_url).join(step.get("value", "")))
+                    if not _same_site(target, base_url):
+                        outcomes.append(StepOutcome(False, f"blocked off-site navigation to {step.get('value', '')!r}"))
+                        continue
+                    await driver.goto(target)
+                else:
+                    await driver.act(action, step.get("selector", ""), step.get("value", ""))
             want = str(plan.get("expect_text", ""))
             ok = (want in await driver.text()) if want else True
             outcomes.append(StepOutcome(ok, "" if ok else f"page missing expected text {want!r}"))

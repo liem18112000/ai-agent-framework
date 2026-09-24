@@ -151,6 +151,25 @@ async def test_browser_engine_runs_plan(monkeypatch):
     assert ("goto", "http://svc/login") in driver.actions and ("close",) in driver.actions
 
 
+async def test_browser_engine_blocks_offsite_goto_step(monkeypatch):
+    """EXEC-01: a nav step to a foreign host (scenario-controlled) is refused, never reaches the driver."""
+    driver = _FakeDriver()
+    monkeypatch.setattr(runners, "_browser_driver", driver)
+    plan = {"url_path": "/", "steps": [{"action": "goto", "value": "http://169.254.169.254/latest"}]}
+    res = await runners.BrowserEngine().run({"methodology": "ui", "browser": plan}, base_url="http://svc")
+    assert ("goto", "http://169.254.169.254/latest") not in driver.actions   # never navigated off-site
+    assert any("blocked off-site" in o.message for o in res.outcomes)
+
+
+async def test_browser_engine_allows_samesite_goto_step(monkeypatch):
+    """EXEC-01: a same-host (relative) nav step resolves against base_url and is allowed."""
+    driver = _FakeDriver()
+    monkeypatch.setattr(runners, "_browser_driver", driver)
+    plan = {"url_path": "/", "steps": [{"action": "goto", "value": "/dashboard"}]}
+    await runners.BrowserEngine().run({"methodology": "ui", "browser": plan}, base_url="http://svc")
+    assert ("goto", "http://svc/dashboard") in driver.actions
+
+
 async def test_browser_engine_expect_text_fail(monkeypatch):
     monkeypatch.setattr(runners, "_browser_driver", _FakeDriver(body="error page"))
     res = await runners.BrowserEngine().run({"browser": {"url_path": "/x", "expect_text": "success"}},
