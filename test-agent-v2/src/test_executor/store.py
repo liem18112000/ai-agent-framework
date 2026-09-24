@@ -115,13 +115,24 @@ class ExecStore:
         return eid
 
     async def start_run(self, context_id: str, environment_id: str | None) -> str:
+        """Open a fresh run — but only if the context has no `in_progress` run (one active run per
+        context). Two concurrent fresh starts would otherwise leave a second, orphaned in_progress row;
+        the conditional insert converges them onto one. (The per-chunk cursor still assumes the
+        documented sequential-poll contract — one poll in flight at a time — so a run advances once.)"""
         from sqlalchemy import text
         await self._ensure()
         rid = new_id()
         sql = text("INSERT INTO exec_run (id,context_id,environment_id,status) "
-                   "VALUES (:id,:context_id,:environment_id,'in_progress')")
+                   "SELECT :id,:context_id,:environment_id,'in_progress' "
+                   "WHERE NOT EXISTS (SELECT 1 FROM exec_run WHERE context_id=:context_id "
+                   "AND status='in_progress')")
         async with self._engine.begin() as conn:
-            await conn.execute(sql, {"id": rid, "context_id": context_id, "environment_id": environment_id})
+            inserted = (await conn.execute(sql, {"id": rid, "context_id": context_id,
+                                                 "environment_id": environment_id})).rowcount
+        if not inserted:  # a run is already active for this context → reuse it, never double-start
+            existing = await self.get_run(context_id=context_id)
+            if existing and existing.get("status") == "in_progress":
+                return existing["id"]
         return rid
 
     async def save_progress(self, run_id: str, *, summary: dict, signals: dict) -> None:
@@ -199,6 +210,10 @@ class InMemoryExecStore:
         return eid
 
     async def start_run(self, context_id, environment_id) -> str:
+        active = next((r for r in self._runs.values()
+                       if r["context_id"] == context_id and r["status"] == "in_progress"), None)
+        if active is not None:  # one active run per context (parity with ExecStore)
+            return active["id"]
         rid = new_id()
         self._runs[rid] = {"id": rid, "context_id": context_id, "environment_id": environment_id,
                            "status": "in_progress", "summary": {}, "signals": {}, "triage": [],
