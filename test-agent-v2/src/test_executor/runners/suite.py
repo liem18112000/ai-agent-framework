@@ -213,6 +213,42 @@ async def _resolve_upload_refs(scenarios: list[dict], context_id: str) -> None:
         up.setdefault("content_type", spec.get("content_type"))
 
 
+async def _persist_spec(context_id: str, spec: dict, spec_url: str) -> None:
+    """Write the freshly-fetched OpenAPI spec back to the bank as a `TestData(kind="openapi")` fixture,
+    so the NEXT `implement_plan` can generate conformance scenarios from the real contract.
+
+    This closes the handoff: the executor is the only side with network reach to an internal system under
+    test, and TPD is the side that needs the spec at planning time. Idempotent — rewrites only when the
+    document actually changed, so the per-chunk poll of a long run does not re-upload it every time.
+    Best-effort: any bank failure logs and is ignored (a run must never fail because a cache write did)."""
+    from common.testplan.models import TestData
+
+    def _write() -> str:
+        from common.memory.factory import build_bank
+        from common.testplan.memory.writers import read_test_data, write_test_data
+        bank = build_bank()
+        existing = read_test_data(bank, context_id)
+        fid = f"test-data:{context_id}:openapi"
+        current = next((d for d in existing if d.id == fid), None)
+        if current is not None and (current.spec or {}).get("openapi_spec") == spec:
+            return "unchanged"
+        fixture = TestData(id=fid, kind="openapi",
+                           spec={"openapi_spec": spec, "spec_url": spec_url,
+                                 "purpose": "captured from the live target by the executor; the source "
+                                            "for implement_plan's OpenAPI conformance scenarios"})
+        merged = [d for d in existing if d.id != fid] + [fixture]
+        write_test_data(bank, context_id, merged)
+        return "written"
+
+    try:
+        outcome = await asyncio.to_thread(_write)
+        if outcome == "written":
+            log.info("exec: cached the OpenAPI spec for %s (%d paths) — implement_plan can now generate "
+                     "conformance scenarios", context_id, len(spec.get("paths") or {}))
+    except Exception as exc:  # noqa: BLE001 — a cache write must never fail the run
+        log.warning("exec: could not cache the OpenAPI spec for %s: %s", context_id, type(exc).__name__)
+
+
 async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[dict] | None = None,
                     base_url: str = "") -> dict:
     """Advance the execution run for a context by ONE chunk; return the run dict (status 'in_progress'
@@ -279,6 +315,7 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
         raw_spec = await fetch_spec(env_cfg["spec_url"], base_url=base_url, headers=getattr(auth, "headers", None))
         if raw_spec:
             spec_ctx = {"spec": raw_spec, "ops": parse_operations(raw_spec)}
+            await _persist_spec(context_id, raw_spec, env_cfg["spec_url"])
 
     llm_max = int(os.environ.get("EXEC_LLM_MAX", "8"))
     for sc in scenarios[cursor:cursor + _chunk_size()]:

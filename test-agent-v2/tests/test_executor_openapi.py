@@ -139,3 +139,54 @@ async def test_api_engine_substitutes_path_vars(monkeypatch):
         base_url="https://svc", path_vars={"tenant-id": "T7"})
     assert res.ran and res.passed
     assert seen["url"] == "https://svc/api/T7/documents"    # {tenant-id} resolved from the env's path_vars
+
+
+# --- the executor -> TPD spec handoff -------------------------------------------------------------
+async def test_persist_spec_caches_the_fixture_for_implement(monkeypatch):
+    """The executor is the only side that can reach an internal spec; TPD needs it at planning time."""
+    from common.memory import MemoryBank
+    from common.store.memory import InMemoryObjectStore
+    from common.testplan.memory.writers import read_test_data
+    from test_executor.runners import suite as R
+
+    bank = MemoryBank(InMemoryObjectStore())
+    monkeypatch.setattr("common.memory.factory.build_bank", lambda: bank)
+    await R._persist_spec("CTX", _SPEC, "/api/openapi")
+
+    td = read_test_data(bank, "CTX")
+    fx = next(d for d in td if d.kind == "openapi")
+    assert fx.spec["openapi_spec"] == _SPEC and fx.spec["spec_url"] == "/api/openapi"
+    # and TPD's pipeline reads exactly this shape back
+    from test_plan_definition.implement.generate.pipeline import _spec_fixture
+    assert _spec_fixture(td) == _SPEC
+
+
+async def test_persist_spec_preserves_other_fixtures_and_is_idempotent(monkeypatch):
+    from common.memory import MemoryBank
+    from common.store.memory import InMemoryObjectStore
+    from common.testplan.memory.writers import read_test_data, write_test_data
+    from common.testplan.models import TestData
+    from test_executor.runners import suite as R
+
+    bank = MemoryBank(InMemoryObjectStore())
+    monkeypatch.setattr("common.memory.factory.build_bank", lambda: bank)
+    write_test_data(bank, "CTX", [TestData(id="keep", kind="file", spec={"b64": "x"})])
+
+    writes = []
+    real = write_test_data
+    monkeypatch.setattr("common.testplan.memory.writers.write_test_data",
+                        lambda b, c, d: (writes.append(len(d)), real(b, c, d))[1])
+    await R._persist_spec("CTX", _SPEC, "/api/openapi")
+    await R._persist_spec("CTX", _SPEC, "/api/openapi")     # unchanged → must NOT rewrite
+
+    assert writes == [2]                                     # one write, carrying BOTH fixtures
+    assert {d.id for d in read_test_data(bank, "CTX")} == {"keep", "test-data:CTX:openapi"}
+
+
+async def test_persist_spec_never_fails_the_run(monkeypatch):
+    from test_executor.runners import suite as R
+
+    def boom():
+        raise RuntimeError("bank down")
+    monkeypatch.setattr("common.memory.factory.build_bank", boom)
+    await R._persist_spec("CTX", _SPEC, "/api/openapi")      # logs + returns; no raise
