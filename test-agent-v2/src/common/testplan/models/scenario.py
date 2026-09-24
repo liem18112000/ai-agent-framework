@@ -62,6 +62,10 @@ class TestScenario:
     data_refs: list[str] = field(default_factory=list)
     source_refs: list[str] = field(default_factory=list)
     created_at: str = ""
+    # An optional BOUND executable request (method/path/json/upload/expect_*). When set, the executor
+    # runs it directly on the ApiEngine (no LLM translation) — the vehicle for file-upload tests, where
+    # `upload.data_ref` names a TestData fixture holding the file. Absent → a natural-language scenario.
+    request: dict | None = None
 
 
 @dataclass

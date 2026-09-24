@@ -96,3 +96,22 @@ async def test_api_engine_multipart_upload(monkeypatch, tmp_path):
     assert res.ran and res.passed
     assert seen["ctype"].startswith("multipart/form-data")
     assert b"zipbytes" in seen["body"] and b"t.zip" in seen["body"]
+
+
+async def test_resolve_upload_refs_injects_bank_bytes(monkeypatch):
+    # a bound upload scenario referencing a bank TestData → run_suite injects the fixture bytes
+    import base64
+
+    from common.testplan.models.scenario import TestData
+    from test_executor import runner as R
+    td = TestData(id="zip1", kind="file",
+                  spec={"filename": "a.zip", "content_type": "application/zip",
+                        "b64": base64.b64encode(b"PKzipbytes").decode()})
+    monkeypatch.setattr("common.memory.factory.build_bank", lambda: object())
+    monkeypatch.setattr("common.testplan.memory.writers.read_test_data", lambda bank, ctx: [td])
+    scen = [{"request": {"method": "POST", "path": "/upload",
+                         "upload": {"field": "file", "data_ref": "zip1"}}}]
+    await R._resolve_upload_refs(scen, "ctx")
+    up = scen[0]["request"]["upload"]
+    assert up["content"] == b"PKzipbytes"
+    assert up["filename"] == "a.zip" and up["content_type"] == "application/zip"

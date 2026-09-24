@@ -327,16 +327,21 @@ def _request_from_plan(plan: dict) -> dict:
 
 def _send_kwargs(req: dict) -> dict:
     """The httpx body kwargs for a request: a multipart file upload when the scenario supplies an
-    `upload` ({field, path, filename?, content_type?, data?}), else a JSON body. The file is read into
-    memory (ponytail: fine for test fixtures like an import zip; stream it if a huge upload is ever needed).
-    A missing file raises here and is caught by the caller as a real request failure."""
+    `upload` ({field, content?|path?, filename?, content_type?, data?}), else a JSON body. The bytes
+    come from `content` (resolved from a bank TestData fixture by run_suite) or a local `path` (read into
+    memory; fine for test-fixture zips, stream if a huge upload is ever needed). A missing file raises
+    here and is caught by the caller as a real request failure."""
     up = req.get("upload")
-    if isinstance(up, dict) and up.get("path"):
+    if isinstance(up, dict) and (up.get("content") is not None or up.get("path")):
         import os
-        with open(up["path"], "rb") as fh:
-            content = fh.read()
-        files = {up.get("field", "file"): (up.get("filename") or os.path.basename(up["path"]),
-                                           content, up.get("content_type") or "application/octet-stream")}
+        content = up.get("content")
+        name = up.get("filename")
+        if content is None:                                   # local file path (offline/CLI use)
+            with open(up["path"], "rb") as fh:
+                content = fh.read()
+            name = name or os.path.basename(up["path"])
+        files = {up.get("field", "file"): (name or "upload.bin", content,
+                                           up.get("content_type") or "application/octet-stream")}
         return {"files": files, "data": up.get("data") or None}   # extra form fields alongside the file
     return {"json": req.get("json")}
 

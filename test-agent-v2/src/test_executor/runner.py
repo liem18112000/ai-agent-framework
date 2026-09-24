@@ -121,6 +121,41 @@ def _chunk_size() -> int:
         return _CHUNK_DEFAULT
 
 
+async def _resolve_upload_refs(scenarios: list[dict], context_id: str) -> None:
+    """Inject bank fixture bytes into bound file-upload scenarios: for each scenario whose
+    `request.upload` names a `data_ref`, load that TestData from the bank and set `upload.content` from
+    its base64 payload (TestData.spec = {filename, content_type, b64}). This is what lets a file-upload
+    test live in the bank — the model can't carry raw bytes, so it references a fixture by id. No-op when
+    nothing references a fixture. Blocking bank I/O runs off the event loop. A missing fixture leaves the
+    upload unresolved → the engine reports a real failure rather than crashing the run."""
+    need = [s for s in scenarios
+            if isinstance(s.get("request"), dict)
+            and isinstance(s["request"].get("upload"), dict)
+            and s["request"]["upload"].get("data_ref") and s["request"]["upload"].get("content") is None]
+    if not need:
+        return
+    import base64
+    from asyncio import to_thread
+
+    def _load() -> dict:
+        from common.memory.factory import build_bank
+        from common.testplan.memory.writers import read_test_data
+        return {d.id: d for d in read_test_data(build_bank(), context_id)}
+
+    try:
+        by_id = await to_thread(_load)
+    except Exception as exc:  # noqa: BLE001 — a missing/broken bank leaves uploads unresolved, never crashes
+        log.warning("exec: could not load test-data for uploads: %s", type(exc).__name__)
+        return
+    for s in need:
+        up = s["request"]["upload"]
+        spec = getattr(by_id.get(up["data_ref"]), "spec", {}) or {}
+        if spec.get("b64"):
+            up["content"] = base64.b64decode(spec["b64"])
+            up.setdefault("filename", spec.get("filename"))
+            up.setdefault("content_type", spec.get("content_type"))
+
+
 async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[dict] | None = None,
                     base_url: str = "") -> dict:
     """Advance the execution run for a context by ONE chunk; return the run dict (status 'in_progress'
@@ -153,6 +188,7 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
 
     if scenarios is None:
         scenarios = await load_scenarios(context_id)
+    await _resolve_upload_refs(scenarios, context_id)   # inject bank fixture bytes into bound file uploads
     total = len(scenarios)
 
     latest = await store.get_run(context_id=context_id)
