@@ -272,10 +272,11 @@ class RequestPlan(BaseModel):
 _TRANSLATE_SYSTEM = (
     "You translate ONE test scenario into a single executable HTTP request against a REST API. "
     "Given the scenario's title, description and preconditions, output the request that exercises it: "
-    "the HTTP method, a path relative to the base URL (leading '/'), an optional JSON body, the "
-    "expected HTTP status, and a short substring the response body must contain to prove the scenario's "
-    "expected end-state (its Gherkin 'Then'). Output only the structured fields. If you cannot infer a "
-    "concrete request, return an empty path."
+    "the HTTP method, a path relative to the base URL (leading '/'), an optional JSON body, and the "
+    "expected HTTP status. Set expect_contains ONLY when the scenario itself states a concrete value the "
+    "response must contain (its Gherkin 'Then'); if the scenario names no expected content, leave it "
+    "EMPTY — do not invent a substring, or you assert something the endpoint never promised. Output only "
+    "the structured fields. If you cannot infer a concrete request, return an empty path."
 )
 
 
