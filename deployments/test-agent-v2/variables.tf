@@ -300,8 +300,18 @@ variable "exec_runner" {
 }
 variable "exec_base_url" {
   type        = string
-  description = "Target system base URL the executor runs scenarios against (EXEC_BASE_URL). Empty = none."
+  description = "Single-target base URL the executor runs scenarios against (EXEC_BASE_URL). Empty = none."
   default     = ""
+}
+variable "exec_environments" {
+  type        = string
+  description = "Multi-env registry JSON for the executor (EXEC_ENVIRONMENTS): {name:{base_url,auth}}. Empty = none."
+  default     = ""
+}
+variable "exec_secret_env" {
+  type        = map(string)
+  description = "Per-env auth secrets for the executor: env-var NAME -> Secret Manager secret_id (the names token_env/username_env/password_env reference in EXEC_ENVIRONMENTS). Empty = no auth secrets."
+  default     = {}
 }
 variable "deploy_admin" {
   type        = bool

@@ -329,6 +329,9 @@ module "exec" {
   max_instances         = 1
   cloudsql_instance     = local.cloudsql_connection_name
   allow_unauthenticated = var.bridge_allow_unauthenticated
+  # Slice B: put the executor on the VPC connector (reuses the Redis one) so it can egress to internal
+  # test targets (e.g. the GKE api-forwarder) — the only agent that dials real systems under test.
+  vpc_connector = var.deploy_redis ? google_vpc_access_connector.redis[0].id : ""
 
   containers = [
     {
@@ -360,10 +363,15 @@ module "exec" {
           { name = "VERTEX_LOCATION", value = var.vertex_region },
           { name = "VERTEX_MODEL", value = var.vertex_model },
           { name = "A2A_BEARER_TOKEN", secret = google_secret_manager_secret.a2a_bearer.secret_id },
-          # Real execution: `auto` routes scenarios to the engines; EXEC_BASE_URL is the target system.
+          # Real execution: `auto` routes scenarios to the engines; EXEC_BASE_URL is the single-target
+          # shortcut, EXEC_ENVIRONMENTS the multi-env registry ({name:{base_url,auth}}, §4/slice B).
           { name = "EXEC_RUNNER", value = var.exec_runner },
           { name = "EXEC_BASE_URL", value = var.exec_base_url },
+          { name = "EXEC_ENVIRONMENTS", value = var.exec_environments },
         ],
+        # Per-env auth secrets: each entry injects env var NAME (referenced by token_env/username_env/
+        # password_env in EXEC_ENVIRONMENTS) from a Secret Manager secret_id. Inert when the map is empty.
+        [for k, v in var.exec_secret_env : { name = k, secret = v }],
         local.decision_env, # JEV triage cascade — inert unless tpd_decision_backend set (default OFF)
       )
     },
