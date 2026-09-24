@@ -387,3 +387,17 @@ async def test_fetch_version_refuses_offsite_and_never_raises(monkeypatch):
                         lambda **kw: real(transport=httpx.MockTransport(
                             lambda r: httpx.Response(500, text="boom"))))
     assert await _fetch_version("/api/version", base_url="https://svc") == ""              # 500 → omit
+
+
+def test_render_run_shows_the_ac_coverage_matrix_with_gaps():
+    from test_executor.ops import render_run
+    out = render_run({
+        "id": "r", "status": "done", "summary": {"passed": 1},
+        "signals": {"total": 1, "results": [], "ac_coverage": {
+            "total": 3, "covered": 1, "gaps": 2,
+            "rows": [{"id": "s#AC-1", "text": "transfer accepted", "status": "passed", "scenarios": ["a"]},
+                     {"id": "s#AC-2", "text": "folders recreated", "status": "gap", "scenarios": []},
+                     {"id": "s#AC-3", "text": "metadata paired", "status": "gap", "scenarios": []}]}}})
+    assert "AC coverage: 1/3 covered, 2 GAP(s)" in out
+    assert "[PASS] s#AC-1" in out and "[GAP ] s#AC-2" in out
+    assert "'rows':" not in out          # the matrix is a table, never a raw k=v blob

@@ -14,6 +14,7 @@ def render_run(run: dict | None) -> str:
         lines.append("  summary: " + ", ".join(f"{k}={v}" for k, v in summary.items()))
     signals = dict(run.get("signals") or {})
     results = signals.pop("results", None) or []      # rendered as rows below, not as a k=v blob
+    cov = signals.pop("ac_coverage", None) or {}      # ditto — popped BEFORE the signals line renders
     target = signals.pop("target", None) or {}
     if target:                                        # report §1 Scope — the tested item + where it ran
         lines.append("  target: " + ", ".join(f"{k}={v}" for k, v in target.items() if v))
@@ -32,6 +33,12 @@ def render_run(run: dict | None) -> str:
                                           f"{r.get('duration_ms')}ms") if x)
             lines.append(f"{head}  ({meta})")
             lines += [f"        ! {m}" for m in (r.get("messages") or [])]
+    if cov:                                           # report §5 — the coverage matrix, GAPs and all
+        lines.append(f"  AC coverage: {cov.get('covered')}/{cov.get('total')} covered, "
+                     f"{cov.get('gaps')} GAP(s)")
+        for r in cov.get("rows", []):
+            mark = {"passed": "PASS", "failed": "FAIL", "gap": "GAP ", "unproven": "????"}.get(r["status"], "?")
+            lines.append(f"    [{mark}] {r['id']}  {r['text'][:72]}")
     triage = run.get("triage") or []
     if triage:
         lines.append("  triage:")

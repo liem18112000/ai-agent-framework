@@ -300,6 +300,41 @@ async def _persist_spec(context_id: str, spec: dict, spec_url: str) -> None:
         log.warning("exec: could not cache the OpenAPI spec for %s: %s", context_id, type(exc).__name__)
 
 
+async def _ac_coverage(context_id: str, results: list) -> dict:
+    """The report's coverage matrix, computed from the story's acceptance criteria and this run's rows.
+
+    Criteria come from the gathered story note in the bank (the plan's scope names it). A scenario covers
+    a criterion by citing its id in `source_refs`, so this is only meaningful once generators emit per-AC
+    refs — but it is computed either way, because a run with 0 covered criteria and N gaps is exactly the
+    finding a completion report must not omit. {} when no criteria are found (coverage NOT assessable,
+    which is different from 'all covered'). Best-effort: any bank failure logs and yields {}."""
+    from common.testplan.acceptance import coverage_matrix, parse_acceptance_criteria
+
+    def _load() -> list:
+        from common.memory.factory import build_bank
+        from common.testplan.memory.writers import read_plan
+        bank = build_bank()
+        plan = read_plan(bank, context_id)
+        stories = [s for s in ((plan.scope if plan else []) or []) if str(s).startswith("jira:")]
+        acs: list = []
+        for story in stories:
+            note = bank.read_note_md(story, "jira-issue") or ""
+            acs += parse_acceptance_criteria(note, story=story)
+        return acs
+
+    try:
+        criteria = await asyncio.to_thread(_load)
+    except Exception as exc:  # noqa: BLE001 — coverage is reporting metadata, never a reason to fail a run
+        log.warning("exec: acceptance criteria unavailable for %s: %s", context_id, type(exc).__name__)
+        return {}
+    if not criteria:
+        return {}
+    m = coverage_matrix(criteria, [r.as_dict() if hasattr(r, "as_dict") else r for r in results])
+    log.info("exec: AC coverage for %s — %d/%d covered, %d gap(s)",
+             context_id, m["covered"], m["total"], m["gaps"])
+    return m
+
+
 async def _fetch_version(version_url: str, *, base_url: str, headers: dict | None = None,
                          field: str = "") -> str:
     """GET the target's version endpoint → the deployed BUILD version, for report §1 (Scope).
@@ -471,11 +506,12 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
                                            "target": target})
         return await store.get_run(run_id=run_id) or {"id": run_id, "status": "in_progress"}
 
+    coverage = await _ac_coverage(context_id, results)         # the report's AC matrix (gaps included)
     verdicts = await asyncio.to_thread(triage, failures)       # JEV cascade is sync/blocking — off-loop
     await store.finish_run(run_id, status="done", summary=summ.as_dict(),
                            signals={"failures": [f.as_dict() for f in failures], "total": total,
                                     "results": [r.as_dict() for r in results],
-                                    "target": target},
+                                    "target": target, "ac_coverage": coverage},
                            triage=[v.as_dict() for v in verdicts])
     return await store.get_run(run_id=run_id) or {"id": run_id, "status": "done"}
 
