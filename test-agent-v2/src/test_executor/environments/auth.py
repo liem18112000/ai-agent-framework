@@ -93,9 +93,28 @@ async def _fetch_token(cfg: dict, *, base_url: str) -> str:
         import json
         with contextlib.suppress(ValueError):
             json_body = json.loads(os.environ.get(cfg["body_env"], "") or "null")
+    # Some token endpoints are themselves protected (the Luz security service wants HTTP Basic before it
+    # will mint a bearer). `basic_env` names the env var holding the credential — a SECRET, so it is an
+    # env-var ref like every other, never inline in EXEC_ENVIRONMENTS. Accepts either already-base64
+    # ("dXNlcjpwYXNz") or plain "user:pass", which is encoded here.
+    headers = {}
+    if cfg.get("basic_env"):
+        import base64
+        import binascii
+        import contextlib
+        cred = os.environ.get(cfg["basic_env"], "").strip()
+        if cred:
+            if ":" in cred:                       # plain user:pass → encode
+                cred = base64.b64encode(cred.encode()).decode()
+            else:                                 # assume pre-encoded; validate so a typo fails loudly
+                with contextlib.suppress(binascii.Error, ValueError):
+                    base64.b64decode(cred, validate=True)
+            headers["Authorization"] = f"Basic {cred}"
+        else:
+            log.warning("basic_env %r resolved EMPTY — the token fetch will likely 401", cfg["basic_env"])
     method = str(cfg.get("token_method", "POST")).upper()
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.request(method, url, json=json_body)
+        resp = await client.request(method, url, json=json_body, headers=headers or None)
     resp.raise_for_status()
     data = resp.json()
     field_name = cfg.get("token_field", "access_token")

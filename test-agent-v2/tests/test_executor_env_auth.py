@@ -97,3 +97,44 @@ async def test_run_suite_resolves_env_base_url(monkeypatch):
     assert seen["auth"] == "Bearer tok"                    # and the env's bearer auth was applied
     envs = await store.list_environments("CTX")
     assert envs[0]["base_url"] == "https://dev.svc" and envs[0]["creds_ref"] == "bearer"
+
+
+async def test_bearer_fetch_sends_basic_auth_from_env(monkeypatch):
+    """A protected token endpoint (the Luz security service wants HTTP Basic before minting a bearer):
+    `basic_env` names the env var holding the credential — never inline in EXEC_ENVIRONMENTS."""
+    import httpx
+
+    from test_executor.environments.auth import authenticate
+    seen = {}
+
+    def handler(r: httpx.Request) -> httpx.Response:
+        seen["auth"] = r.headers.get("authorization", "")
+        return httpx.Response(200, json={"token": "T-123"})
+
+    real = httpx.AsyncClient   # capture BEFORE patching, else the factory recurses into itself
+    monkeypatch.setattr(httpx, "AsyncClient",
+                        lambda **kw: real(transport=httpx.MockTransport(handler)))
+    monkeypatch.setenv("LUZ_BASIC", "user:pass")     # plain → base64-encoded by the helper
+    ctx = await authenticate({"type": "bearer_fetch", "token_url": "/tok", "token_field": "token",
+                              "basic_env": "LUZ_BASIC"}, base_url="https://svc")
+    assert seen["auth"] == "Basic dXNlcjpwYXNz"      # b64("user:pass")
+    assert ctx.headers.get("Authorization") == "Bearer T-123"
+
+
+async def test_bearer_fetch_passes_preencoded_basic(monkeypatch):
+    import httpx
+
+    from test_executor.environments.auth import authenticate
+    seen = {}
+
+    def handler(r: httpx.Request) -> httpx.Response:
+        seen["auth"] = r.headers.get("authorization", "")
+        return httpx.Response(200, json={"token": "T"})
+
+    real = httpx.AsyncClient   # capture BEFORE patching, else the factory recurses into itself
+    monkeypatch.setattr(httpx, "AsyncClient",
+                        lambda **kw: real(transport=httpx.MockTransport(handler)))
+    monkeypatch.setenv("LUZ_BASIC", "dXNlcjpwYXNz")  # already base64 → passed through unchanged
+    await authenticate({"type": "bearer_fetch", "token_url": "/tok", "token_field": "token",
+                        "basic_env": "LUZ_BASIC"}, base_url="https://svc")
+    assert seen["auth"] == "Basic dXNlcjpwYXNz"
