@@ -1,21 +1,16 @@
-"""The per-environment run ledger — two tables on the SHARED Cloud SQL engine (common.db.get_engine).
+"""Postgres-backed run ledger — two tables (`exec_environment`, `exec_run`) on the SHARED Cloud SQL
+engine (common.db.get_engine). Design ref: RESEARCH-test-executor-agent.md §4.
 
-Design ref: RESEARCH-test-executor-agent.md §4. We do NOT invent a datastore: this reuses the one async
-engine that already backs the A2A task store + ADK sessions + pgvector, adding exactly two tables
-(`exec_environment`, `exec_run`) via the repo's raw `text()` + `CREATE TABLE IF NOT EXISTS` idiom
-(mirrors common/memory/pg/store.py). When no DB is configured (local/offline, `get_engine()` is None) we
-fall back to an in-memory ledger so the agent still runs end-to-end in docker-compose-local and tests.
+We do NOT invent a datastore: this reuses the one async engine that already backs the A2A task store +
+ADK sessions + pgvector, adding exactly two tables via the repo's raw `text()` + `CREATE TABLE IF NOT
+EXISTS` idiom (mirrors common/memory/pg/store.py).
 """
 
 from __future__ import annotations
 
 import json
-import uuid
-from datetime import UTC, datetime
 
-from common.monitoring import get_logger
-
-log = get_logger("exec.store")
+from test_executor.store.ids import _j, env_id, new_id
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS exec_environment (
@@ -46,28 +41,6 @@ CREATE TABLE IF NOT EXISTS exec_run (
 );
 CREATE INDEX IF NOT EXISTS exec_run_ctx ON exec_run (context_id);
 """
-
-
-def new_id() -> str:
-    return uuid.uuid4().hex[:12]
-
-
-def env_id(context_id: str, name: str) -> str:
-    return f"{context_id}:{name}"
-
-
-def _now() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-def _j(v):
-    """asyncpg hands back jsonb as a str for raw text() queries — decode it; pass through dict/list/None."""
-    if isinstance(v, str):
-        try:
-            return json.loads(v)
-        except ValueError:
-            return v
-    return v
 
 
 class ExecStore:
@@ -190,70 +163,3 @@ def _row_env(r) -> dict:
     d = dict(r)
     d["health"] = _j(d.get("health"))
     return d
-
-
-class InMemoryExecStore:
-    """Offline/local fallback (no DB configured) — same interface, process-lifetime dict state."""
-
-    def __init__(self) -> None:
-        self._envs: dict[str, dict] = {}
-        self._runs: dict[str, dict] = {}
-
-    async def upsert_env(self, context_id, name, *, base_url="", kind=None, revision=None,
-                         creds_ref=None, health=None) -> str:
-        eid = env_id(context_id, name)
-        row = self._envs.get(eid) or {"id": eid, "context_id": context_id, "name": name,
-                                      "first_seen": _now()}
-        row.update({"base_url": base_url, "kind": kind, "revision": revision, "creds_ref": creds_ref,
-                    "health": health or {}, "last_seen": _now()})
-        self._envs[eid] = row
-        return eid
-
-    async def start_run(self, context_id, environment_id) -> str:
-        active = next((r for r in self._runs.values()
-                       if r["context_id"] == context_id and r["status"] == "in_progress"), None)
-        if active is not None:  # one active run per context (parity with ExecStore)
-            return active["id"]
-        rid = new_id()
-        self._runs[rid] = {"id": rid, "context_id": context_id, "environment_id": environment_id,
-                           "status": "in_progress", "summary": {}, "signals": {}, "triage": [],
-                           "trace_uri": None, "started_at": _now(), "finished_at": None}
-        return rid
-
-    async def save_progress(self, run_id, *, summary, signals) -> None:
-        r = self._runs.get(run_id)
-        if r is not None:
-            r.update({"status": "in_progress", "summary": summary, "signals": signals})
-
-    async def finish_run(self, run_id, *, status, summary, signals, triage=None, trace_uri=None) -> None:
-        r = self._runs.get(run_id)
-        if r is None:
-            return
-        r.update({"status": status, "summary": summary, "signals": signals, "triage": triage or [],
-                  "trace_uri": trace_uri, "finished_at": _now()})
-
-    async def get_run(self, *, run_id=None, context_id=None) -> dict | None:
-        if run_id:
-            return self._runs.get(run_id)
-        runs = [r for r in self._runs.values() if r["context_id"] == context_id]
-        return max(runs, key=lambda r: r["started_at"]) if runs else None
-
-    async def list_environments(self, context_id) -> list[dict]:
-        envs = [e for e in self._envs.values() if e["context_id"] == context_id]
-        return sorted(envs, key=lambda e: e["last_seen"], reverse=True)
-
-
-_STORE = None
-
-
-def build_store():
-    """The process-wide run ledger: Postgres on the shared engine, or the in-memory fallback offline.
-    Memoized so the in-memory store keeps state across A2A turns (matches common.memory get_memory_store)."""
-    global _STORE
-    if _STORE is None:
-        from common.db import get_engine
-
-        engine = get_engine()
-        _STORE = ExecStore(engine) if engine is not None else InMemoryExecStore()
-        log.info("exec store: %s", type(_STORE).__name__)
-    return _STORE

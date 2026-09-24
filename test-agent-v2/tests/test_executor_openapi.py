@@ -103,7 +103,7 @@ async def test_resolve_upload_refs_injects_bank_bytes(monkeypatch):
     import base64
 
     from common.testplan.models.scenario import TestData
-    from test_executor import runner as R
+    from test_executor.runners import suite as R
     td = TestData(id="zip1", kind="file",
                   spec={"filename": "a.zip", "content_type": "application/zip",
                         "b64": base64.b64encode(b"PKzipbytes").decode()})

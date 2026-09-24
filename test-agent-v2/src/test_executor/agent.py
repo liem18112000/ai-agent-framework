@@ -12,7 +12,8 @@ from collections.abc import Awaitable, Callable
 
 from common.adk.router import RouterAgent
 from common.monitoring import get_logger
-from test_executor import ops, runner
+from test_executor import ops
+from test_executor.runners import suite as runner
 from test_executor.store import build_store
 
 log = get_logger("exec.router")

@@ -7,8 +7,7 @@ import httpx
 from test_executor import runners
 from test_executor.auth import AuthContext, authenticate
 from test_executor.environments import resolve_env
-from test_executor.runner import run_suite
-from test_executor.runners import ApiEngine, BrowserEngine
+from test_executor.runners import ApiEngine, BrowserEngine, run_suite
 from test_executor.store import InMemoryExecStore
 
 _ENVS = ('{"dev":{"base_url":"https://dev.svc","auth":{"type":"bearer","token_env":"DEV_TOKEN"}},'

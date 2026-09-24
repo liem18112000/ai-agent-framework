@@ -5,8 +5,7 @@ from __future__ import annotations
 import httpx
 
 from test_executor import runners
-from test_executor.runner import heal_step, run_suite
-from test_executor.runners import ENGINES, ApiEngine, LlmEngine, select_engine
+from test_executor.runners import ENGINES, ApiEngine, LlmEngine, heal_step, run_suite, select_engine
 from test_executor.store import InMemoryExecStore
 
 
@@ -66,7 +65,7 @@ async def test_load_scenarios_reads_bank(monkeypatch):
     from common.store.memory import InMemoryObjectStore
     from common.testplan import memory as tp_store
     from common.testplan.models import TestScenario
-    from test_executor import runner
+    from test_executor.runners import suite as runner
 
     bank = MemoryBank(InMemoryObjectStore())
     tp_store.write_scenarios(bank, "CTX", [

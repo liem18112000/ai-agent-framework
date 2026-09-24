@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from test_executor.runner import classify_failure, triage
+from test_executor.runners import classify_failure, triage
 from test_executor.store import InMemoryExecStore, env_id
 
 

@@ -14,7 +14,7 @@ import asyncio
 import os
 
 from common.monitoring import get_logger
-from test_executor.runners import ENGINES, select_engine
+from test_executor.runners.select import ENGINES, select_engine
 
 log = get_logger("exec.runner")
 
@@ -274,7 +274,7 @@ async def heal_step(store, context_id: str, step_id: str, *, base_url: str = "",
     by `step_id` (its scenario title/id), re-translates the scenario with the failure fed back, and
     re-runs to check the patch works. Returns {healed, engine, patch, note} — the patch is a PROPOSAL,
     surfaced for a human Yes/No; it is NEVER applied here (no silent retarget)."""
-    from test_executor import runners
+    from test_executor.runners.translate import heal
 
     base_url = base_url or os.environ.get("EXEC_BASE_URL", "")
     run = await store.get_run(context_id=context_id)
@@ -290,6 +290,6 @@ async def heal_step(store, context_id: str, step_id: str, *, base_url: str = "",
     sc = next((s for s in scenarios if step_id in (s.get("title"), s.get("id"))), None)
     if sc is None:
         return {"healed": False, "note": f"scenario '{step_id}' not found in the bank to heal"}
-    plan, res = await runners.heal(sc, fail.get("message", ""), base_url=base_url)
+    plan, res = await heal(sc, fail.get("message", ""), base_url=base_url)
     return {"healed": bool(res.ran and res.passed), "engine": res.engine, "patch": plan,
             "note": "PROPOSED patch — surfaced for human Yes/No; not applied automatically (no silent retarget)."}

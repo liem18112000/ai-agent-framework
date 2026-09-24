@@ -65,7 +65,7 @@ def test_semantic_judge_noul_rejects_below_half(monkeypatch):
 def test_exec_triage_uses_jev_choice_when_configured(monkeypatch):
     """Regression: the executor's failure triage calls provider.choice() — restore/keep that primitive.
     (choice() was once deleted as dead; the executor re-introduced this caller.)"""
-    from test_executor import runner
+    from test_executor.runners import suite as runner
 
     fake = FakeDecisionProvider(choice=Verdict(value="Heal", probs=None, confidence=0.9))
     monkeypatch.setattr("common.adk.providers.get_decision_provider", lambda: fake)
