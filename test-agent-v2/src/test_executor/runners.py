@@ -99,7 +99,7 @@ class ApiEngine:
         try:
             headers = getattr(auth, "headers", None) or None   # AuthContext.headers (bearer), if any
             async with httpx.AsyncClient(timeout=30, transport=_transport) as client, \
-                    client.stream(method, url, json=req.get("json"), headers=headers) as resp:
+                    client.stream(method, url, headers=headers, **_send_kwargs(req)) as resp:
                 declared = resp.headers.get("content-length")
                 if declared and declared.isdigit() and int(declared) > _MAX_RESPONSE_BYTES:
                     return EngineResult(self.name, ran=True, outcomes=[StepOutcome(
@@ -323,6 +323,22 @@ def _request_from_plan(plan: dict) -> dict:
     """A RequestPlan dict → the ApiEngine `request` shape (shared by LlmEngine + heal)."""
     return {"method": plan.get("method", "GET"), "path": plan.get("path", ""), "json": plan.get("body"),
             "expect_status": plan.get("expect_status", 0), "expect_contains": plan.get("expect_contains", "")}
+
+
+def _send_kwargs(req: dict) -> dict:
+    """The httpx body kwargs for a request: a multipart file upload when the scenario supplies an
+    `upload` ({field, path, filename?, content_type?, data?}), else a JSON body. The file is read into
+    memory (ponytail: fine for test fixtures like an import zip; stream it if a huge upload is ever needed).
+    A missing file raises here and is caught by the caller as a real request failure."""
+    up = req.get("upload")
+    if isinstance(up, dict) and up.get("path"):
+        import os
+        with open(up["path"], "rb") as fh:
+            content = fh.read()
+        files = {up.get("field", "file"): (up.get("filename") or os.path.basename(up["path"]),
+                                           content, up.get("content_type") or "application/octet-stream")}
+        return {"files": files, "data": up.get("data") or None}   # extra form fields alongside the file
+    return {"json": req.get("json")}
 
 
 async def _llm_translate(scenario: dict, *, system: str, schema, output_key: str,

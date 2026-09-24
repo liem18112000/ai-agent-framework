@@ -75,3 +75,24 @@ async def test_api_engine_spec_conformance_pass(monkeypatch):
     res = await ApiEngine().run({"request": {"method": "POST", "path": "/documents", "expect_status": 201}},
                                 base_url="https://svc", spec=spec_ctx)
     assert res.ran and res.passed        # declared status + conforming body → all green
+
+
+async def test_api_engine_multipart_upload(monkeypatch, tmp_path):
+    # a scenario with an `upload` → ApiEngine sends multipart/form-data carrying the file bytes
+    seen = {}
+
+    def handler(r: httpx.Request) -> httpx.Response:
+        seen["ctype"] = r.headers.get("content-type", "")
+        seen["body"] = r.content
+        return httpx.Response(200, json={"_id": "job-1"})
+
+    monkeypatch.setattr(runners, "_transport", httpx.MockTransport(handler))
+    zf = tmp_path / "t.zip"
+    zf.write_bytes(b"PK\x03\x04zipbytes")
+    res = await ApiEngine().run(
+        {"request": {"method": "POST", "path": "/api/t/import-jobs/upload-zip", "expect_status": 200,
+                     "upload": {"field": "file", "path": str(zf), "content_type": "application/zip"}}},
+        base_url="https://svc")
+    assert res.ran and res.passed
+    assert seen["ctype"].startswith("multipart/form-data")
+    assert b"zipbytes" in seen["body"] and b"t.zip" in seen["body"]
