@@ -19,6 +19,7 @@ from common.testplan.models import (
 )
 from common.testplan.pack import load_plan_pack
 from test_plan_definition.implement.assured import run_assured_scenarios
+from test_plan_definition.implement.generate.scenarios import upload_cases
 from test_plan_definition.implement.generate.steps import generate_all_steps
 from test_plan_definition.implement.generate.testdata import generate_test_data
 from test_plan_definition.monitoring import get_logger
@@ -55,6 +56,11 @@ async def implement_plan(bank, context_id: str, *, run_id: str = "implement", no
     resuming = bool(saved.get("iterations")) and not saved.get("accepted")
     test_data = (await asyncio.to_thread(store.read_test_data, bank, context_id) if resuming else []) \
         or await generate_test_data(plan, plan_pack, now=now, detail=detail, model=model)
+    # A file-upload requirement → a bound multipart scenario + its file fixture (executable, not prose).
+    upload_data, upload_scenarios = upload_cases(plan, plan_pack, now=now)
+    for f in upload_data:                                   # dedupe by id so a resume/re-run doesn't duplicate
+        if not any(d.id == f.id for d in test_data):
+            test_data.append(f)
     await asyncio.to_thread(store.write_test_data, bank, context_id, test_data)
     # P4 (§3.4): the assured loop (generate→judge→gate→reflect→regenerate) is ALWAYS the scenario path
     # now — no opt-in. It trades away I3 (adds the judge call per round); TPD_ASSURED_MAX_ITERS bounds it.
@@ -63,6 +69,9 @@ async def implement_plan(bank, context_id: str, *, run_id: str = "implement", no
     scenarios, quality, pending = await run_assured_scenarios(
         bank, context_id, plan, plan_pack, test_data, now=now, model=model, guidance=guidance,
         max_rounds=max_rounds)
+    for s in upload_scenarios:  # bound upload scenarios are deterministic — appended after the judged loop
+        if not any(x.id == s.id for x in scenarios):
+            scenarios.append(s)
     if pending:  # loop paused with rounds remaining — persist the partial scenarios, defer the finalize
         await asyncio.to_thread(store.write_scenarios, bank, context_id, scenarios)
         return ImplementResult(plan, test_data, scenarios, quality=quality, done=False,

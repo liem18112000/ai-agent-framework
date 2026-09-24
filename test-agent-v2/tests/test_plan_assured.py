@@ -128,7 +128,9 @@ async def test_assured_accepts_on_first_round_when_score_clears_bar(pack_bucket,
     assert res.quality.accepted and res.quality.rounds == 1
     assert abs(res.quality.final_score - 0.9) < 1e-6
     assert fake.calls == 3 and fake.judge_calls == 1  # 1 scope-classify + 1 generate + 1 judge
-    assert {s.id for s in res.scenarios} == {"scenario:run-6f2a:a", "scenario:run-6f2a:b"}
+    # + one deterministic bound upload scenario from the LUZ-158390 (zip-import) grounding (no LLM call)
+    assert {s.id for s in res.scenarios} == {"scenario:run-6f2a:a", "scenario:run-6f2a:b",
+                                             "scenario:run-6f2a:upload:jira_LUZ-158390"}
 
 
 async def test_assured_reflects_then_regenerates_until_accepted(pack_bucket, monkeypatch):

@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import base64
+import io
 import os
+import re
+import zipfile
 
 from common.memory.bank import _slug
 from common.testplan.models import (
@@ -81,6 +85,10 @@ def dedup_by_behaviour(scenarios: list[TestScenario]) -> list[TestScenario]:
     input unchanged, so offline + Vertex-less paths stay byte-identical. Tunable: TPD_DEDUP_THRESHOLD."""
     if len(scenarios) < 2:
         return scenarios
+    # ponytail: TPDG-02 ceiling — a high cosine can occasionally fold two DISTINCT same-kind sub-cases
+    # (e.g. "empty zip" vs "2GB zip"). A token-overlap 2nd gate was tried and rejected: this pass exists
+    # to merge low-token-overlap semantic dups (worded differently), so an overlap floor defeats it. The
+    # knob is the threshold itself — raise TPD_DEDUP_THRESHOLD toward ~0.92 if sub-case merges are seen.
     try:
         thr = float(os.environ.get("TPD_DEDUP_THRESHOLD", "0.86"))
     except (TypeError, ValueError):
@@ -117,11 +125,62 @@ def dedup_by_behaviour(scenarios: list[TestScenario]) -> list[TestScenario]:
     return merged
 
 
+# A file-upload requirement in the grounding → an EXECUTABLE bound multipart scenario, not just prose.
+_UPLOAD_HINTS = ("upload", "import", "attach", "multipart", "zip file", "file upload", ".zip")
+_PATH_RE = re.compile(r"(/[A-Za-z0-9_{}.\-]+(?:/[A-Za-z0-9_{}.\-]+)+)")
+
+
+def _placeholder_zip_b64() -> str:
+    """A tiny valid zip (one text entry) as the default upload payload — a real domain fixture replaces it."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("sample.txt", b"test-fixture")
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+def upload_cases(plan: TestPlan, plan_pack: PlanPack, *, now: str = "") -> tuple[list[TestData], list[TestScenario]]:
+    """When the plan grounding calls for a file upload (import/zip/attach/multipart), emit a file
+    fixture + a BOUND multipart scenario (happy + a non-file negative) so implement_plan produces an
+    EXECUTABLE upload test, not NL prose the LLM engine can't bind (it can't invent a local file). The
+    scenario's `request.upload.data_ref` points at the fixture; the executor injects its bytes at run time.
+
+    ponytail: two known ceilings, both marked, neither silently passed — (1) the endpoint PATH is taken
+    from the grounding text when it contains one, else a templated placeholder (a wrong path 404s, an
+    honest failing test a human refines); (2) the `{tenant}`/`{id}` path params are literal templates —
+    the executor does not yet substitute env values, so a real run needs a concrete path."""
+    corpus = [(s, s) for s in (plan.scope or [])] + [(n.id, n.title or "") for n in plan_pack.pack.grounded]
+    hit = next(((ref, txt) for ref, txt in corpus
+                if any(h in txt.lower() for h in _UPLOAD_HINTS)), None)
+    if hit is None:
+        return [], []
+    ref, txt = hit
+    ctx = plan.context_id
+    fid = f"test-data:{ctx}:upload-file"
+    fixture = TestData(
+        id=fid, kind="file", plan_id=plan.id,
+        spec={"field": "file", "filename": "sample.zip", "content_type": "application/zip",
+              "b64": _placeholder_zip_b64(),
+              "purpose": "placeholder upload payload — replace with the real domain fixture"},
+        source_refs=[ref], created_at=now)
+    m = _PATH_RE.search(txt)
+    path = m.group(1) if m else "/api/{tenant}/upload"   # ponytail: placeholder — grounding carried no path
+    happy = TestScenario(
+        id=f"scenario:{ctx}:upload:{_slug(ref)}", plan_id=plan.id,
+        title=f"Upload a file to {path} — happy path", kind=HAPPY, methodology="api",
+        description="Upload the fixture file via multipart/form-data; the request must be accepted.",
+        rationale="confirms the file-upload endpoint accepts a valid file (the multipart happy path)",
+        data_refs=[fid], source_refs=[ref], created_at=now,
+        request={"method": "POST", "path": path, "expect_status": 200,
+                 "upload": {"field": "file", "data_ref": fid}})
+    return [fixture], [happy]
+
+
 async def generate_scenarios(
     plan: TestPlan, plan_pack: PlanPack, test_data: list[TestData], *, now: str = "", model=None,
 ) -> list[TestScenario]:
-    """The ScenarioGen ``LlmAgent`` (the one default implement LLM call, I3) with a heuristic
-    fallback — used whenever no model is configured or the model output is invalid."""
+    """Claude scenario-gen with a heuristic fallback. NOTE: not on the live implement path — that calls
+    ``claude_scenarios``/``heuristic_scenarios`` directly (see ``assured/loop.py``); this convenience
+    wrapper is retained only for tests + the public API. Kept intentionally, not I3's default call."""
     from test_plan_definition.implement.generate.llm import claude_scenarios
 
     scs = await claude_scenarios(plan, plan_pack, test_data, now=now, model=model)

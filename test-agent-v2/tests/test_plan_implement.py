@@ -81,7 +81,9 @@ async def test_implement_default_makes_two_llm_calls_generate_plus_judge(pack_bu
 
     res = await implement_plan(bank, "run-6f2a", model=fake)
     assert fake.calls == 3 and fake.judge_calls == 1  # 1 scope-classify + 1 generate + 1 judge
-    assert {s.id for s in res.scenarios} == {"scenario:run-6f2a:a", "scenario:run-6f2a:b"}
+    # the LUZ-158390 (zip-import) grounding also emits ONE deterministic bound upload scenario (no LLM call)
+    assert {s.id for s in res.scenarios} == {"scenario:run-6f2a:a", "scenario:run-6f2a:b",
+                                             "scenario:run-6f2a:upload:jira_LUZ-158390"}
     assert res.quality is not None and res.quality.accepted  # judge 0.9 ≥ 0.7 → accepts round 1
 
 
