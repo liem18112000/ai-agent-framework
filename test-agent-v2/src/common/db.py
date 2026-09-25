@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 
+from common.env import env_int
 from common.monitoring import get_logger
 
 log = get_logger("db")
@@ -27,7 +28,7 @@ def _db_config() -> dict | None:
         return None
     if conn:
         return {"kind": "connector", "instance": conn, "user": user, "password": password, "database": name, "private_ip": os.environ.get("DB_USE_PRIVATE_IP", "").lower() in ("1", "true", "yes")}
-    return {"kind": "tcp", "username": user, "password": password, "database": name, "host": host, "port": int(os.environ.get("DB_PORT", "5432"))}
+    return {"kind": "tcp", "username": user, "password": password, "database": name, "host": host, "port": env_int("DB_PORT", 5432)}
 
 
 def _connector_engine(cfg: dict):

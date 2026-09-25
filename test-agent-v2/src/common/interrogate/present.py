@@ -28,8 +28,7 @@ def render_questions(context_id: str, open_qs, *, header: str) -> str:
     lines = [f"{header} for context {context_id} ({open_qs[0].round} round) — reply e.g. `{open_qs[0].id}: <your choice>`:", ""]
     for q in open_qs:
         lines.append(f"- {q.id} [{q.round}] {q.question}")
-        for opt in q.options:
-            lines.append(f"    · {opt.get('label')} — {opt.get('implication', '')}")
+        lines.extend(f"    · {opt.get('label')} — {opt.get('implication', '')}" for opt in q.options)
         if q.recommendation:
             lines.append(f"    recommendation: {q.recommendation}")
     return "\n".join(lines)

@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import os
 
+from common.env import env_int
+
 _DEFAULT_WINDOWS = (7, 14, 21, 28)
 
 
@@ -20,10 +22,7 @@ def cloud_configured() -> bool:
 
 def cloud_max_services(default: int = 8) -> int:
     """Cap on promoted `cloudsvc:` seeds (`KGA_CLOUD_MAX_SERVICES`); non-int falls back to `default`."""
-    try:
-        return int(os.environ.get("KGA_CLOUD_MAX_SERVICES", "") or default)
-    except ValueError:
-        return default
+    return env_int("KGA_CLOUD_MAX_SERVICES", default)
 
 
 def cloud_windows() -> tuple[int, ...]:

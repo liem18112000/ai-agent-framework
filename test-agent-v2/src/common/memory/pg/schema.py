@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import os
+from common.env import env_int
 
-EMBED_DIMS = int(os.environ.get("MEMORY_EMBED_DIMS", "768"))
+EMBED_DIMS = env_int("MEMORY_EMBED_DIMS", 768)
 
 SCHEMA_SQL = f"""
 CREATE EXTENSION IF NOT EXISTS vector;

@@ -10,6 +10,7 @@ import asyncio
 import os
 
 from common.embed.embedder import TASK_DOCUMENT, TASK_QUERY
+from common.env import env_int
 from common.monitoring import get_logger
 
 log = get_logger("memory.embed")
@@ -30,7 +31,7 @@ class VertexEmbedder:
         return cls(
             model_name=os.environ.get("MEMORY_EMBED_MODEL", "text-multilingual-embedding-002"),
             location=os.environ.get("MEMORY_EMBED_LOCATION", "us-central1"),
-            dims=int(os.environ.get("MEMORY_EMBED_DIMS", "768")),
+            dims=env_int("MEMORY_EMBED_DIMS", 768),
         )
 
     @property

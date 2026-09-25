@@ -22,6 +22,7 @@ from __future__ import annotations
 import os
 
 from common.adk.providers.decision import Verdict, score01
+from common.env import env_float
 
 _QKEY = "q"  # single-question calls: one key in, one key out
 
@@ -45,7 +46,7 @@ class JevProvider:
         from typesafe_sdk import Choice, Noul, Score, TypeSafeClient
 
         question = {
-            "choice": lambda: Choice(instructions=spec["instructions"], criteria={o: None for o in spec["options"]}),
+            "choice": lambda: Choice(instructions=spec["instructions"], criteria=dict.fromkeys(spec["options"])),
             "score": lambda: Score(instructions=spec["instructions"], criteria=list(spec["levels"])),
             "noul": lambda: Noul(instructions=spec["statement"]),
         }[primitive]()
@@ -72,7 +73,7 @@ def _conf(r) -> float:
         v = getattr(r, name, None)
         if isinstance(v, (int, float)) and not isinstance(v, bool):
             return float(v)
-    return float(os.environ.get("TYPESAFE_DEFAULT_CONFIDENCE", "0.0"))  # fail SAFE: unknown conf → LLM judge stays in the loop
+    return env_float("TYPESAFE_DEFAULT_CONFIDENCE", 0.0)  # fail SAFE: unknown conf → LLM judge stays in the loop
 
 
 def _probs(r) -> dict[str, float] | None:

@@ -56,7 +56,7 @@ async def fetch_spec(spec_url: str, *, base_url: str, headers: dict | None = Non
         return None
 
 
-def _response_schema(op: Operation, status: int, spec: dict) -> dict | None:
+def _response_schema(op: Operation, status: int) -> dict | None:
     """The declared JSON response schema for `status` (or the 2xx / default), if any."""
     responses = op.op.get("responses", {}) or {}
     key = next((k for k in (str(status), f"{status // 100}XX", f"{status // 100}xx", "default") if k in responses), None)
@@ -79,7 +79,7 @@ def conformance_failures(spec: dict, op: Operation, *, status: int, body_text: s
               or f"{status // 100}xx" in declared or "default" in responses)
         if not ok:
             fails.append(f"status {status} not declared in the spec (declared: {sorted(declared)})")
-    schema = _response_schema(op, status, spec)
+    schema = _response_schema(op, status)
     if schema and "json" in content_type:
         try:
             import jsonschema

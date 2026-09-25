@@ -11,6 +11,7 @@ import asyncio
 import os
 
 from common.embed.embedder import TASK_DOCUMENT
+from common.env import env_float, env_int
 from common.monitoring import get_logger
 
 log = get_logger("memory.embed")
@@ -27,7 +28,7 @@ class OllamaEmbedder:
         return cls(
             model=os.environ.get("MEMORY_EMBED_MODEL", "nomic-embed-text"),
             url=os.environ.get("OLLAMA_URL", "http://ollama:11434"),
-            dims=int(os.environ.get("MEMORY_EMBED_DIMS", "768")),
+            dims=env_int("MEMORY_EMBED_DIMS", 768),
         )
 
     @property
@@ -42,7 +43,7 @@ class OllamaEmbedder:
         import httpx
 
         r = httpx.post(f"{self._url}/api/embed", json={"model": self._model, "input": texts},
-                       timeout=float(os.environ.get("OLLAMA_EMBED_TIMEOUT", "120")))
+                       timeout=env_float("OLLAMA_EMBED_TIMEOUT", 120.0))
         r.raise_for_status()
         return r.json()["embeddings"]
 

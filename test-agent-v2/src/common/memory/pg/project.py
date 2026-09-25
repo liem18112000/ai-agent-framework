@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import os
 import time
 from dataclasses import asdict, dataclass
 
+from common.env import env_float, env_int
 from common.memory.bank import ROOT
 from common.memory.retrieve import backend
 from common.models import INSIGHT
@@ -119,7 +119,7 @@ async def _flush_embeds(store, embedder, queued: list[tuple]) -> list[str]:
 async def drain_index(bank, store, *, embedder=None, max_jobs: int = 50, budget_s: float | None = None, embed_batch: int | None = None) -> int:
     """Project pending IndexJobs into Postgres; return how many completed (at-least-once semantics)."""
     if embed_batch is None:
-        embed_batch = int(os.environ.get("MEMORY_EMBED_BATCH", "16"))
+        embed_batch = env_int("MEMORY_EMBED_BATCH", 16)
     pending = await asyncio.to_thread(bank.get_json, INDEX_QUEUE, []) or []
     done: list[str] = []
     queued: list[tuple] = []
@@ -170,7 +170,7 @@ async def maybe_drain_index(bank) -> int:
         store = build_store()
         if store is None:
             return 0
-        budget = float(os.environ.get("MEMORY_DRAIN_BUDGET_S", "8"))
+        budget = env_float("MEMORY_DRAIN_BUDGET_S", 8.0)
         return await drain_index(bank, store, embedder=build_embedder(), max_jobs=500, budget_s=budget)
     except Exception as exc:  # noqa: BLE001 — best-effort; never break the request
         log.warning("memory: index drain skipped (%s)", exc)

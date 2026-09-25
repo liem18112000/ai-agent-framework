@@ -82,6 +82,6 @@ class ApiEngine:
             from test_executor.oracle import conformance_failures, match_operation
             op = match_operation(spec.get("ops") or [], method, path.split("?", 1)[0])
             if op is not None:
-                for msg in conformance_failures(spec["spec"], op, status=status, body_text=text, content_type=ctype):
-                    outcomes.append(StepOutcome(False, f"{where}: {msg}"))
+                outcomes.extend(StepOutcome(False, f"{where}: {msg}") for msg in conformance_failures(
+                    spec["spec"], op, status=status, body_text=text, content_type=ctype))
         return EngineResult(self.name, ran=True, outcomes=outcomes)

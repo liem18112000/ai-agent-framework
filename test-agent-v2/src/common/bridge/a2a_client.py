@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import os
 import uuid
 from typing import Any, Self
 
 import httpx
 
+from common.env import env_float
 from common.models import A2AResult
 
 _JSONRPC = "2.0"
@@ -50,7 +50,7 @@ class A2ABridgeClient:
         *, timeout: float | None = None,
         transport: httpx.BaseTransport | httpx.AsyncBaseTransport | None = None,
     ) -> None:
-        timeout = timeout if timeout is not None else float(os.environ.get("A2A_CLIENT_TIMEOUT", "600"))
+        timeout = timeout if timeout is not None else env_float("A2A_CLIENT_TIMEOUT", 600.0)
         headers = {"Authorization": f"Bearer {token}"} if token else {}
         self.base_url = base_url
         self._http = httpx.AsyncClient(base_url=base_url, headers=headers, timeout=timeout, transport=transport)

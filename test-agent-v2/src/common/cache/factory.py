@@ -6,6 +6,7 @@ import os
 from functools import lru_cache
 
 from common.cache.cache import Cache, NullCache
+from common.env import env_int
 
 
 def build_cache() -> Cache:
@@ -22,8 +23,8 @@ def build_cache() -> Cache:
     if backend == "redis":
         from common.cache.redis_cache import RedisCache
 
-        return RedisCache(os.environ["REDIS_HOST"], int(os.environ.get("REDIS_PORT", "6379")),
-                          default_ttl=int(os.environ.get("CACHE_TTL_SECONDS", "3600")))
+        return RedisCache(os.environ["REDIS_HOST"], env_int("REDIS_PORT", 6379),
+                          default_ttl=env_int("CACHE_TTL_SECONDS", 3600))
     raise ValueError(f"unknown CACHE_BACKEND: {backend!r}")
 
 

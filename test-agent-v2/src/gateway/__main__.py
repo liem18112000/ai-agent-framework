@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 
+from common.env import env_int
 from gateway.mcp_server import http_app, mcp
 
 
@@ -12,7 +13,7 @@ def main() -> None:
     if transport in ("http", "streamable-http"):
         import uvicorn
 
-        uvicorn.run(http_app(), host="0.0.0.0", port=int(os.environ.get("PORT", "8080")))
+        uvicorn.run(http_app(), host="0.0.0.0", port=env_int("PORT", 8080))
     else:
         mcp.run(transport="stdio")
 

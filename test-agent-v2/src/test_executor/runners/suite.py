@@ -16,6 +16,7 @@ import re
 import time
 from dataclasses import dataclass, field
 
+from common.env import env_float, env_int
 from common.monitoring import get_logger
 from test_executor.runners.select import ENGINES, select_engine
 
@@ -172,10 +173,7 @@ def triage(failures: list) -> list[TriageVerdict]:
     from common.adk.providers import get_decision_provider
     provider = get_decision_provider()
     use_jev = provider is not None and provider.is_configured()
-    try:
-        conf_min = float(os.environ.get("EXEC_TRIAGE_CONF_MIN", "0.6"))
-    except ValueError:
-        conf_min = 0.6
+    conf_min = env_float("EXEC_TRIAGE_CONF_MIN", 0.6)
     out = []
     for f in map(Failure.from_row, failures):
         verdict = None
@@ -218,10 +216,7 @@ _CHUNK_DEFAULT = 5
 
 
 def _chunk_size() -> int:
-    try:
-        return max(1, int(os.environ.get("EXEC_CHUNK", str(_CHUNK_DEFAULT))))
-    except ValueError:
-        return _CHUNK_DEFAULT
+    return max(1, env_int("EXEC_CHUNK", _CHUNK_DEFAULT))
 
 
 async def _resolve_upload_refs(scenarios: list[dict], context_id: str) -> None:
@@ -452,7 +447,7 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
         if build:
             target["item_version"] = build
 
-    llm_max = int(os.environ.get("EXEC_LLM_MAX", "8"))
+    llm_max = env_int("EXEC_LLM_MAX", 8)
     for sc in scenarios[cursor:cursor + _chunk_size()]:
         name = select_engine(sc)
         summ.by_engine[name] = summ.by_engine.get(name, 0) + 1

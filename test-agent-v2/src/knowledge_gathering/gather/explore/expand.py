@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import os
 
+from common.env import env_int
 from knowledge_gathering.gather.explore.planners.schemas import CloudExplorePlan
 from knowledge_gathering.gather.explore.seeds.atlassian_search import atlassian_search_seeds
 from knowledge_gathering.gather.explore.seeds.cloud_discover import cloud_service_seeds
@@ -24,10 +24,7 @@ def fanout_concurrency() -> int:
     producers hit DISTINCT backends (memory/pgvector, Atlassian, GCP, web), so parallelism cuts the
     fan-out wall-clock Σ→MAX; set 1 to serialize (a low-risk rollback), and it also throttles parallel
     Atlassian/GCP bursts against their rate limits."""
-    try:
-        return max(1, int(os.environ.get("KGA_FANOUT_CONCURRENCY", _DEFAULT_FANOUT)))
-    except ValueError:
-        return _DEFAULT_FANOUT
+    return max(1, env_int("KGA_FANOUT_CONCURRENCY", _DEFAULT_FANOUT))
 
 
 async def _gather_bounded(n: int, labelled: list[tuple[str, object]]) -> list[tuple[str, object]]:

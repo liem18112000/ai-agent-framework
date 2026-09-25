@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from common.adk.model import agent_model
 from common.adk.providers import get_provider
+from common.env import env_float
 from common.llm.vertex import vertex_config
 from common.monitoring import get_logger
 from test_evaluation.metrics import ragas_judge
@@ -59,10 +60,9 @@ def _noul_threshold() -> float:
     """Accept cut for the JEV noul judge: P(true) ≥ τ ⇒ True. Env ``TEV_NOUL_THRESHOLD`` (default 0.5);
     a malformed value falls back to 0.5 rather than crashing the judge."""
     import contextlib
-    import os
 
     with contextlib.suppress(ValueError):
-        return float(os.environ.get("TEV_NOUL_THRESHOLD", "0.5"))
+        return env_float("TEV_NOUL_THRESHOLD", 0.5)
     return 0.5
 
 

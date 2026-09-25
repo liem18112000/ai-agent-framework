@@ -14,6 +14,7 @@ import json
 import os
 from collections.abc import Callable
 
+from common.env import env_int
 from common.monitoring import get_logger
 
 log = get_logger("queue")
@@ -35,7 +36,7 @@ def _redis():
     import redis
 
     return redis.Redis(host=os.environ.get("REDIS_HOST", "redis"),
-                       port=int(os.environ.get("REDIS_PORT", "6379")), decode_responses=False)
+                       port=env_int("REDIS_PORT", 6379), decode_responses=False)
 
 
 def redis_publish(jobs: list[dict]) -> None:

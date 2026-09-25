@@ -11,10 +11,12 @@ import subprocess
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-PORT = int(os.environ.get("PORT", "8088"))
-_MAX_BODY = int(os.environ.get("CLAUDE_PROXY_MAX_BODY", str(32 * 1024 * 1024)))  # reject bodies over this (unbounded-alloc guard)
+from common.env import env_int
+
+PORT = env_int("PORT", 8088)
+_MAX_BODY = env_int("CLAUDE_PROXY_MAX_BODY", 32 * 1024 * 1024)  # reject bodies over this (unbounded-alloc guard)
 # One paid `claude` CLI per slot; excess requests queue instead of forking unbounded subprocesses.
-_SEM = threading.BoundedSemaphore(int(os.environ.get("CLAUDE_PROXY_MAX_CONCURRENCY", "4")))
+_SEM = threading.BoundedSemaphore(env_int("CLAUDE_PROXY_MAX_CONCURRENCY", 4))
 
 
 def flatten(messages):
