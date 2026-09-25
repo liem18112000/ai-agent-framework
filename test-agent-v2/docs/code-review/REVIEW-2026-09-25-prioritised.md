@@ -2,8 +2,8 @@
 
 **Date:** 2026-09-25 · **Scope:** `test-agent-v2/src` (20 398 lines, 309 files) + tests (11 581 lines)
 **Passes:** ponytail-review (over-engineering) · targeted performance · targeted security · ruff extended
-(`ARG,ERA,SIM,RET,C4,PIE,PERF`) · a deep `/code-review max` pass running separately (merge slot at the end)
-**Baseline:** 757 passed, 16 skipped, ruff clean.
+(`ARG,ERA,SIM,RET,C4,PIE,PERF`) · a deep `/code-review max` pass (**merged below**)
+**Baseline:** 757 passed, 16 skipped, ruff clean. **Final:** 762 passed, 16 skipped, ruff clean.
 
 Ordered by **value ÷ risk**, then grouped into phases that can each ship independently and stay green.
 
@@ -11,12 +11,14 @@ Ordered by **value ÷ risk**, then grouped into phases that can each ship indepe
 
 ## Headline
 
-The codebase is **not bloated** — 40 ruff findings across 20k lines, and more than half are
-interface-conformance false positives. There is **one genuine performance defect** (P1), a short tail of
-real dead code, and two deliberate architectural bets worth a decision rather than a change.
+The codebase is **not bloated** — 40 ruff findings across 20k lines, and **almost all of them are
+contract-mandated false positives** (18 of the 19 unused-argument hits alone). There is **one genuine
+performance defect** (P1), exactly **one** genuinely dead parameter, and two deliberate architectural
+bets worth a decision rather than a change.
 
-The largest win by far is P1: it is ~30 lines of change that removes O(polls) redundant network and
-storage I/O from every chunked run.
+The sting is in the tail: fixing P1 **introduced a credential-misdirection bug** that the max-effort pass
+caught and my own test could not. That is recorded in full under P0-1 — it is the most useful thing in
+this document.
 
 ---
 
@@ -41,11 +43,12 @@ re-fetched, 10 token mints, ~1.5 MB of fixture base64 re-decoded, 30 GCS round-t
 `# ponytail:` note on the auth line ("a bearer_fetch re-fetches each poll — fine at chunk cadence") is
 true in isolation but understates the aggregate: it is *six* repeated operations, not one.
 
-**Fix (least code):** resolve the prep once per `run_id` and memoise it for the life of the run
-(the service is `min=max=1` with session affinity, so an in-process dict is sufficient; a short TTL keeps
-a long run's bearer token fresh). Falls back to recomputing on a cache miss, so correctness is unchanged.
+**Fix as shipped:** memoise only the **expensive, non-secret** prep (the OpenAPI spec and the build
+version) for the life of the run, keyed on `(run_id, base_url)`. Credentials are deliberately **not**
+cached — see P0-2 below; the first cut of this fix did cache them and that was a security bug.
 
-**Impact:** removes ~90% of a chunked run's I/O. **Risk:** low — pure caching, no behaviour change.
+**Impact:** removes the repeated spec fetch, spec-cache read and version fetch — the bulk of a chunked
+run's prep I/O. **Risk:** this looked like "pure caching, no behaviour change" and was not. See P0-1.
 
 ---
 
@@ -54,29 +57,35 @@ a long run's bearer token fresh). Falls back to recomputing on a cache miss, so 
 | id | File | Finding | Fix |
 |---|---|---|---|
 | C-1 | `test_executor/oracle/openapi.py:59` | `_response_schema(op, status, spec)` never uses `spec`; one caller | drop the parameter |
-| C-2 | `common/llm/vertex.py:45` | `RET503` — a function that can return a value falls off the end returning `None` implicitly | make the fallthrough explicit (see note) |
+| C-2 | `common/llm/vertex.py:45` | `RET503` implicit `None` | ❌ **false positive** — the retry loop is total (returns, raises, or continues; the last attempt always re-raises), so the fallthrough is unreachable. No change. |
 | C-3 | 9 sites | `PERF401` manual append-loops | `list.extend(...)` — shorter *and* faster |
 | C-4 | `test_plan_definition/.../workers.py:88` | `SIM105` try/except/pass | `contextlib.suppress` |
-| C-5 | `admin_agent/agent.py:114,146` | two handlers ignore their `rest` argument | verify intent, then `_rest` or drop |
-| C-6 | `common/admin/memory_view.py:55`, `interrogate/round/technical.py:14`, `test_evaluation/eval/adk_metrics.py:51-63` (×4), `implement/assured/loop.py:67` | genuinely unused parameters | drop or `_`-prefix |
+| C-5 | `admin_agent/agent.py:114,146` | two handlers ignore their `rest` argument | ❌ **false positive** — registry-dispatched as `entry[0](rest)`; every handler must accept it. |
+| C-6 | `implement/assured/loop.py:67` | `_decision_gate(plan, ...)` never reads `plan`; one internal caller | ✅ dropped. **The others first listed here were false positives**: `adk_metrics` (×4) is an ADK callback signature, `technical.py` is one of 10 `build_<round>(pack, primary, title, q)` siblings, `memory_view` is global-by-design. |
 
-**C-2 is the only one with correctness weight** — an implicit `None` from a function whose callers expect
-a value is a latent `AttributeError`. Worth reading before changing.
+**Every item in this table was investigated before being changed, and three of the six turned out to be
+false positives.** That ratio is the finding: reading the code first is what kept the "fixes" from
+breaking interfaces.
 
 ---
 
 ## P3 — Interface-conformance false positives (do NOT delete)
 
-12 of the 19 `ARG002` hits are **required by an interface** and deleting them would break the Protocol/ABC
-contract. They are noise, not debt:
+**18 of the 19** `ARG` hits are **required by a contract** and deleting them would break it. They are
+noise, not debt:
 
 `ObjectStore.put(..., content_type)` in `store/local.py` + `store/memory.py` · `NodeFetcher.fetch(..., scope,
 client, ident)` across 6 `gather/crawl/fetch/*.py` · `RunnerEngine.run(..., spec, path_vars)` in
 `engines/browser.py` (already documented "API-only; browser ignores it") · `Embedder.embed(..., task)` in
 `embed/ollama.py` · `HTMLParser.handle_starttag(..., attrs)` · `Cache` Protocol stubs.
 
-**Fix:** silence at the source (underscore-prefix or a scoped `noqa`) so the signal-to-noise of future ruff
-runs stays high. **Do not "clean" these away.**
+…plus the ADK `EvalMetric` callback signature (×4), registry-dispatched router handlers, and the
+10-member `build_<round>(pack, primary, title, q)` family.
+
+**Action: NONE.** The project's ruff config selects neither `ARG` nor `RET`/`PERF`, so nothing is
+failing — there is nothing to silence. Adding `noqa`s would be adding code for no benefit, and
+underscore-prefixing a Protocol implementation's parameter risks breaking keyword calls.
+**Do not "clean" these away.**
 
 ---
 
@@ -106,13 +115,14 @@ are all in place.
 
 | Phase | Contents | Risk | Why this order |
 |---|---|---|---|
-| **0** | C-3, C-4, C-1 — mechanical, strictly fewer lines | none | Safe warm-up; shrinks the diff before the real change |
-| **1** | **P1** — per-run prep memoisation | low | The one real win; isolated to `run_suite`'s prologue |
-| **2** | C-2, C-5, C-6 — dead params + the implicit-return | low | Each needs a quick read of intent first |
-| **3** | P3 — silence interface args properly | none | Pure noise reduction; do last so it doesn't mask P2 |
+| **0** | C-1, C-3, C-4 + the numeric-env reader | none | Safe warm-up |
+| **1** | **P1** — per-run prep memoisation | *thought* low, **was not** | Introduced P0-1; see below |
+| **P0** | resume target/credential fix + cache hardening | — | Pre-empted the rest once the deep pass returned |
+| **2** | C-6 — the one real dead param | low | Three of six turned out to be false positives |
+| **3** | P3 | — | **Cancelled.** Not enforced; would be noise |
 | **—** | A-1, A-2 | — | **No action.** Recorded as decisions. |
 
-Each phase ends with the full suite green (`757 passed`) and ruff clean.
+Each phase ended with the full suite green and ruff clean (`757` at baseline → **`762`** now).
 
 ---
 
@@ -147,14 +157,23 @@ with the recovery disabled.
 | 7 | `AuthCtx.headers: dict = {}` — one mutable dict shared across the session | `MappingProxyType` (already fixed before the pass returned) |
 | 8 | Dead `try/except` left by my `env_float` conversion — `common/env.py` already swallows it | collapsed to one line |
 
-### Diagram findings — reported, NOT actioned (your files)
-The pass also flagged five issues in working-tree `.excalidraw`/docs edits that are **yours**, so I left
-them alone: ~340 lines of pure editor re-serialisation churn in `full-flow` / `exec-overview` /
-`exec-jev-cascade` (no semantic change, and `full-flow`'s bbox shift desyncs its committed PNG); a
-`gridSize 20 -> null` regression that stops future edits snapping to grid; two arrows in
-`agents-swimlane-detail` recoloured to `#c2410c`, which breaks the caveman legend's colour code and
-collides with the User lane's identity colour; and `agents-swimlane-detail-caveman.md` still documenting
-six lanes with no EXECUTE band. Your call — `git checkout --` reverts the churn ones cleanly.
+### Diagram findings ✅ fixed (`f6086f8`)
+
+Each was re-verified before acting — I diffed every element semantically against `HEAD` rather than
+trusting the report, because reverting a diagram destroys work if the call is wrong.
+
+| Finding | Verified | Action |
+|---|---|---|
+| `full-flow`, `exec-overview`, `exec-jev-cascade`, `openrig-refocus-flow` are pure re-serialisation churn | **0 semantic diffs** in all four — identical ids, text, colours, geometry, bindings | reverted |
+| `gridSize 20 -> null` regression | confirmed on 3 of the 4 | restored with the revert |
+| `full-flow` bbox shift desyncs its committed PNG | confirmed | moot after revert |
+| `agents-swimlane-detail` arrows recoloured to `#c2410c` | confirmed — the *only* two arrows in that colour, and it is the User lane's identity colour | `sx_a950013 -> #1e40af` (solid=tool call), `sx_a950034 -> #64748b` (dashed=reply); PNG re-rendered and viewed |
+| `agents-swimlane-detail-caveman.md` has no EXECUTE band | confirmed — doc predates the band | band ⑦ added, legend + takeaway updated |
+
+**Not reverted, deliberately:** the rest of `agents-swimlane-detail` is a real improvement — it fixes a
+genuine `HEAD` defect (six lane dividers had `height=1866` but `points` ending at `1656`, rendering
+~200px short) and normalises the band's font sizes. The label recolours to `#64748b` were also kept:
+grey is the dominant text convention in that file (24 of 56), so they conform rather than regress.
 
 ---
 
@@ -188,6 +207,7 @@ uniform dispatch.** It is worth running once to find the one real hit, not worth
 | P0 — resume target/credential fix + cache hardening | ✅ `58dd76c` |
 | 2 — dead params | ✅ one real hit dropped; the rest were false positives |
 | 3 — silence interface args | ❌ **no action** (not enforced; would be noise) |
+| Diagrams + caveman doc | ✅ `f6086f8` |
 | A-1, A-2 — architectural bets | ❌ **no action** (recorded as decisions) |
 
 **762 passed, 16 skipped, ruff clean.**
