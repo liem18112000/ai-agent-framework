@@ -3,9 +3,9 @@
 **Date:** 2026-09-24 · **Subject:** `github.com/mvschwarz/openrig` read at `HEAD` vs. what
 test-agent-v2 has built.
 
-**Status (2026-09-25): R0–R3 and R7 implemented and committed.** Implementation corrected three claims
-below; each correction is marked inline rather than quietly edited. R4/R5 stay rejected; R6 is the
-only item still open.
+**Status (2026-09-25): R0–R3, R6 and R7 implemented and committed — every adopted item is in.** Implementation corrected three claims
+below; each correction is marked inline rather than quietly edited. R4/R5 remain rejected, on the
+reasoning in §7.
 
 ### Diagram index
 
@@ -53,7 +53,7 @@ Applying that lens to our code turned up a **live defect** (§6.4): the semantic
 | **VERIFY** | ~~**R3** refocus-on-rehydrate~~ — premise wrong (§6.5): resume already re-reads intent; pinned by a test instead | 1 test |
 | **REJECT** | **R4** slice-intent on `TestStep` | over-modelling; the scenario is the unit |
 | **REJECT** | **R5** a periodic refocus hook/channel | 5 human gates + request-scoped runtime |
-| **DEFER** | **R6** the maturity ladder + planning dial | real, but neither is a drift fix |
+| **DONE** | **R6** warrant on every lesson · dead field removed · per-piece `rigor=` | `7af602a`, `4c862e5` |
 | **FREE** | **R7** CONTEXT-GAP / JUDGMENT-GAP on the drift findings | done — `589dea9` |
 
 And the inversion worth the whole document: **openrig's refocus asks the agent to
@@ -468,12 +468,23 @@ with 300k-token transcripts, and five human gates already do this job. Revisit i
 grows a genuinely autonomous multi-hour loop — at which point copy the *transcript-growth*
 trigger, not turns and not wall-clock.
 
-**R6 — the maturity ladder and the planning dial. DEFER, but record what they expose.**
-Two real smells: `supersedes` is a dead field where openrig requires a successor pointer on
-anything superseded; and assured-loop rigor is set by **deployment-global env knobs**
-(`TPD_ASSURED_MAX_ITERS`, pinned to 1 in `cloudsql.tf`) for *every* ticket, when rigor is
-obviously a per-piece property. Both are config /
-lifecycle refactors, not drift fixes. Do not let them ride in on this change.
+**R6 — the maturity ladder and the planning dial. ~~DEFER~~ → DONE** *(`7af602a`, `4c862e5`.)*
+Three things, and the first was the real find:
+
+- **The warrant was 100% unmet.** `Insight.rationale` is our version of openrig's warrant, and
+  *both* signal collectors left it empty — every auto-captured lesson was an assertion with no
+  account of how the position could know it. Both now state their method.
+- **`supersedes` was dead** — no writer, no reader. openrig wants a successor pointer on anything
+  marked SUPERSEDED, a state we do not have (`veto_lesson` tombstones; a CORRECTION displaces by
+  recency). A field for an impossible state is dead weight, so it is gone.
+- **Rigor is now per piece.** `implement_plan(rigor=N)` overrides the deployment-global
+  `TPD_ASSURED_MAX_ITERS` for one ticket, clamped to 5. The escalation *partly* existed already:
+  re-invoking with `guidance` grants more rounds — but only reactively, after a below-bar verdict.
+  `rigor=` sets the budget up front for a piece known to be hard.
+
+What was NOT built: a promotion/demotion ceremony or the six-value stage vocabulary. `confidence`
+stays a flat grade. That is the lifecycle refactor the original deferral was about, and it still
+has no forcing need.
 
 **R7 — CONTEXT-GAP vs JUDGMENT-GAP. STEAL, it's free.** *(Done — `589dea9`, and re-homed.)*
 It answers a question we have argued repeatedly and never measured: *when a scenario is wrong,
