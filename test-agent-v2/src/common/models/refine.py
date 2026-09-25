@@ -60,10 +60,14 @@ class Insight:
     run_id: str = ""
     rationale: str = ""
     rejected: list[str] = field(default_factory=list)
-    origin_step: str = ""
+    origin_step: str = ""   # the POSITION that earned it — orders recall (R1), see learn/recall.py
     scope: str = "context"
     status: str = "active"
-    supersedes: str = ""
+    # R6: `supersedes` lived here with no writer and no reader. openrig requires a successor pointer
+    # on anything marked SUPERSEDED — a state we do not have: `veto_lesson` tombstones, and a
+    # CORRECTION displaces an older lesson by recency (see INT-02 in learn/recall.py), not by
+    # pointer. A field for a state that cannot occur is dead weight, so it is gone. Old persisted
+    # JSON still carrying the key deserializes fine — `serialize._from` drops unknown keys.
 
 
 @dataclass

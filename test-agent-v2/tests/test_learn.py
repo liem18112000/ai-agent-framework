@@ -163,6 +163,26 @@ def test_search_and_veto_lessons():
     assert veto_lesson(bank, "insight:nope") is False
 
 
+def test_every_captured_lesson_carries_a_warrant():
+    """R6: openrig's warrant rule — a promoted claim travels with the evidence that earned it
+    ("canon without warrants is cargo cult with good formatting"). Both signal collectors used to
+    leave `rationale` empty, so EVERY auto-captured lesson was an unwarranted assertion. The warrant
+    states HOW this position could know the claim, and must survive capture onto the Insight."""
+    from types import SimpleNamespace
+
+    for sig in from_gather(["axonivy-prod/luz_finance"], seed_ref="jira:LUZ-1"):
+        assert sig.rationale, "a gather lesson must say how it could know"
+    for sig in from_implement([SimpleNamespace(kind="happy", source_refs=["jira:LUZ-1"])],
+                              context_id="run-1"):
+        assert sig.rationale, "an implement lesson must say how it could know"
+
+    bank = _bank_with_node("jira:LUZ-1")
+    kept = capture_lessons(bank, context_id="run-1",
+                           signals=from_gather(["ws/repo"], seed_ref="jira:LUZ-1"))
+    assert kept and kept[0].rationale        # the warrant reaches the persisted Insight
+    assert bank.read_insight(kept[0].id).rationale == kept[0].rationale
+
+
 def test_from_gather_uses_clean_slug_and_grounds_on_codegraph():
     sigs = from_gather(["axonivy-prod/luz_finance"], seed_ref="jira:LUZ-159312")
     assert len(sigs) == 1
