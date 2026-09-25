@@ -62,7 +62,7 @@ def suite_state(plan_pack, scenarios) -> str:
         f"- [{s.kind}] {s.title}" for s in scenarios)
 
 
-def _decision_gate(plan, scenarios, plan_pack, threshold: float):
+def _decision_gate(scenarios, plan_pack, threshold: float):
     """JEV cascade: one fast typed Score gates the suite before the LLM judge. Returns an accepting
     minimal ``JudgeVerdict`` when a decision backend is configured AND it is both confident
     (``confidence >= τ_conf``) and above bar (``score >= threshold``) — the latency/cost win, LLM judge
@@ -235,7 +235,7 @@ async def run_assured_scenarios(
         # JEV cascade (rollout step 2): a confident fast Score accepts here and skips the LLM judge;
         # None (backend OFF / low-confidence / below bar) falls through to the unchanged judge below.
         # _decision_gate makes a BLOCKING JEV HTTP call when a decision backend is configured → off the loop.
-        verdict = await asyncio.to_thread(_decision_gate, plan, scenarios, plan_pack, threshold)
+        verdict = await asyncio.to_thread(_decision_gate, scenarios, plan_pack, threshold)
         if verdict is None and judge_model is not None:
             summary = plan_pack.summary_text()
 

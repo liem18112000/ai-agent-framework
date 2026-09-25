@@ -116,8 +116,78 @@ Each phase ends with the full suite green (`757 passed`) and ruff clean.
 
 ---
 
-## Merge slot — deep `/code-review max` pass
+## MERGED — deep `/code-review max` pass (returned; re-prioritised)
 
-A separate max-effort correctness/security review is running over the same tree. Its findings are to be
-merged here and re-prioritised before Phase 2 — a P0 from that pass would pre-empt everything above.
-*(Status at time of writing: not yet returned.)*
+The max-effort pass reviewed the tree *including Phase 1*, and found **four real defects in the Phase 1
+commit itself**, one of them a P0 that pre-empted the remaining phases. All are now fixed in `58dd76c`.
+
+### P0-1 — a resume poll leaked the env's bearer to a different host ✅ fixed
+
+The documented resume is `run_suite(context_id)` with **no env**. On chunks 2+ that gave
+`resolve_env("") -> {}`, so `base_url` fell back to **`EXEC_BASE_URL`** — a different host
+(`https://httpbin.org` in the deployed tfvars) — and `auth_cfg` was lost.
+
+Before the Phase 1 cache that was merely *wrong target, no token*. **With** the cache, `_prepare_run`
+returned chunk 1's `AuthContext`, so the tail of a run would have carried the **Luz dev bearer to
+httpbin.org**, while `signals.target` still claimed the original env.
+
+Root fix: when `env` is absent, recover the run's own env **name** from its ledger row — which also
+repairs the pre-existing wrong-target half. The regression test now polls without the env (the shape the
+router actually produces) and asserts every request stayed on the run's own `base_url`; verified it fails
+with the recovery disabled.
+
+### P0-2 … P0-4 — cache hardening ✅ fixed
+| # | Finding | Fix |
+|---|---|---|
+| 2 | `_PREP_TTL_S = 600` is unrelated to a bearer's real lifetime → an expired token replayed for a run's tail | **credentials are no longer cached at all**; only the spec + build version (expensive, non-secret) are |
+| 3 | Cache stampede — concurrent polls all miss and all fetch | `asyncio.Lock` per key + double-check |
+| 4 | Overflow did `_PREP.clear()`, wiping *every* in-flight run → thundering herd | evict **expired** entries only |
+| 5 | Entry popped only on the completion path → an abandoned run held a bearer for 600 s | moot: no credential is cached |
+| 6 | The Phase 1 test re-passed `env` on every poll, so it could not catch P0-1 | polls 2-3 now omit it |
+| 7 | `AuthCtx.headers: dict = {}` — one mutable dict shared across the session | `MappingProxyType` (already fixed before the pass returned) |
+| 8 | Dead `try/except` left by my `env_float` conversion — `common/env.py` already swallows it | collapsed to one line |
+
+### Diagram findings — reported, NOT actioned (your files)
+The pass also flagged five issues in working-tree `.excalidraw`/docs edits that are **yours**, so I left
+them alone: ~340 lines of pure editor re-serialisation churn in `full-flow` / `exec-overview` /
+`exec-jev-cascade` (no semantic change, and `full-flow`'s bbox shift desyncs its committed PNG); a
+`gridSize 20 -> null` regression that stops future edits snapping to grid; two arrows in
+`agents-swimlane-detail` recoloured to `#c2410c`, which breaks the caveman legend's colour code and
+collides with the User lane's identity colour; and `agents-swimlane-detail-caveman.md` still documenting
+six lanes with no EXECUTE band. Your call — `git checkout --` reverts the churn ones cleanly.
+
+---
+
+## Corrections to my own first pass
+
+Investigating before changing overturned three of my findings. Recording them so the next reader does not
+re-raise them:
+
+- **C-2 (`vertex.py` implicit return) — FALSE POSITIVE.** `_with_retry` either returns, raises, or sleeps
+  and continues; on the final attempt the guard always re-raises, so the implicit `return None` is
+  unreachable. Ruff cannot prove the loop is total. No change.
+- **C-5 (`admin_agent` handlers ignoring `rest`) — FALSE POSITIVE.** They are registry-dispatched as
+  `entry[0](rest)`; every handler must accept it. Interface conformance, same as P3.
+- **P3 was overstated, and is now NO ACTION.** 18 of the 19 `ARG` hits are mandated by a contract —
+  Protocol, ABC, an ADK `EvalMetric` callback signature, registry dispatch, or the 10-member
+  `build_<round>(pack, primary, title, q)` family. Exactly **one** was genuinely dead
+  (`_decision_gate(plan, ...)`, dropped). And the project's ruff config does not select `ARG` at all, so
+  there is nothing failing to silence — adding `noqa`s would be adding code for no benefit.
+
+The wider lesson: **unused-argument linting is nearly all noise on a codebase built around protocols and
+uniform dispatch.** It is worth running once to find the one real hit, not worth enforcing.
+
+---
+
+## Final status
+
+| Phase | Status |
+|---|---|
+| 0 — mechanical shrink + the env-reader | ✅ `d6f5f0d` |
+| 1 — per-run prep memoisation | ✅ `0fb0009`, hardened by `58dd76c` |
+| P0 — resume target/credential fix + cache hardening | ✅ `58dd76c` |
+| 2 — dead params | ✅ one real hit dropped; the rest were false positives |
+| 3 — silence interface args | ❌ **no action** (not enforced; would be noise) |
+| A-1, A-2 — architectural bets | ❌ **no action** (recorded as decisions) |
+
+**762 passed, 16 skipped, ruff clean.**
