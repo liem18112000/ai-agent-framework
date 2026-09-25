@@ -97,6 +97,26 @@ if [ -z "$IMAGE" ] && [ "${SKIP_BUILD:-0}" = "1" ]; then
 fi
 [ -n "$IMAGE" ] || { echo "ERROR: no image resolved — set 'image' in terraform.tfvars or export IMAGE=" >&2; exit 1; }
 
+# --- stale-tag guard ---------------------------------------------------------------------------
+# A Cloud Run revision pins the DIGEST it was created with, and terraform diffs the image STRING. So
+# rebuilding the SAME tag pushes new bytes that nothing ever rolls out to: the build says SUCCESS, the
+# apply says complete, and the service keeps running the old code. That has silently shipped nothing
+# twice. `gcloud builds submit` uses the WORKING TREE, so the tag is also the only record of what is
+# actually inside the image — a tag naming an older commit is a lie about its own contents.
+# Refuse unless the tag matches HEAD. Override with ALLOW_STALE_TAG=1 (e.g. a deliberate re-apply).
+if [ "${ALLOW_STALE_TAG:-0}" != "1" ] && git rev-parse --short HEAD >/dev/null 2>&1; then
+  _head="$(git rev-parse --short HEAD)"
+  case "$IMAGE" in
+    *:"$_head"-*|*:"$_head") : ;;
+    *)
+      echo "ERROR: image tag '${IMAGE##*:}' does not match HEAD ($_head)." >&2
+      echo "       Rebuilding an existing tag creates NO new revision — the deploy would report" >&2
+      echo "       success and ship nothing. Bump 'image' in terraform.tfvars to :${_head}-exec" >&2
+      echo "       (or re-run with ALLOW_STALE_TAG=1 if you really mean to re-apply)." >&2
+      exit 1 ;;
+  esac
+fi
+
 # --- ensure the artifact repo exists BEFORE the build pushes to it (first-deploy-safe) ---
 echo "==> terraform apply (artifact repo)"
 terraform apply -auto-approve -input=false -target='google_artifact_registry_repository.images'
