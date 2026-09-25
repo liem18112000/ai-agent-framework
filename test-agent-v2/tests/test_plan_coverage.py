@@ -47,6 +47,52 @@ def test_requirement_kind_coverage_traceability_and_gaps():
     assert not m.has_codegraph  # no codegraph note in the pack
 
 
+def test_orphan_scenarios_are_reported_not_silently_dropped():
+    """R2: a scenario citing nothing resolvable serves NO stated intent. It is absent from `covered`
+    by construction, so before R2 nothing anywhere reported it — the matrix only measured recall."""
+    plan = _plan(test_kinds=["happy"])
+    pack = _pack(Note(id="jira:A", type="note", title="Login"))
+    scenarios = [_sc("s1", "happy", "jira:A"),            # serves a real unit
+                 _sc("s2", "happy", "jira:GONE"),         # dangling ref
+                 TestScenario(id="s3", plan_id="plan:run-x", title="untraced", kind="happy")]  # cites none
+    m = build_coverage_matrix(None, "run-x", plan=plan, pack=pack, scenarios=scenarios)
+
+    assert m.scenarios_total == 3
+    assert {s["id"] for s in m.orphan_scenarios} == {"s2", "s3"}
+    assert m.drift_count == 2
+    # …and the reader actually sees it
+    md = render_coverage_md(m)
+    assert "Drift (2 of 3 scenarios)" in md and "cites no requirement unit" in md
+
+
+def test_out_of_scope_hits_flag_scenarios_the_plan_ruled_out():
+    """R2: the plan says QR code fallback is out of scope; a scenario testing it is drift."""
+    plan = _plan(test_kinds=["happy"], out_of_scope=["QR code fallback removal"])
+    pack = _pack(Note(id="jira:A", type="note", title="Login"))
+    scenarios = [_sc("s1", "happy", "jira:A", title="User logs in with valid credentials"),
+                 _sc("s2", "happy", "jira:A", title="QR code fallback removal for company accounts")]
+    m = build_coverage_matrix(None, "run-x", plan=plan, pack=pack, scenarios=scenarios)
+
+    assert [s["id"] for s in m.out_of_scope_hits] == ["s2"]
+    assert m.out_of_scope_hits[0]["matched"] == "QR code fallback removal"
+    assert m.orphan_scenarios == []          # both cite a real unit — this is the OTHER drift axis
+    assert "out-of-scope" in render_coverage_md(m)
+
+
+def test_a_clean_suite_reports_no_drift():
+    """The quiet case must stay quiet — no Drift section, no drift clause in the summary."""
+    from common.testplan.coverage import as_dict, coverage_summary
+
+    plan = _plan(test_kinds=["happy"], out_of_scope=["QR code fallback"])
+    m = build_coverage_matrix(None, "run-x", plan=plan,
+                              pack=_pack(Note(id="jira:A", type="note", title="Login")),
+                              scenarios=[_sc("s1", "happy", "jira:A", title="valid login")])
+    assert m.drift_count == 0 and m.orphan_scenarios == [] and m.out_of_scope_hits == []
+    assert "Drift" not in render_coverage_md(m)
+    assert "DRIFT" not in coverage_summary(m)
+    assert as_dict(m)["drift_count"] == 0     # persisted JSON carries the property
+
+
 def test_no_codegraph_degrades_to_requirement_only():
     m = build_coverage_matrix(None, "run-x", plan=_plan(test_kinds=["happy"]),
                               pack=_pack(Note(id="jira:A", type="note", title="A")),

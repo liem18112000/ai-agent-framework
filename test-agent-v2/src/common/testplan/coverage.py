@@ -6,8 +6,14 @@ The denominator of "100% coverage" is a set of **logic units**:
     symbol-level, so these are the practical proxy for "branches"; there are no branch nodes).
 
 For each requirement unit we compute which of the plan's OPEN kinds a generated scenario covers
-(traceability via `source_refs`), and a **gap report** of the (unit × kind) cells still empty. Code
-units are marked *reached* when a covering scenario or a covered requirement note names them — a
+(traceability via `source_refs`), and a **gap report** of the (unit × kind) cells still empty.
+
+R2 adds the other direction. Everything above measures RECALL — "what is missing?". The drift
+fields measure PRECISION — "does this scenario serve anything?": `orphan_scenarios` (cites no
+resolvable requirement unit) and `out_of_scope_hits` (names something the plan ruled OUT). A
+scenario citing nothing was previously absent from `covered` and reported by NOTHING.
+
+Code units are marked *reached* when a covering scenario or a covered requirement note names them — a
 STRUCTURAL, design-time signal, honestly labelled: true executed/branch coverage needs the Test
 Executor agent (RESEARCH-test-executor-agent.md). When no codegraph exists the matrix degrades to
 requirement-only and says so.
@@ -49,6 +55,17 @@ class CoverageMatrix:
     code_units: int = 0
     code_units_reached: int = 0
     has_codegraph: bool = False
+    # R2 — the DRIFT half. Every field above answers "what is MISSING?" (recall). These two answer
+    # "does this scenario serve anything?" (precision) — a scenario citing nothing resolvable is
+    # silently absent from `covered` and was never reported anywhere.
+    scenarios_total: int = 0
+    orphan_scenarios: list[dict] = field(default_factory=list)    # {id, title} — cites no known unit
+    out_of_scope_hits: list[dict] = field(default_factory=list)   # {id, title, matched}
+
+    @property
+    def drift_count(self) -> int:
+        """Scenarios implicated in drift (an orphan that also names an out-of-scope item counts once)."""
+        return len({s["id"] for s in (*self.orphan_scenarios, *self.out_of_scope_hits)})
 
     @property
     def requirement_pct(self) -> float:
@@ -70,6 +87,37 @@ def _requirement_units(pack) -> list[CoverageUnit]:
     units += [CoverageUnit(id=i.id, category="requirement", title=(i.statement or i.id)[:80])
               for i in pack.insights]
     return units
+
+
+#: Share of an out-of-scope phrase's tokens a scenario must name before it counts as a hit.
+# ponytail: token overlap, no semantics — it cannot tell "we do NOT test QR" from "test QR". Tuned
+# conservative: a noisy drift number gets ignored, which is worse than a quiet one. Two known blind
+# spots, both deliberate — a phrase of only ≤2-char tokens ("QR") yields no tokens and can never
+# match, and a one-word overlap never fires (so out_of_scope "performance testing" does not flag
+# "Login performance under load"). Upgrade path is the JEV judge over the residue, once these
+# counters are actually being read — see §8 of docs/RESEARCH-openrig-intent-hierarchy.md.
+_OOS_MIN_OVERLAP = 0.6
+
+
+def _orphan_scenarios(scenarios, req_units) -> list[dict]:
+    """Scenarios citing no resolvable requirement unit — cite nothing, or cite a dangling ref."""
+    unit_ids = {u.id for u in req_units}
+    return [{"id": sc.id, "title": sc.title} for sc in scenarios or []
+            if not (set(sc.source_refs) & unit_ids)]
+
+
+def _out_of_scope_hits(plan, scenarios) -> list[dict]:
+    """Scenarios whose text names something the plan explicitly ruled OUT of scope."""
+    phrases = [(p, toks) for p in ((plan.out_of_scope if plan else None) or []) if (toks := _tokens(p))]
+    hits: list[dict] = []
+    for sc in scenarios or []:
+        text = _tokens(sc.title, sc.description)
+        for phrase, ptoks in phrases:
+            shared = ptoks & text
+            if len(shared) >= min(2, len(ptoks)) and len(shared) / len(ptoks) >= _OOS_MIN_OVERLAP:
+                hits.append({"id": sc.id, "title": sc.title, "matched": phrase})
+                break  # one hit per scenario — the finding is "this drifted", not "how many ways"
+    return hits
 
 
 def _repos_in_pack(pack) -> set[str]:
@@ -141,6 +189,11 @@ def build_coverage_matrix(bank, context_id: str, *, plan=None, pack=None,
             m.gaps.append({"id": cu.id, "title": cu.title, "category": cu.category,
                            "missing": ["reach"]})
     m.code_units_reached = len(m.reached_code)
+
+    # R2 — the drift half: which scenarios serve nothing, and which serve something ruled OUT.
+    m.scenarios_total = len(scenarios or [])
+    m.orphan_scenarios = _orphan_scenarios(scenarios, req_units)
+    m.out_of_scope_hits = _out_of_scope_hits(plan, scenarios)
     return m
 
 
@@ -165,6 +218,13 @@ def render_coverage_md(m: CoverageMatrix) -> str:
         lines += ["", f"## Gaps ({len(m.gaps)}) — close toward 100%"]
         lines += [f"- [{g['category']}] `{g['id']}` — {g['title']}: missing "
                   f"{', '.join(g['missing'])}" for g in m.gaps]
+    if m.orphan_scenarios or m.out_of_scope_hits:
+        lines += ["", (f"## Drift ({m.drift_count} of {m.scenarios_total} scenarios) — "
+                       "work that serves no stated intent")]
+        lines += [f"- [orphan] `{s['id']}` — {s['title']}: cites no requirement unit"
+                  for s in m.orphan_scenarios]
+        lines += [f"- [out-of-scope] `{s['id']}` — {s['title']}: names \"{s['matched']}\""
+                  for s in m.out_of_scope_hits]
     return "\n".join(lines) + "\n"
 
 
@@ -172,11 +232,14 @@ def coverage_summary(m: CoverageMatrix) -> str:
     """One-line summary for the implement reply."""
     code = f"; code units {m.code_units_reached}/{m.code_units} reached" if m.has_codegraph else \
         "; no codegraph"
+    drift = (f" DRIFT: {len(m.orphan_scenarios)} orphan, {len(m.out_of_scope_hits)} out-of-scope "
+             f"of {m.scenarios_total} scenario(s).") if m.drift_count else ""
     return (f"Coverage: {m.requirement_cells_covered}/{m.requirement_cells} AC×kind cells "
-            f"({m.requirement_pct}%){code}; {len(m.gaps)} gap(s).")
+            f"({m.requirement_pct}%){code}; {len(m.gaps)} gap(s).{drift}")
 
 
 def as_dict(m: CoverageMatrix) -> dict:
     d = asdict(m)
     d["units"] = [asdict(u) for u in m.units]
+    d["drift_count"] = m.drift_count   # a property, so asdict() does not carry it
     return d
