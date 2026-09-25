@@ -361,54 +361,78 @@ async def _fetch_version(version_url: str, *, base_url: str, headers: dict | Non
         return ""
 
 
-#: Per-RUN preparation cache: run_id -> (expires_at, prep). A chunked run is polled once per chunk and
-#: none of the prep changes between chunks, yet each poll was re-minting a bearer, re-fetching the spec
-#: (48 KB for luz_docs) and re-reading the spec cache — six round-trips x every poll. Keyed by run_id so
-#: a NEW run always prepares fresh; TTL'd so a long run's bearer cannot go stale in the cache.
-_PREP: dict[str, tuple[float, dict]] = {}
+#: Per-RUN cache of the EXPENSIVE, NON-SECRET prep: (run_id, base_url) -> (expires_at, {spec_ctx, target}).
+#: A chunked run is polled once per chunk and re-fetched the target's OpenAPI spec (48 KB for luz_docs),
+#: re-read the spec cache and re-fetched the build version on every one — none of which changes mid-run.
+#:
+#: Credentials are deliberately NOT cached. A bearer is re-minted per poll as before, because (a) the
+#: executor never learns a token's real lifetime, so any TTL here is a guess that can serve an expired
+#: token for the tail of a long run, and (b) a token in a process-global outlives an abandoned run. One
+#: token mint per poll is cheap next to the spec fetch this does remove.
+#:
+#: Keyed by base_url as well as run_id so a poll that resolves a different target can never read prep
+#: prepared for another host.
+_PREP: dict[tuple[str, str], tuple[float, dict]] = {}
 _PREP_TTL_S = 600
+_PREP_LOCKS: dict[tuple[str, str], asyncio.Lock] = {}
+
+
+def _evict_expired(now: float) -> None:
+    for k in [k for k, (exp, _) in _PREP.items() if exp <= now]:
+        _PREP.pop(k, None)
+        _PREP_LOCKS.pop(k, None)
 
 
 async def _prepare_run(run_id: str, context_id: str, env_cfg: dict, auth_cfg: dict, *,
                        base_url: str, target: dict) -> dict:
-    """Auth + OpenAPI spec + build version for this run — computed once, reused by later chunk polls.
+    """Auth (fresh every call) + OpenAPI spec and build version (cached for the life of the run).
 
-    Returns {auth, spec_ctx, target}. On a cache miss (new run, expired TTL, restarted instance) it
-    simply recomputes, so behaviour is identical to preparing every time — only the I/O differs."""
-    hit = _PREP.get(run_id)
-    if hit and hit[0] > time.monotonic():
-        return hit[1]
-
+    Returns {auth, spec_ctx, target}. A cache miss simply recomputes, so behaviour is identical to
+    preparing every time — only the I/O differs."""
     from test_executor.environments import authenticate
-    auth = await authenticate(auth_cfg, base_url=base_url)
+    auth = await authenticate(auth_cfg, base_url=base_url)           # never cached — see above
 
-    spec_ctx = None
-    if env_cfg.get("spec_url"):
-        from test_executor.oracle import fetch_spec, parse_operations
-        raw_spec = await fetch_spec(env_cfg["spec_url"], base_url=base_url,
-                                    headers=getattr(auth, "headers", None))
-        if raw_spec:
-            spec_ctx = {"spec": raw_spec, "ops": parse_operations(raw_spec)}
-            await _persist_spec(context_id, raw_spec, env_cfg["spec_url"])
-            info = raw_spec.get("info") or {}
-            # The spec's `info.version` is the CONTRACT's version, not the deployed build's (SmallRye
-            # defaults it to "1.0" while the service reports 0.01.18.00-SNAPSHOT). Label it as such —
-            # a completion report that pins the wrong build version is worse than one that omits it.
-            target.update({k: v for k, v in (("item", info.get("title")),
-                                             ("spec_version", info.get("version"))) if v})
-    if env_cfg.get("version_url"):
-        # The DEPLOYED build version (report §1) — what actually ran, as opposed to the contract version.
-        build = await _fetch_version(env_cfg["version_url"], base_url=base_url,
-                                     headers=getattr(auth, "headers", None),
-                                     field=env_cfg.get("version_field", ""))
-        if build:
-            target["item_version"] = build
+    key = (run_id, base_url)
+    now = time.monotonic()
+    hit = _PREP.get(key)
+    if hit and hit[0] > now:
+        return {"auth": auth, **hit[1]}
 
-    prep = {"auth": auth, "spec_ctx": spec_ctx, "target": target}
-    if len(_PREP) > 64:                      # bound the dict; finished runs are dropped by _finish below
-        _PREP.clear()
-    _PREP[run_id] = (time.monotonic() + _PREP_TTL_S, prep)
-    return prep
+    # One preparer per key: without this, a client polling again before the previous chunk returns has
+    # both coroutines miss, both fetch the spec and both write the spec cache — the exact I/O this exists
+    # to remove.
+    lock = _PREP_LOCKS.setdefault(key, asyncio.Lock())
+    async with lock:
+        hit = _PREP.get(key)
+        if hit and hit[0] > time.monotonic():
+            return {"auth": auth, **hit[1]}
+
+        spec_ctx = None
+        if env_cfg.get("spec_url"):
+            from test_executor.oracle import fetch_spec, parse_operations
+            raw_spec = await fetch_spec(env_cfg["spec_url"], base_url=base_url,
+                                        headers=getattr(auth, "headers", None))
+            if raw_spec:
+                spec_ctx = {"spec": raw_spec, "ops": parse_operations(raw_spec)}
+                await _persist_spec(context_id, raw_spec, env_cfg["spec_url"])
+                info = raw_spec.get("info") or {}
+                # The spec's `info.version` is the CONTRACT's version, not the deployed build's (SmallRye
+                # defaults it to "1.0" while the service reports 0.01.18.00-SNAPSHOT). Label it as such —
+                # a completion report that pins the wrong build version is worse than one that omits it.
+                target.update({k: v for k, v in (("item", info.get("title")),
+                                                 ("spec_version", info.get("version"))) if v})
+        if env_cfg.get("version_url"):
+            # The DEPLOYED build version (report §1) — what actually ran, not the contract version.
+            build = await _fetch_version(env_cfg["version_url"], base_url=base_url,
+                                         headers=getattr(auth, "headers", None),
+                                         field=env_cfg.get("version_field", ""))
+            if build:
+                target["item_version"] = build
+
+        cached = {"spec_ctx": spec_ctx, "target": target}
+        _evict_expired(time.monotonic())     # drop lapsed entries instead of clearing live ones
+        _PREP[key] = (time.monotonic() + _PREP_TTL_S, cached)
+        return {"auth": auth, **cached}
 
 
 async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[dict] | None = None,
@@ -425,6 +449,15 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
     resolved from there, falling back to the `base_url` arg / EXEC_BASE_URL. The ledger records base_url +
     the auth KIND (creds_ref), never the secret."""
     from test_executor.environments import resolve_env
+    # A resume poll is documented as `run_suite(context_id)` with NO env (bridge/mcp_server.py), so `env`
+    # arrives empty on chunks 2+. Without recovering it, resolve_env("") -> {} and the target silently
+    # falls back to EXEC_BASE_URL — a DIFFERENT host from the one chunk 1 ran against, with that host's
+    # auth config lost. Recover the run's own env NAME from its ledger row so every chunk of a run keeps
+    # the same target and credentials.
+    if not env.strip():
+        active = await store.get_run(context_id=context_id)
+        if active and active.get("status") == "in_progress":
+            env = str(active.get("environment_id") or "").rsplit(":", 1)[-1]
     env_cfg = resolve_env(env)
     base_url = base_url or env_cfg.get("base_url") or os.environ.get("EXEC_BASE_URL", "")
     if base_url and "@" in base_url:  # strip any inline userinfo/creds so they never hit the ledger/reply
@@ -528,7 +561,8 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
                                            "target": target})
         return await store.get_run(run_id=run_id) or {"id": run_id, "status": "in_progress"}
 
-    _PREP.pop(run_id, None)                                    # run is finishing — drop its cached prep
+    _PREP.pop((run_id, base_url), None)                        # run is finishing — drop its cached prep
+    _PREP_LOCKS.pop((run_id, base_url), None)
     coverage = await _ac_coverage(context_id, results)         # the report's AC matrix (gaps included)
     verdicts = await asyncio.to_thread(triage, failures)       # JEV cascade is sync/blocking — off-loop
     await store.finish_run(run_id, status="done", summary=summ.as_dict(),

@@ -414,6 +414,9 @@ async def test_per_run_prep_is_computed_once_across_chunk_polls(monkeypatch):
     monkeypatch.setenv("EXEC_CHUNK", "1")
     monkeypatch.setenv("EXEC_ENVIRONMENTS",
                        '{"e":{"base_url":"https://svc","spec_url":"/openapi","version_url":"/v"}}')
+    # A DIFFERENT host, as the deployed config has. A resume poll that lost its env would target this
+    # one — and, with a credential-carrying cache, would send the env's bearer to it.
+    monkeypatch.setenv("EXEC_BASE_URL", "https://elsewhere.example")
     R._PREP.clear()
     calls = {"auth": 0, "spec": 0, "version": 0, "persist": 0}
 
@@ -436,18 +439,33 @@ async def test_per_run_prep_is_computed_once_across_chunk_polls(monkeypatch):
     monkeypatch.setattr("test_executor.oracle.fetch_spec", fake_spec)
     monkeypatch.setattr(R, "_fetch_version", fake_version)
     monkeypatch.setattr(R, "_persist_spec", fake_persist)
-    monkeypatch.setattr(runners, "_transport", httpx.MockTransport(lambda r: httpx.Response(200, json={})))
+    seen_hosts: list[str] = []
+
+    def record(r: httpx.Request) -> httpx.Response:
+        seen_hosts.append(str(r.url))
+        return httpx.Response(200, json={})
+    monkeypatch.setattr(runners, "_transport", httpx.MockTransport(record))
 
     store = InMemoryExecStore()
     scs = [{"id": f"s{i}", "title": f"t{i}", "methodology": "api",
             "request": {"method": "GET", "path": f"/p{i}", "expect_status": 200}} for i in range(3)]
-    for _ in range(3):                      # 3 scenarios, chunk=1 → three polls
-        run = await run_suite(store, "CTX", "e", scenarios=scs)
+    # Poll 1 names the env; polls 2-3 do NOT — that is the documented resume shape the agent produces
+    # (`run <ctx>`), and the path where a run_id-only cache key would pair chunk 1's bearer with a
+    # re-resolved fallback base_url.
+    run = await run_suite(store, "CTX", "e", scenarios=scs)
+    for _ in range(2):
+        run = await run_suite(store, "CTX", "", scenarios=scs)
     assert run["status"] == "done" and run["summary"]["executed"] == 3
 
-    assert calls == {"auth": 1, "spec": 1, "version": 1, "persist": 1}, calls
+    # The EXPENSIVE, non-secret prep happens once for the whole run; auth is deliberately NOT cached
+    # (the executor never learns a token's lifetime, and a cached token outlives an abandoned run).
+    assert calls == {"auth": 3, "spec": 1, "version": 1, "persist": 1}, calls
     # the build version still reaches the report payload from the cached prep
     assert run["signals"]["target"]["item_version"] == "9.9.9"
+    # every chunk stayed on the RUN'S OWN target — a resume that lost its env would have fallen back to
+    # EXEC_BASE_URL, taking the env's credentials to a different host
+    assert run["signals"]["target"]["base_url"] == "https://svc"
+    assert all(h.startswith("https://svc") for h in seen_hosts), seen_hosts
     assert R._PREP == {}                    # the finished run's entry is evicted
 
 

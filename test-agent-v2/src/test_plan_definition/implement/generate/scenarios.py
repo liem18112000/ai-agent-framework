@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import base64
 import io
-import os
 import re
 import zipfile
 
+from common.env import env_float
 from common.memory.bank import _slug
 from common.openapi import Operation, parse_operations
 from common.testplan.models import (
@@ -90,10 +90,7 @@ def dedup_by_behaviour(scenarios: list[TestScenario]) -> list[TestScenario]:
     # (e.g. "empty zip" vs "2GB zip"). A token-overlap 2nd gate was tried and rejected: this pass exists
     # to merge low-token-overlap semantic dups (worded differently), so an overlap floor defeats it. The
     # knob is the threshold itself — raise TPD_DEDUP_THRESHOLD toward ~0.92 if sub-case merges are seen.
-    try:
-        thr = float(os.environ.get("TPD_DEDUP_THRESHOLD", "0.86"))
-    except (TypeError, ValueError):
-        thr = 0.86
+    thr = env_float("TPD_DEDUP_THRESHOLD", 0.86)
     try:
         from common.memory.pg.embed import _get_embedder
         from common.memory.vector_memory import _cosine
