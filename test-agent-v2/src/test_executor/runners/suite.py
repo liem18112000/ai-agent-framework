@@ -361,6 +361,56 @@ async def _fetch_version(version_url: str, *, base_url: str, headers: dict | Non
         return ""
 
 
+#: Per-RUN preparation cache: run_id -> (expires_at, prep). A chunked run is polled once per chunk and
+#: none of the prep changes between chunks, yet each poll was re-minting a bearer, re-fetching the spec
+#: (48 KB for luz_docs) and re-reading the spec cache — six round-trips x every poll. Keyed by run_id so
+#: a NEW run always prepares fresh; TTL'd so a long run's bearer cannot go stale in the cache.
+_PREP: dict[str, tuple[float, dict]] = {}
+_PREP_TTL_S = 600
+
+
+async def _prepare_run(run_id: str, context_id: str, env_cfg: dict, auth_cfg: dict, *,
+                       base_url: str, target: dict) -> dict:
+    """Auth + OpenAPI spec + build version for this run — computed once, reused by later chunk polls.
+
+    Returns {auth, spec_ctx, target}. On a cache miss (new run, expired TTL, restarted instance) it
+    simply recomputes, so behaviour is identical to preparing every time — only the I/O differs."""
+    hit = _PREP.get(run_id)
+    if hit and hit[0] > time.monotonic():
+        return hit[1]
+
+    from test_executor.environments import authenticate
+    auth = await authenticate(auth_cfg, base_url=base_url)
+
+    spec_ctx = None
+    if env_cfg.get("spec_url"):
+        from test_executor.oracle import fetch_spec, parse_operations
+        raw_spec = await fetch_spec(env_cfg["spec_url"], base_url=base_url,
+                                    headers=getattr(auth, "headers", None))
+        if raw_spec:
+            spec_ctx = {"spec": raw_spec, "ops": parse_operations(raw_spec)}
+            await _persist_spec(context_id, raw_spec, env_cfg["spec_url"])
+            info = raw_spec.get("info") or {}
+            # The spec's `info.version` is the CONTRACT's version, not the deployed build's (SmallRye
+            # defaults it to "1.0" while the service reports 0.01.18.00-SNAPSHOT). Label it as such —
+            # a completion report that pins the wrong build version is worse than one that omits it.
+            target.update({k: v for k, v in (("item", info.get("title")),
+                                             ("spec_version", info.get("version"))) if v})
+    if env_cfg.get("version_url"):
+        # The DEPLOYED build version (report §1) — what actually ran, as opposed to the contract version.
+        build = await _fetch_version(env_cfg["version_url"], base_url=base_url,
+                                     headers=getattr(auth, "headers", None),
+                                     field=env_cfg.get("version_field", ""))
+        if build:
+            target["item_version"] = build
+
+    prep = {"auth": auth, "spec_ctx": spec_ctx, "target": target}
+    if len(_PREP) > 64:                      # bound the dict; finished runs are dropped by _finish below
+        _PREP.clear()
+    _PREP[run_id] = (time.monotonic() + _PREP_TTL_S, prep)
+    return prep
+
+
 async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[dict] | None = None,
                     base_url: str = "") -> dict:
     """Advance the execution run for a context by ONE chunk; return the run dict (status 'in_progress'
@@ -416,36 +466,13 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
         failures = []
         results = []
 
-    # Report template §1 (Scope): WHAT was tested and WHERE. base_url + env name are known here; the
-    # tested item's name/version comes from the OpenAPI `info` block below when a spec is available.
-    target = {"env": env.strip() or "default", "base_url": base_url}
-    # Prepare auth once per chunk (§4 prepare phase). ponytail: a bearer_fetch re-fetches each poll —
-    # fine at chunk cadence; cache on the run if token cost matters.
-    from test_executor.environments import authenticate
-    auth = await authenticate(auth_cfg, base_url=base_url)
-
-    # Pillar 3: ground API execution on the target's OpenAPI spec (env `spec_url`, e.g. /v3/api-docs),
-    # fetched once per chunk with the run's auth. None → engines fall back to ungrounded LLM guesses.
-    spec_ctx = None
-    if env_cfg.get("spec_url"):
-        from test_executor.oracle import fetch_spec, parse_operations
-        raw_spec = await fetch_spec(env_cfg["spec_url"], base_url=base_url, headers=getattr(auth, "headers", None))
-        if raw_spec:
-            spec_ctx = {"spec": raw_spec, "ops": parse_operations(raw_spec)}
-            await _persist_spec(context_id, raw_spec, env_cfg["spec_url"])
-            info = raw_spec.get("info") or {}
-            # The spec's `info.version` is the CONTRACT's version, not the deployed build's (SmallRye
-            # defaults it to "1.0" while the service reports 0.01.18.00-SNAPSHOT). Label it as such —
-            # a completion report that pins the wrong build version is worse than one that omits it.
-            target.update({k: v for k, v in (("item", info.get("title")),
-                                             ("spec_version", info.get("version"))) if v})
-    if env_cfg.get("version_url"):
-        # The DEPLOYED build version (report §1) — what actually ran, as opposed to the contract version.
-        build = await _fetch_version(env_cfg["version_url"], base_url=base_url,
-                                     headers=getattr(auth, "headers", None),
-                                     field=env_cfg.get("version_field", ""))
-        if build:
-            target["item_version"] = build
+    # §4 prepare phase + Pillar-3 grounding + report §1 Scope, computed ONCE per run and reused by every
+    # later chunk poll (see `_prepare_run`): the bearer, the OpenAPI spec and the build version are
+    # identical across the chunks of one run, so re-fetching them per poll was pure waste.
+    prep = await _prepare_run(run_id, context_id, env_cfg, auth_cfg,
+                              base_url=base_url, target={"env": env.strip() or "default",
+                                                         "base_url": base_url})
+    auth, spec_ctx, target = prep["auth"], prep["spec_ctx"], prep["target"]
 
     llm_max = env_int("EXEC_LLM_MAX", 8)
     for sc in scenarios[cursor:cursor + _chunk_size()]:
@@ -501,6 +528,7 @@ async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[di
                                            "target": target})
         return await store.get_run(run_id=run_id) or {"id": run_id, "status": "in_progress"}
 
+    _PREP.pop(run_id, None)                                    # run is finishing — drop its cached prep
     coverage = await _ac_coverage(context_id, results)         # the report's AC matrix (gaps included)
     verdicts = await asyncio.to_thread(triage, failures)       # JEV cascade is sync/blocking — off-loop
     await store.finish_run(run_id, status="done", summary=summ.as_dict(),

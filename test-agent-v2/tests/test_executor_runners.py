@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import MappingProxyType
 
 import httpx
 
@@ -401,3 +402,57 @@ def test_render_run_shows_the_ac_coverage_matrix_with_gaps():
     assert "AC coverage: 1/3 covered, 2 GAP(s)" in out
     assert "[PASS] s#AC-1" in out and "[GAP ] s#AC-2" in out
     assert "'rows':" not in out          # the matrix is a table, never a raw k=v blob
+
+
+async def test_per_run_prep_is_computed_once_across_chunk_polls(monkeypatch):
+    """A chunked run is polled once per chunk. The bearer, the OpenAPI spec and the build version are
+    identical across those polls, so they must be fetched ONCE — re-fetching per poll was 3 HTTP
+    round-trips + a bank read multiplied by the number of chunks."""
+    from test_executor.runners import suite as R
+
+    monkeypatch.setenv("EXEC_RUNNER", "auto")
+    monkeypatch.setenv("EXEC_CHUNK", "1")
+    monkeypatch.setenv("EXEC_ENVIRONMENTS",
+                       '{"e":{"base_url":"https://svc","spec_url":"/openapi","version_url":"/v"}}')
+    R._PREP.clear()
+    calls = {"auth": 0, "spec": 0, "version": 0, "persist": 0}
+
+    async def fake_auth(cfg, *, base_url):
+        calls["auth"] += 1
+        return AuthCtx()
+
+    async def fake_spec(spec_url, *, base_url, headers=None):
+        calls["spec"] += 1
+        return {"openapi": "3.0.3", "info": {"title": "svc.war", "version": "1.0"}, "paths": {}}
+
+    async def fake_version(version_url, *, base_url, headers=None, field=""):
+        calls["version"] += 1
+        return "9.9.9"
+
+    async def fake_persist(ctx, spec, url):
+        calls["persist"] += 1
+
+    monkeypatch.setattr("test_executor.environments.authenticate", fake_auth)
+    monkeypatch.setattr("test_executor.oracle.fetch_spec", fake_spec)
+    monkeypatch.setattr(R, "_fetch_version", fake_version)
+    monkeypatch.setattr(R, "_persist_spec", fake_persist)
+    monkeypatch.setattr(runners, "_transport", httpx.MockTransport(lambda r: httpx.Response(200, json={})))
+
+    store = InMemoryExecStore()
+    scs = [{"id": f"s{i}", "title": f"t{i}", "methodology": "api",
+            "request": {"method": "GET", "path": f"/p{i}", "expect_status": 200}} for i in range(3)]
+    for _ in range(3):                      # 3 scenarios, chunk=1 → three polls
+        run = await run_suite(store, "CTX", "e", scenarios=scs)
+    assert run["status"] == "done" and run["summary"]["executed"] == 3
+
+    assert calls == {"auth": 1, "spec": 1, "version": 1, "persist": 1}, calls
+    # the build version still reaches the report payload from the cached prep
+    assert run["signals"]["target"]["item_version"] == "9.9.9"
+    assert R._PREP == {}                    # the finished run's entry is evicted
+
+
+class AuthCtx:
+    """Minimal AuthContext double — the engines only read `.headers` / `.login`."""
+
+    headers = MappingProxyType({})
+    login = None
