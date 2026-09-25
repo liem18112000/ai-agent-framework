@@ -22,6 +22,7 @@ requirement-only and says so.
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import asdict, dataclass, field
 
 from common.codegraph.store import read_registry
@@ -59,13 +60,21 @@ class CoverageMatrix:
     # "does this scenario serve anything?" (precision) — a scenario citing nothing resolvable is
     # silently absent from `covered` and was never reported anywhere.
     scenarios_total: int = 0
-    orphan_scenarios: list[dict] = field(default_factory=list)    # {id, title} — cites no known unit
-    out_of_scope_hits: list[dict] = field(default_factory=list)   # {id, title, matched}
+    orphan_scenarios: list[dict] = field(default_factory=list)    # {id, title, cause}
+    out_of_scope_hits: list[dict] = field(default_factory=list)   # {id, title, matched, cause}
 
     @property
     def drift_count(self) -> int:
         """Scenarios implicated in drift (an orphan that also names an out-of-scope item counts once)."""
         return len({s["id"] for s in (*self.orphan_scenarios, *self.out_of_scope_hits)})
+
+    @property
+    def drift_causes(self) -> dict[str, int]:
+        """R7 — findings per disposition, e.g. {"JUDGMENT-GAP": 3}. Zero-valued causes are omitted.
+        THIS is the calibration signal: a run dominated by CONTEXT-GAP says invest in gather, one
+        dominated by JUDGMENT-GAP says invest in the generation prompt."""
+        return dict(Counter(
+            c for s in (*self.orphan_scenarios, *self.out_of_scope_hits) if (c := s.get("cause"))))
 
     @property
     def requirement_pct(self) -> float:
@@ -99,10 +108,23 @@ def _requirement_units(pack) -> list[CoverageUnit]:
 _OOS_MIN_OVERLAP = 0.6
 
 
+#: R7 — openrig's miss DISPOSITION, one word per finding. CONTEXT-GAP: the pack lacked what the
+#: moment needed, so the fix lands upstream in gather. JUDGMENT-GAP: the context WAS there and the
+#: call was still wrong, so the fix is a check on generation. The value of any single word is small;
+#: the RATE across runs is the calibration — it says whether to invest in the pack or in the prompt.
+CONTEXT_GAP = "CONTEXT-GAP"
+JUDGMENT_GAP = "JUDGMENT-GAP"
+
+
 def _orphan_scenarios(scenarios, req_units) -> list[dict]:
-    """Scenarios citing no resolvable requirement unit — cite nothing, or cite a dangling ref."""
+    """Scenarios citing no resolvable requirement unit — cite nothing, or cite a dangling ref.
+
+    R7 disposes each by CAUSE. With an empty pack there was nothing to cite, so the miss belongs
+    upstream (CONTEXT-GAP → fix gather). With units present the generator had them and still cited
+    none, so the miss is its own (JUDGMENT-GAP → fix the prompt / add a check)."""
     unit_ids = {u.id for u in req_units}
-    return [{"id": sc.id, "title": sc.title} for sc in scenarios or []
+    cause = CONTEXT_GAP if not unit_ids else JUDGMENT_GAP
+    return [{"id": sc.id, "title": sc.title, "cause": cause} for sc in scenarios or []
             if not (set(sc.source_refs) & unit_ids)]
 
 
@@ -128,14 +150,16 @@ def _out_of_scope_hits(plan, scenarios) -> list[dict]:
     phrases = [(p, toks) for p in entries if p not in ids and (toks := _tokens(p))]
     hits: list[dict] = []
     for sc in scenarios or []:
+        # R7: always JUDGMENT-GAP. The boundary was stated AND fed to the generator (`_scope_block`),
+        # so crossing it is a wrong call with the context present, never a missing-context miss.
         if named := sorted(set(sc.source_refs) & ids):        # exact: cites an out-of-scope node
-            hits.append({"id": sc.id, "title": sc.title, "matched": named[0]})
+            hits.append({"id": sc.id, "title": sc.title, "matched": named[0], "cause": JUDGMENT_GAP})
             continue
         text = _tokens(sc.title, sc.description)
         for phrase, ptoks in phrases:
             shared = ptoks & text
             if len(shared) >= min(2, len(ptoks)) and len(shared) / len(ptoks) >= _OOS_MIN_OVERLAP:
-                hits.append({"id": sc.id, "title": sc.title, "matched": phrase})
+                hits.append({"id": sc.id, "title": sc.title, "matched": phrase, "cause": JUDGMENT_GAP})
                 break  # one hit per scenario — the finding is "this drifted", not "how many ways"
     return hits
 
@@ -241,10 +265,14 @@ def render_coverage_md(m: CoverageMatrix) -> str:
     if m.orphan_scenarios or m.out_of_scope_hits:
         lines += ["", (f"## Drift ({m.drift_count} of {m.scenarios_total} scenarios) — "
                        "work that serves no stated intent")]
-        lines += [f"- [orphan] `{s['id']}` — {s['title']}: cites no requirement unit"
-                  for s in m.orphan_scenarios]
-        lines += [f"- [out-of-scope] `{s['id']}` — {s['title']}: names \"{s['matched']}\""
-                  for s in m.out_of_scope_hits]
+        if causes := m.drift_causes:
+            lines += ["", "Disposition: " + ", ".join(f"{n} {c}" for c, n in sorted(causes.items()))
+                      + " — CONTEXT-GAP means fix the pack (gather); JUDGMENT-GAP means fix the "
+                        "generation prompt.", ""]
+        lines += [f"- [orphan · {s.get('cause', '')}] `{s['id']}` — {s['title']}: "
+                  "cites no requirement unit" for s in m.orphan_scenarios]
+        lines += [f"- [out-of-scope · {s.get('cause', '')}] `{s['id']}` — {s['title']}: "
+                  f"names \"{s['matched']}\"" for s in m.out_of_scope_hits]
     return "\n".join(lines) + "\n"
 
 
@@ -252,8 +280,10 @@ def coverage_summary(m: CoverageMatrix) -> str:
     """One-line summary for the implement reply."""
     code = f"; code units {m.code_units_reached}/{m.code_units} reached" if m.has_codegraph else \
         "; no codegraph"
+    causes = "; ".join(f"{n} {c}" for c, n in sorted(m.drift_causes.items()))
     drift = (f" DRIFT: {len(m.orphan_scenarios)} orphan, {len(m.out_of_scope_hits)} out-of-scope "
-             f"of {m.scenarios_total} scenario(s).") if m.drift_count else ""
+             f"of {m.scenarios_total} scenario(s)"
+             + (f" ({causes})." if causes else ".")) if m.drift_count else ""
     return (f"Coverage: {m.requirement_cells_covered}/{m.requirement_cells} AC×kind cells "
             f"({m.requirement_pct}%){code}; {len(m.gaps)} gap(s).{drift}")
 
@@ -261,5 +291,6 @@ def coverage_summary(m: CoverageMatrix) -> str:
 def as_dict(m: CoverageMatrix) -> dict:
     d = asdict(m)
     d["units"] = [asdict(u) for u in m.units]
-    d["drift_count"] = m.drift_count   # a property, so asdict() does not carry it
+    d["drift_count"] = m.drift_count     # properties are invisible to asdict()
+    d["drift_causes"] = m.drift_causes
     return d

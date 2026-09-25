@@ -96,6 +96,34 @@ def test_out_of_scope_hits_match_node_ids_the_production_shape():
     assert m.orphan_scenarios == []      # s2 cites a REAL unit — it is out-of-scope, not orphaned
 
 
+def test_drift_findings_carry_a_cause_disposition():
+    """R7: every drift finding is disposed by CAUSE, openrig's one word per miss. An empty pack had
+    nothing to cite (CONTEXT-GAP → fix gather); a populated one means the generator had the units and
+    still cited none (JUDGMENT-GAP → fix the prompt). The RATE is the calibration signal."""
+    from common.testplan.coverage import CONTEXT_GAP, JUDGMENT_GAP, as_dict, coverage_summary
+
+    # empty pack — nothing existed to cite
+    starved = build_coverage_matrix(None, "run-x", plan=_plan(test_kinds=["happy"]), pack=_pack(),
+                                    scenarios=[_sc("s1", "happy", "jira:A")])
+    assert [s["cause"] for s in starved.orphan_scenarios] == [CONTEXT_GAP]
+    assert starved.drift_causes == {CONTEXT_GAP: 1}
+
+    # populated pack — the generator had a unit and cited nothing resolvable
+    rich = build_coverage_matrix(
+        None, "run-x", plan=_plan(test_kinds=["happy"], out_of_scope=["jira:B"]),
+        pack=_pack(Note(id="jira:A", type="note", title="Login"),
+                   Note(id="jira:B", type="note", title="Legacy")),
+        scenarios=[_sc("s1", "happy", "jira:GONE"),      # orphan, units existed
+                   _sc("s2", "happy", "jira:B")])        # reached past the stated boundary
+    assert [s["cause"] for s in rich.orphan_scenarios] == [JUDGMENT_GAP]
+    assert [s["cause"] for s in rich.out_of_scope_hits] == [JUDGMENT_GAP]
+    assert rich.drift_causes == {JUDGMENT_GAP: 2}
+
+    assert "2 JUDGMENT-GAP" in coverage_summary(rich)
+    assert "Disposition:" in render_coverage_md(rich)
+    assert as_dict(rich)["drift_causes"] == {JUDGMENT_GAP: 2}   # the rate survives persistence
+
+
 def test_a_clean_suite_reports_no_drift():
     """The quiet case must stay quiet — no Drift section, no drift clause in the summary."""
     from common.testplan.coverage import as_dict, coverage_summary
