@@ -53,7 +53,8 @@ def _spec_fixture(test_data: list) -> dict:
 
 async def implement_plan(bank, context_id: str, *, run_id: str = "implement", now: str = "",
                          detail: bool = False, model=None, guidance: str = "",
-                         max_rounds: int | None = None) -> ImplementResult:
+                         max_rounds: int | None = None,
+                         rigor: int | None = None) -> ImplementResult:
     plan = await asyncio.to_thread(store.read_plan, bank, context_id)  # blocking GCS reads/writes → off the loop
     if plan is None:
         return ImplementResult(message=f"No test plan for {context_id}; run define first.")
@@ -100,7 +101,7 @@ async def implement_plan(bank, context_id: str, *, run_id: str = "implement", no
     # a single call stays under the client's tool idle timeout — the fix for implement_plan erroring.
     scenarios, quality, pending = await run_assured_scenarios(
         bank, context_id, plan, plan_pack, test_data, now=now, model=model, guidance=guidance,
-        max_rounds=max_rounds)
+        max_rounds=max_rounds, rigor=rigor)
     for s in upload_scenarios:  # bound upload scenarios are deterministic — appended after the judged loop
         if not any(x.id == s.id for x in scenarios):
             scenarios.append(s)

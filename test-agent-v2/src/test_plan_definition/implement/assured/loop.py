@@ -23,11 +23,10 @@ the agent reconstructs its inputs from the bank and reports the same loop as an 
 from __future__ import annotations
 
 import asyncio
-import contextlib
-import os
 import time
 from dataclasses import asdict
 
+from common.env import env_float, env_int
 from common.testplan import memory as store
 from common.testplan.models import AssuredReport, PlanPack, TestData, TestPlan, TestScenario
 from test_plan_definition.monitoring import get_logger
@@ -35,6 +34,7 @@ from test_plan_definition.monitoring import get_logger
 log = get_logger("implement.assured")
 
 _DEFAULT_MAX_ITERS = 2
+_MAX_RIGOR = 5          # ceiling on the per-piece `rigor` override (untrusted client input)
 _DEFAULT_THRESHOLD = 0.7
 _DEFAULT_BUDGET_S = 540.0  # whole-loop wall-clock cap; keeps one implement call under the server ceiling
 _MAX_ISSUES = 5
@@ -51,9 +51,7 @@ _DECISION_CONF_MIN = 0.8
 
 
 def _decision_conf_min() -> float:
-    with contextlib.suppress(ValueError):
-        return float(os.environ.get("TPD_DECISION_CONF_MIN", _DECISION_CONF_MIN))
-    return _DECISION_CONF_MIN
+    return env_float("TPD_DECISION_CONF_MIN", _DECISION_CONF_MIN)
 
 
 def suite_state(plan_pack, scenarios) -> str:
@@ -110,9 +108,7 @@ def _judge_samples() -> int:
 
     Set >1 to gate on the median of k draws (a variance cut) when a trustworthy score matters more
     than latency; default 1 keeps implement near the ≈1-LLM-call invariant."""
-    with contextlib.suppress(ValueError):
-        return max(1, int(os.environ.get("TPD_JUDGE_SAMPLES", _DEFAULT_JUDGE_SAMPLES)))
-    return _DEFAULT_JUDGE_SAMPLES
+    return max(1, env_int("TPD_JUDGE_SAMPLES", _DEFAULT_JUDGE_SAMPLES))
 
 
 def _median_verdict(verdicts):
@@ -128,12 +124,17 @@ def _median_verdict(verdicts):
 async def run_assured_scenarios(
     bank, context_id: str, plan: TestPlan, plan_pack: PlanPack, test_data: list[TestData], *,
     now: str = "", model=None, guidance: str = "", max_rounds: int | None = None,
+    rigor: int | None = None,
 ) -> tuple[list[TestScenario], AssuredReport, bool]:
     """Run the bounded assured loop and return ``(best scenarios, quality report, pending)``.
 
     ``guidance`` is an optional human steer (from ``implement_plan(guidance=…)``): when the loop last
     reported below-bar, passing it resumes the stuck pass — seeding the steer as the top reflection and
     granting ``max_iters`` more rounds — so the client can course-correct the AI critique interactively.
+
+    ``rigor`` is the PER-PIECE care dial (R6): when set it overrides the deployment-global
+    ``TPD_ASSURED_MAX_ITERS`` for this one piece, clamped to ``_MAX_RIGOR``. Unset = the env
+    default, i.e. today's behaviour for every ticket.
 
     ``max_rounds`` caps how many NEW rounds run in THIS call (None = run to completion, the today
     behavior). When it stops with rounds still remaining, ``pending`` is True — the caller returns an
@@ -151,12 +152,15 @@ async def run_assured_scenarios(
     # Turbo caps the reflect→regenerate loop at 1 round (the top latency lever); explicit env overrides.
     iters_default = 1 if turbo_on() else _DEFAULT_MAX_ITERS
     max_iters, threshold, budget_s = iters_default, _DEFAULT_THRESHOLD, _DEFAULT_BUDGET_S
-    with contextlib.suppress(ValueError):
-        max_iters = max(1, int(os.environ.get("TPD_ASSURED_MAX_ITERS", iters_default)))
-    with contextlib.suppress(ValueError):
-        threshold = float(os.environ.get("TPD_ASSURED_THRESHOLD", _DEFAULT_THRESHOLD))
-    with contextlib.suppress(ValueError):
-        budget_s = max(1.0, float(os.environ.get("TPD_ASSURED_BUDGET_S", _DEFAULT_BUDGET_S)))
+    max_iters = max(1, env_int("TPD_ASSURED_MAX_ITERS", iters_default))
+    # R6 — PER-PIECE rigor beats the deployment-global env knob. openrig prices care per piece
+    # ("a large, complicated or load-bearing slice gets a wave of its own"); TPD_ASSURED_MAX_ITERS is
+    # one number for every ticket the deployment ever sees. `rigor` comes from an MCP client, so it is
+    # CLAMPED — the wall-clock budget below would stop a runaway anyway, but not before burning it.
+    if rigor:
+        max_iters = max(1, min(int(rigor), _MAX_RIGOR))
+    threshold = env_float("TPD_ASSURED_THRESHOLD", _DEFAULT_THRESHOLD)
+    budget_s = max(1.0, env_float("TPD_ASSURED_BUDGET_S", _DEFAULT_BUDGET_S))
     start = time.monotonic()
     degraded = False  # a round fell back to the heuristic (LLM timed out / unconfigured / invalid)
     saved = await asyncio.to_thread(store.read_assured_state, bank, context_id)  # blocking GCS read off the loop

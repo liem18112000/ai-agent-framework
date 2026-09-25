@@ -163,6 +163,54 @@ async def test_assured_below_bar_surfaces_for_human_review(pack_bucket, monkeypa
     assert res.scenarios  # still emits the best-effort best set (never empty)
 
 
+async def test_per_piece_rigor_overrides_the_deployment_global_knob(pack_bucket, monkeypatch):
+    """R6: rigor is a PER-PIECE property. TPD_ASSURED_MAX_ITERS is one number for every ticket the
+    deployment sees; `rigor=N` prices care for THIS piece and wins over it."""
+    monkeypatch.delenv("TPD_LLM_DETAIL", raising=False)
+    monkeypatch.setenv("TPD_ASSURED_MAX_ITERS", "1")     # the deployment default (as in cloudsql.tf)
+    bank = MemoryBank(pack_bucket)
+    await _confirmed(bank)
+    fake = full_fake_model()
+    fake.judge_json = judge_verdict(0.3)                 # never clears the bar → runs to the cap
+
+    res = await implement_plan(bank, "run-6f2a", model=fake, rigor=3)
+    assert res.quality.rounds == 3, "this piece earned 3 rounds despite the global knob saying 1"
+
+
+async def test_rigor_is_clamped_and_optional(pack_bucket, monkeypatch):
+    """`rigor` arrives from an MCP client, so it is untrusted: clamped to _MAX_RIGOR. Unset (0/None)
+    must leave today's env-driven behaviour exactly as it was."""
+    from test_plan_definition.implement.assured.loop import _MAX_RIGOR
+
+    monkeypatch.delenv("TPD_LLM_DETAIL", raising=False)
+    monkeypatch.setenv("TPD_ASSURED_MAX_ITERS", "1")
+    bank = MemoryBank(pack_bucket)
+    await _confirmed(bank)
+    fake = full_fake_model()
+    fake.judge_json = judge_verdict(0.3)
+
+    assert (await implement_plan(bank, "run-6f2a", model=fake, rigor=99)).quality.rounds == _MAX_RIGOR
+
+    store.write_assured_state(bank, "run-6f2a", {})      # fresh pass, not a resume
+    fake2 = full_fake_model()
+    fake2.judge_json = judge_verdict(0.3)
+    assert (await implement_plan(bank, "run-6f2a", model=fake2)).quality.rounds == 1  # env default
+
+
+def test_rigor_is_sent_before_guidance_or_the_parser_swallows_it():
+    """The agent does `partition("guidance:")`, so anything after that marker lands in the steer text.
+    Pin the ordering contract between the MCP tool's message and the agent's parse."""
+    import re
+
+    msg = "implement run-x" + "\nrigor: 3" + "\nguidance: go deeper"
+    head, _, tail = msg.partition("guidance:")
+    assert re.search(r"rigor:\s*(\d+)", head).group(1) == "3"
+    assert tail.strip() == "go deeper"
+    # the broken ordering, for contrast: rigor after guidance is invisible to the parser
+    bad_head, _, _ = ("implement run-x\nguidance: go deeper\nrigor: 3").partition("guidance:")
+    assert re.search(r"rigor:\s*(\d+)", bad_head) is None
+
+
 async def test_implement_plan_smoke_returns_under_ceiling_with_slow_rounds(pack_bucket, monkeypatch):
     """SMOKE (implement_plan timeout is gone): with slow rounds AND a high MAX_ITERS, implement_plan
     must still RETURN promptly — the predictive budget guard prevents the pre-fix runaway that blew the

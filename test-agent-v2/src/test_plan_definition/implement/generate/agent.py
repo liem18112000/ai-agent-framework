@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import re
 from dataclasses import asdict
 
 from google.adk.agents import BaseAgent
@@ -85,10 +86,13 @@ class ImplementAgent(BaseAgent):
     async def _run_async_impl(self, ctx):
         ctx_id = ctx.session.id
         head, _, tail = incoming_text(ctx).partition("guidance:")  # optional steer for the next round
+        # R6 per-piece rigor. It MUST be sent before the guidance line: `guidance:`
+        # partitions the message and swallows everything after it into `tail`.
+        rigor = int(m.group(1)) if (m := re.search(r"rigor:\s*(\d+)", head)) else None
         bank = build_bank()
         result = await implement_plan(bank, ctx_id, run_id=f"impl-{ctx_id[:8]}", now=now(),
                                       detail="detail" in head.lower().split(), guidance=tail.strip(),
-                                      max_rounds=_step_rounds())
+                                      max_rounds=_step_rounds(), rigor=rigor)
         if not result.scenarios:
             yield text_event(self.name, result.message or f"Nothing generated for {ctx_id}.")
             return
