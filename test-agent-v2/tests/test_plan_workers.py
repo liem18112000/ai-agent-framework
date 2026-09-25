@@ -32,8 +32,8 @@ def test_enabled_gate(monkeypatch):
 
 def test_handle_job_writes_completed_text(monkeypatch):
     """Worker side: complete() the prompt, upload to the result blob via the ObjectStore. Faked — no net."""
-    import common.adk.model as model
     import common.store as store_mod
+    from common.adk import model
     from common.store.memory import InMemoryObjectStore
 
     monkeypatch.setattr(model, "complete", lambda prompt, **kw: "SCENARIO_JSON")

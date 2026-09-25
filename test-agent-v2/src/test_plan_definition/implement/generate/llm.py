@@ -6,9 +6,9 @@ inlined at their sole call sites: the P4 judge in ``assured.py``, steps in ``ste
 from __future__ import annotations
 
 import asyncio
-import os
 
 from common.adk import agent_model
+from common.env import env_int
 from common.testplan.llm.adk import build_generator_agent, run_json_agent
 from common.testplan.llm.prompts import pack_block, scenarios_prompt, scope_classify_prompt
 from common.testplan.llm.schemas import InScope, Scenarios
@@ -73,10 +73,7 @@ _DEFAULT_MAX_BATCHES = 12
 
 
 def _max_llm_batches() -> int:
-    try:
-        return max(1, int(os.environ.get("TPD_GEN_MAX_BATCHES", _DEFAULT_MAX_BATCHES)))
-    except ValueError:
-        return _DEFAULT_MAX_BATCHES
+    return max(1, env_int("TPD_GEN_MAX_BATCHES", _DEFAULT_MAX_BATCHES))
 
 
 async def claude_scenarios(plan: TestPlan, plan_pack, test_data: list[TestData], *,

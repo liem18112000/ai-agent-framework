@@ -20,6 +20,7 @@ import json
 import os
 import time
 
+from common.env import env_float
 from common.llm.parse import loads_obj
 from common.testplan.llm.prompts import pack_block, scenarios_prompt
 from common.testplan.llm.schemas import Scenarios
@@ -84,11 +85,7 @@ async def worker_scenarios(
         log.warning("worker publish failed (%s) — falling back to synchronous generation", exc)
         return None
 
-    budget = _DEFAULT_BUDGET_S
-    try:
-        budget = max(30.0, float(os.environ.get("TPD_WORKER_BUDGET_S", _DEFAULT_BUDGET_S)))
-    except (ValueError, TypeError):
-        pass
+    budget = max(30.0, env_float("TPD_WORKER_BUDGET_S", _DEFAULT_BUDGET_S))
     texts = await asyncio.to_thread(_poll_results, ctx, run, [i for i, _ in jobs], budget)
 
     from test_plan_definition.implement.generate.scenarios import heuristic_scenarios
