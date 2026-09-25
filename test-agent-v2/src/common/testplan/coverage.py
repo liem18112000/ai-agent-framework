@@ -106,11 +106,31 @@ def _orphan_scenarios(scenarios, req_units) -> list[dict]:
             if not (set(sc.source_refs) & unit_ids)]
 
 
+def _is_node_id(entry: str) -> bool:
+    """`jira:LUZ-1` / `codegraph:ws/repo` — an id, not prose. Prose phrases carry whitespace."""
+    return ":" in entry and " " not in entry
+
+
 def _out_of_scope_hits(plan, scenarios) -> list[dict]:
-    """Scenarios whose text names something the plan explicitly ruled OUT of scope."""
-    phrases = [(p, toks) for p in ((plan.out_of_scope if plan else None) or []) if (toks := _tokens(p))]
+    """Scenarios reaching for something the plan puts OUT of scope.
+
+    `plan.out_of_scope` takes TWO real shapes in this pipeline, so both are matched:
+
+    - **pack NODE IDS** — the assured loop overwrites the field with ``grounded_ids - in_scope_ids``
+      from the scope classifier and PERSISTS it (``assured/loop.py``), so this is what coverage sees
+      on any run where the classifier fired, i.e. the normal production shape. Matched EXACTLY
+      against the scenario's ``source_refs`` — no tokens, no threshold, no blind spots.
+    - **define's PROSE** ("QR code fallback removal") — what survives when the classifier did not run
+      (no model configured). Matched on token overlap, with the ceilings noted at `_OOS_MIN_OVERLAP`.
+    """
+    entries = [p for p in ((plan.out_of_scope if plan else None) or []) if p]
+    ids = {p for p in entries if _is_node_id(p)}
+    phrases = [(p, toks) for p in entries if p not in ids and (toks := _tokens(p))]
     hits: list[dict] = []
     for sc in scenarios or []:
+        if named := sorted(set(sc.source_refs) & ids):        # exact: cites an out-of-scope node
+            hits.append({"id": sc.id, "title": sc.title, "matched": named[0]})
+            continue
         text = _tokens(sc.title, sc.description)
         for phrase, ptoks in phrases:
             shared = ptoks & text

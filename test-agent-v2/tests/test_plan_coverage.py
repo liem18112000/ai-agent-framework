@@ -79,6 +79,23 @@ def test_out_of_scope_hits_flag_scenarios_the_plan_ruled_out():
     assert "out-of-scope" in render_coverage_md(m)
 
 
+def test_out_of_scope_hits_match_node_ids_the_production_shape():
+    """R2, the shape that actually reaches coverage in production: the assured loop overwrites
+    plan.out_of_scope with `grounded_ids - in_scope_ids` from the scope classifier and persists it,
+    so the field holds pack NODE IDS, not prose. Matched exactly against source_refs — a prose-only
+    token matcher would have been near-dead here (it would need the scenario text to name the id)."""
+    plan = _plan(test_kinds=["happy"], out_of_scope=["jira:B"])   # classifier ruled B out
+    pack = _pack(Note(id="jira:A", type="note", title="Login"),
+                 Note(id="jira:B", type="note", title="Legacy export"))
+    scenarios = [_sc("s1", "happy", "jira:A", title="valid login"),
+                 _sc("s2", "happy", "jira:B", title="exports the legacy file")]
+    m = build_coverage_matrix(None, "run-x", plan=plan, pack=pack, scenarios=scenarios)
+
+    assert [s["id"] for s in m.out_of_scope_hits] == ["s2"]
+    assert m.out_of_scope_hits[0]["matched"] == "jira:B"
+    assert m.orphan_scenarios == []      # s2 cites a REAL unit — it is out-of-scope, not orphaned
+
+
 def test_a_clean_suite_reports_no_drift():
     """The quiet case must stay quiet — no Drift section, no drift clause in the summary."""
     from common.testplan.coverage import as_dict, coverage_summary

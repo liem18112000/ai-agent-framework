@@ -62,6 +62,33 @@ async def test_resume_across_turns_via_rehydrate(pack_bucket):
     assert result.plan.methodology == ["api"]
 
 
+async def test_rehydrate_re_reads_the_pack_rather_than_trusting_the_checkpoint(pack_bucket):
+    """R3: 'editing a file is not delivery' — a resumed seat that never re-reads disk acts on stale
+    intent. Our checkpoint carries only progress (pending rounds, decisions, answers); the
+    intent-bearing pack is re-read from the bank by the ctor on every rehydrate. PIN that: a note
+    added to the bank mid-session must be visible to the resumed session. If a future refactor
+    caches the pack into the checkpoint for speed, this fails — which is the point."""
+    from common.models import Note
+
+    bank = MemoryBank(pack_bucket)
+    s1 = PlanSession(bank, "run-6f2a", seed="LUZ-158390")
+    before = {n.id for n in s1.plan_pack.pack.grounded}
+    s1.save()
+
+    # the world moves while the session is parked (a later gather, a new AC). load_pack scopes by
+    # run_id AND reads the index, so a realistic arrival needs both — a bare upsert_note is invisible.
+    mid = Note(id="jira:MID-SESSION", type="note", title="arrived after the checkpoint",
+               run_id="run-6f2a")
+    bank.upsert_note(mid)
+    bank.update_index(lambda g: g.nodes.__setitem__(
+        mid.id, {"id": mid.id, "type": mid.type, "title": mid.title}))
+
+    s2 = PlanSession.rehydrate(bank, "run-6f2a")
+    after = {n.id for n in s2.plan_pack.pack.grounded}
+    assert "jira:MID-SESSION" not in before
+    assert "jira:MID-SESSION" in after, "resume must re-read intent from the bank, not the checkpoint"
+
+
 async def test_empty_pack_declines(fake_bucket):
     bank = MemoryBank(fake_bucket)
     result = await define(bank, "run-empty")
