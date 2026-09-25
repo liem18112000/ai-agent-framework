@@ -58,9 +58,13 @@ class VectorStore(Protocol):
         ...
 
     async def recall(
-        self, *, seed_refs: set[str], q_embed: list[float] | None = None, limit: int = 10
+        self, *, seed_refs: set[str], q_embed: list[float] | None = None, limit: int = 10,
+        steps: tuple[str, ...] = (),
     ) -> list[str]:
-        """Prior-lesson recall: structural (edge ∩ `seed_refs`) ∪ semantic (vector-nearest), synopsis strings."""
+        """Prior-lesson recall: structural (edge ∩ `seed_refs`) ∪ semantic (vector-nearest), synopsis strings.
+
+        `steps` (R1) PREFERS lessons whose `origin_step` names the caller's own position, ordering
+        them ahead of the rest — it never excludes, so a cold position recalls what it always did."""
         ...
 
     async def grounded(self, candidate: str, anchors: set[str]) -> bool:

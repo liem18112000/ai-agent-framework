@@ -181,7 +181,8 @@ class PgMemoryStore:
         async with self._engine.connect() as conn:
             return bool((await conn.execute(sql, {"c": candidate, "a": list(anchors)})).scalar())
 
-    async def recall(self, *, seed_refs: set[str], q_embed: list[float] | None = None, limit: int = 10) -> list[str]:
+    async def recall(self, *, seed_refs: set[str], q_embed: list[float] | None = None,
+                     limit: int = 10, steps: tuple[str, ...] = ()) -> list[str]:
         """Prior-lesson recall (M4b): structural ∪ semantic, deduped, structural-first."""
         from sqlalchemy import text
         await self._ensure()
@@ -192,10 +193,12 @@ class PgMemoryStore:
                 "SELECT n.id, n.synopsis FROM memory_node n "
                 "WHERE n.status='active' AND n.kind IN ('lesson','correction','gotcha') "
                 "AND EXISTS (SELECT 1 FROM memory_edge e WHERE e.source_id=n.id AND e.target = ANY(:refs)) "
-                "ORDER BY (n.confidence='high') DESC, n.created_at ASC LIMIT :lim"
+                "ORDER BY (n.meta->>'origin_step' = ANY(:steps)) DESC, "
+                "(n.confidence='high') DESC, n.created_at ASC LIMIT :lim"
             )
             async with self._engine.connect() as conn:
-                for rid, syn in (await conn.execute(sql, {"refs": list(seed_refs), "lim": limit})).all():
+                for rid, syn in (await conn.execute(sql, {"refs": list(seed_refs), "lim": limit,
+                                                          "steps": list(steps)})).all():
                     if syn and rid not in seen:
                         seen.add(rid); out.append(syn)
         if q_embed and len(out) < limit:

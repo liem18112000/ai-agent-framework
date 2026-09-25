@@ -41,14 +41,17 @@ async def search_nodes(bank, query: str, *, store: VectorStore | None = None) ->
     return _graph_search(bank, query)
 
 
-async def recall_lessons(bank, *, seed_refs: set[str], query_text: str = "", limit: int = 5) -> list[str]:
-    """Prior lessons for a run — structural (source_refs ∩ seed_refs) ∪ semantic (vector-nearest)."""
+async def recall_lessons(bank, *, seed_refs: set[str], query_text: str = "", limit: int = 5,
+                         steps: tuple[str, ...] = ()) -> list[str]:
+    """Prior lessons for a run — structural (source_refs ∩ seed_refs) ∪ semantic (vector-nearest).
+    `steps` (R1) PREFERS lessons earned at the caller's own position; it never excludes the rest."""
     if backend() in _STORE_BACKENDS:
         store = _build_store()
         if store is not None:
             try:
                 q_embed = await _query_embedding(query_text) if query_text else None
-                hits = await store.recall(seed_refs=seed_refs, q_embed=q_embed, limit=limit)
+                hits = await store.recall(seed_refs=seed_refs, q_embed=q_embed, limit=limit,
+                                          steps=steps)
                 if hits or backend() == "postgres":
                     return hits
             except Exception as exc:  # noqa: BLE001 — recall is best-effort; fall back to the graph
@@ -57,7 +60,7 @@ async def recall_lessons(bank, *, seed_refs: set[str], query_text: str = "", lim
 
     # INT-03: the GCS recall does blocking bucket round-trips (iter_lessons reads each lesson sidecar);
     # run it off the event loop so a RECALL_LESSONS-on turn can't stall Cloud Run's request loop.
-    return await asyncio.to_thread(_graph_recall, bank, seed_refs=seed_refs, limit=limit)
+    return await asyncio.to_thread(_graph_recall, bank, seed_refs=seed_refs, limit=limit, steps=steps)
 
 
 def _build_store() -> VectorStore | None:

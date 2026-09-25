@@ -10,9 +10,11 @@ class _FakeStore:
     def __init__(self, hits):
         self._hits = hits
         self.seen_embed = "unset"
+        self.seen_steps = "unset"
 
-    async def recall(self, *, seed_refs, q_embed=None, limit=5):
+    async def recall(self, *, seed_refs, q_embed=None, limit=5, steps=()):
         self.seen_embed = q_embed
+        self.seen_steps = steps
         return self._hits
 
 

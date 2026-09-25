@@ -179,7 +179,8 @@ class InMemoryVectorStore:
         return False
 
     async def recall(
-        self, *, seed_refs: set[str], q_embed: list[float] | None = None, limit: int = 10
+        self, *, seed_refs: set[str], q_embed: list[float] | None = None, limit: int = 10,
+        steps: tuple[str, ...] = (),
     ) -> list[str]:
         """Prior-lesson recall: structural (edge → seed_refs) ∪ semantic (shared, vector-nearest), synopses."""
         out: list[str] = []
@@ -190,7 +191,12 @@ class InMemoryVectorStore:
                 if n.get("status", "active") == "active" and n.get("kind") in _LESSON_KINDS
                 and self._edges_to(n["id"], seed_refs)
             ]
-            cands.sort(key=lambda n: (0 if n.get("confidence") == "high" else 1, self._created.get(n["id"], 0)))
+            cands.sort(key=lambda n: (
+                # R1: own position first, then high-confidence, then insertion order.
+                0 if steps and (n.get("meta") or {}).get("origin_step") in steps else 1,
+                0 if n.get("confidence") == "high" else 1,
+                self._created.get(n["id"], 0),
+            ))
             for n in cands:
                 syn = n.get("synopsis")
                 if syn and n["id"] not in seen:

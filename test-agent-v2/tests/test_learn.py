@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from common.learn import (
+    AGENT_STEPS,
     QUEUE_PATH,
     CaptureJob,
     LessonSignal,
@@ -104,6 +105,27 @@ def test_queue_drain_is_idempotent_and_accumulates():
     assert drain(bank) == 3
     assert drain(bank) == 0
     assert len(_insight_ids(bank)) == 3
+
+
+def test_recall_prefers_own_position_without_excluding_others():
+    """R1: a lesson earned at the caller's own position outranks a foreign one — but the foreign one
+    is still recalled. `origin_step` was written on every lesson and read by nothing; the KGA/TPD
+    bleed was one agent's pack leading with the other agent's lessons."""
+    bank = _bank_with_node("jira:LUZ-1")
+    capture_lessons(bank, context_id="run-1", step="implement", signals=[
+        LessonSignal(statement="tpd lesson", source_refs=["jira:LUZ-1"])])
+    capture_lessons(bank, context_id="run-1", step="gather", signals=[
+        LessonSignal(statement="kga lesson", source_refs=["jira:LUZ-1"])])
+
+    kga = recall_lessons(bank, seed_refs={"jira:LUZ-1"}, steps=AGENT_STEPS["KGA"])
+    assert kga[0] == "kga lesson"          # own position leads
+    assert "tpd lesson" in kga             # …and the other is NOT excluded
+
+    tpd = recall_lessons(bank, seed_refs={"jira:LUZ-1"}, steps=AGENT_STEPS["TPD"])
+    assert tpd[0] == "tpd lesson"          # symmetric
+
+    # no position given -> the pre-R1 order is untouched
+    assert set(recall_lessons(bank, seed_refs={"jira:LUZ-1"})) == {"kga lesson", "tpd lesson"}
 
 
 def test_recall_lessons_grounded_to_seed():

@@ -167,6 +167,21 @@ async def test_recall_semantic_reaches_a_captured_context_scoped_lesson():
     assert "captured lesson" in hits
 
 
+async def test_recall_prefers_own_position():
+    """R1, vector arm: `steps` orders own-position lessons ahead of foreign ones without dropping them."""
+    store = InMemoryVectorStore()
+    for nid, syn, step in (("insight:tpd", "tpd lesson", "implement"),
+                           ("insight:kga", "kga lesson", "gather")):
+        await store.upsert_node(_node(nid, type="insight", kind="lesson", synopsis=syn,
+                                      meta={"origin_step": step}))
+        await store.upsert_edges([{"source_id": nid, "target": "jira:S",
+                                   "type": "insight", "origin": "lesson", "in_scope": True}])
+
+    assert (await store.recall(seed_refs={"jira:S"}, steps=("gather", "refine")))[0] == "kga lesson"
+    assert (await store.recall(seed_refs={"jira:S"}, steps=("define", "implement")))[0] == "tpd lesson"
+    assert len(await store.recall(seed_refs={"jira:S"}, steps=("gather",))) == 2  # never excludes
+
+
 async def test_recall_high_confidence_first():
     store = InMemoryVectorStore()
     await store.upsert_node(_node("insight:lo", type="insight", kind="lesson",

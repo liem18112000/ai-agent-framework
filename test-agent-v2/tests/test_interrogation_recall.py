@@ -26,8 +26,9 @@ def _pack() -> Pack:
 def spy(monkeypatch):
     calls: list[dict] = []
 
-    async def fake_recall(bank, *, seed_refs, query_text="", limit=5):
-        calls.append({"seed_refs": set(seed_refs), "query_text": query_text})
+    async def fake_recall(bank, *, seed_refs, query_text="", limit=5, steps=()):
+        calls.append({"seed_refs": set(seed_refs), "query_text": query_text,
+                      "steps": steps})
         return ["Performance targets the credit-only operation, not file import"]
 
     monkeypatch.setattr("common.memory.retrieve.recall_lessons", fake_recall)
@@ -48,6 +49,8 @@ async def test_recall_enabled_injects_lessons_from_the_facade(monkeypatch, spy):
     await _recall_into(bank=None, pack=pack, prefix="KGA")
     assert len(spy) == 1
     assert spy[0]["seed_refs"] == {"jira:LUZ-1", "jira:LUZ-2"}          # grounded node ids → seeds
+    # R1: the agent's own POSITION reaches the facade, so KGA leads with KGA-earned lessons.
+    assert spy[0]["steps"] == ("gather", "refine")
     assert spy[0]["query_text"] == "Dunning cancellation Credit-only import"  # grounded titles
     assert pack.lessons == ["Performance targets the credit-only operation, not file import"]
 

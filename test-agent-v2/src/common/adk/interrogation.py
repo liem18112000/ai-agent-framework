@@ -98,6 +98,9 @@ async def _recall_into(bank, pack, prefix: str) -> None:
         pack.lessons = await retrieve.recall_lessons(
             bank, seed_refs={n.id for n in grounded},
             query_text=" ".join(n.title for n in grounded if n.title),
+            # R1: prefer lessons this agent's own position earned (KGA gather/refine vs TPD
+            # define/implement) — the bleed was KGA reading TPD-side lessons and vice versa.
+            steps=learn.AGENT_STEPS.get(prefix, ()),
         )
     except Exception as exc:  # noqa: BLE001 — recall is best-effort; never block the interrogation
         log.warning("interrogation: lesson recall skipped (%s)", exc)
