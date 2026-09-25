@@ -1,7 +1,11 @@
 # OpenRig's intent hierarchy + Refocus — investigation and debate against test-agent-v2
 
-**Date:** 2026-09-24 · **Status:** design debate, no code changed · **Subject:**
-`github.com/mvschwarz/openrig` read at `HEAD` (2026-09-24) vs. what test-agent-v2 has built.
+**Date:** 2026-09-24 · **Subject:** `github.com/mvschwarz/openrig` read at `HEAD` vs. what
+test-agent-v2 has built.
+
+**Status (2026-09-25): R0–R3 implemented and committed.** Implementation corrected three claims
+below; each correction is marked inline rather than quietly edited. R4/R5 stay rejected, R6/R7
+open.
 
 ### Diagram index
 
@@ -43,10 +47,10 @@ Applying that lens to our code turned up a **live defect** (§6.4): the semantic
 
 | | move | cost |
 |---|---|---|
-| **FIX** | **R0** the `scope='shared'` recall dead-end (found by this review) | 1 line + a decision |
-| **ADOPT** | **R1** route lesson recall by `origin_step` — the field we already write and never read | ~10 lines |
-| **ADOPT** | **R2** the *drift* half of the coverage matrix: orphan + out-of-scope scenarios | ~30 lines, 0 LLM calls |
-| **ADOPT** | **R3** refocus-on-rehydrate — a resumed session re-reads its brief | ~1 line per resume path |
+| **FIX** | **R0** the `scope='shared'` recall dead-end (found by this review) | done — `f0d98e0` |
+| **ADOPT** | **R1** route lesson recall by `origin_step` — the field we already write and never read | done — `508bfc8` |
+| **ADOPT** | **R2** the *drift* half of the coverage matrix: orphan + out-of-scope scenarios | done — `4660412`, fixed `d666842` |
+| **VERIFY** | ~~**R3** refocus-on-rehydrate~~ — premise wrong (§6.5): resume already re-reads intent; pinned by a test instead | 1 test |
 | **REJECT** | **R4** slice-intent on `TestStep` | over-modelling; the scenario is the unit |
 | **REJECT** | **R5** a periodic refocus hook/channel | 5 human gates + request-scoped runtime |
 | **DEFER** | **R6** the maturity ladder + planning dial | real, but neither is a drift fix |
@@ -245,7 +249,7 @@ coverage matrix.
 | maturity ladder + stage vocabulary | `confidence` + `status` + `supersedes` | partial; `supersedes` is a dead field |
 | drift as a first-class finding | `CoverageMatrix` gaps | **we only measure under-coverage** (§6.1) |
 | CONTEXT-GAP / JUDGMENT-GAP | `TriageVerdict(message, verdict)` on *execution* failures | we triage failed runs, never failed *plans* |
-| planning dial P0–P4 | `TPD_ASSURED`, `TPD_LLM_DETAIL`, `depth=` | **binary env flags, deployment-global** — not per piece |
+| planning dial P0–P4 | `TPD_ASSURED_MAX_ITERS`, `TPD_LLM_DETAIL`, `depth=` | **numeric/binary env knobs, deployment-global** — not per piece |
 | the brief is the unit | `plan-brief.md` + `implement-brief.md` | **we have this, and it's good** |
 | the two locks | `approve` / `approve_plan` client-owned gates | **we have this, and it's good** |
 
@@ -339,16 +343,33 @@ flat grade rather than a ladder with promotion/demotion events, `scope` is hardc
 never promoted, and `supersedes` is dead where openrig requires a successor pointer on
 anything superseded.
 
-### 6.5 A resumed session rehydrates state but not intent
+### 6.5 A resumed session DOES re-read intent — corrected
 
-`RoundSession._rehydrate` (`common/testplan/session.py`) restores `pending`, `open_carried`,
-`raised`/`answered`, decisions and current questions — and reloads the pack in the ctor. It
-**never re-reads `plan-brief.md`**. The assured loop resumes from its GCS checkpoint the
-same way.
+> **Corrected 2026-09-25 during implementation.** This section originally claimed that
+> `RoundSession._rehydrate` restores progress but never re-reads the intent, and R3 was scoped
+> to "re-read `plan-brief.md` on resume". Both halves were wrong, and the implementation pass
+> proved it.
 
-That is openrig's premise sitting in our code, and it lands on exactly our long-running
-paths: `implement_plan` is chunked multi-turn, `run_suite` is polled/chunked, the assured
-loop is GCS-checkpointed to survive a Cloud Run kill.
+Two facts, verified in code and pinned by a test:
+
+1. **`plan-brief.md` is not an input on any path.** It is written at `finalize()` by both the
+   define and implement sessions, and read only by `get_plan` and the admin runs view. Question
+   generation reads the *pack* and the *structured plan*. So "re-read the brief on resume" would
+   have injected a brand-new input rather than restoring parity.
+2. **The intent-bearing inputs ARE re-read on every resume.** The checkpoint carries only
+   progress (`pending`, `open_carried`, `raised`/`answered`, decisions, current questions); the
+   ctor re-loads the pack from the bank on every rehydrate. The assured loop likewise re-reads
+   plan + pack per chunk and re-runs the scope classifier once per call.
+
+So openrig's "editing a file is not delivery" failure mode **does not apply here** — we re-read
+rather than trusting the checkpoint. R3 became *verify and pin*: a test now asserts that a note
+arriving mid-session is visible to the resumed session, so a future refactor that caches the
+pack into the checkpoint for speed fails loudly.
+
+The structured intent does flow downward: `plan.scope` / `out_of_scope` / `metrics` are read by
+implement, and R2 makes `out_of_scope` load-bearing. The brief is that intent's prose rendering
+for humans, not the machine's copy of it — which is a defensible design, and better than this
+study originally implied.
 
 ---
 
@@ -383,9 +404,14 @@ loop is GCS-checkpointed to survive a Cloud Run kill.
    letter-worship failure, not diligence."*
 3. **Naming it "Refocus" doesn't make it new.** Half of R2 is a reindex of `covered`. Say
    so in the diff, or we grow a subsystem where a function belongs.
-4. **Any refocus that costs an LLM call breaks I3.** Implement is deliberately *one* LLM
-   call; three serial blocking Vertex calls already blew past Cloud Run's request timeout
-   and got an instance killed. A refocus must be deterministic, ride an existing call, or
+4. **Any refocus that costs an LLM call lands on an already-strained budget.** *(Corrected
+   2026-09-25: I3 — "implement = exactly one LLM call" — no longer holds. The `TPD_ASSURED`
+   opt-in is gone, the assured loop is always on, and its own docstring states it trades I3
+   away: per round it costs `ceil(in_scope_units / _BATCH_UNITS)` generation batches plus
+   `TPD_JUDGE_SAMPLES` judge calls, plus one scope-classify call per implement.)* The
+   constraint that survives is the wall clock: three serial blocking Vertex calls already blew
+   past Cloud Run's request timeout and killed an instance, and the loop now carries explicit
+   budget guards for exactly that. A refocus must be deterministic, ride an existing call, or
    not exist.
 5. **The intent-sentence idea is wrong by openrig's own standard.** The fidelity law says a
    one-line intent is ~20:1 lossy. We already deposit the design inline via `plan-brief.md`.
@@ -428,10 +454,12 @@ layer the bleed actually lives on.
 Deterministic, zero LLM calls, renderable in the existing gap section. **openrig's
 plot-loss finding as a number, and the highest-value item here.**
 
-**R3 — refocus-on-rehydrate. ADOPT.** On resume (`RoundSession._rehydrate`, the assured
-loop's GCS resume), re-read `plan-brief.md` into the working context. Not a hook, not a
-schedule, not a threshold — *a resumed session re-reads its intent*. The smallest possible
-form of openrig's premise.
+**R3 — refocus-on-rehydrate. ~~ADOPT~~ → VERIFIED, NOTHING TO FIX.** *(Corrected 2026-09-25.)*
+The premise was wrong twice over (§6.5): `plan-brief.md` is not an input on any path, and resume
+already re-reads the pack and plan from the bank rather than trusting the checkpoint. openrig's
+"editing a file is not delivery" failure mode does not apply to us. Shipped instead as a
+**regression pin**: a note arriving mid-session must be visible to the resumed session, so a
+future refactor that caches intent into the checkpoint fails loudly.
 
 **R4 — slice-intent on `TestStep`. REJECT.** The scenario is the unit.
 
@@ -442,8 +470,9 @@ trigger, not turns and not wall-clock.
 
 **R6 — the maturity ladder and the planning dial. DEFER, but record what they expose.**
 Two real smells: `supersedes` is a dead field where openrig requires a successor pointer on
-anything superseded; and `TPD_ASSURED` is a **deployment-global env flag** deciding how much
-rigor *every* ticket gets, when rigor is obviously a per-piece property. Both are config /
+anything superseded; and assured-loop rigor is set by **deployment-global env knobs**
+(`TPD_ASSURED_MAX_ITERS`, pinned to 1 in `cloudsql.tf`) for *every* ticket, when rigor is
+obviously a per-piece property. Both are config /
 lifecycle refactors, not drift fixes. Do not let them ride in on this change.
 
 **R7 — CONTEXT-GAP vs JUDGMENT-GAP. STEAL, it's free.** One field on `TriageVerdict` and on
@@ -468,8 +497,8 @@ precisely to make those numbers trustworthy.
 So R2's upgrade path is not "add an LLM refocus." It is: once the deterministic orphan /
 out-of-scope counters exist and are reported, promote them to a **gated cascade** —
 `P(this scenario serves the plan intent)` through the JEV path we already ship, run **once
-per implement pass over the merged scenario set** (never per scenario, never per turn — I3
-stands). Cheap deterministic filter first, judge only the residue. The same shape as every
+per implement pass over the merged scenario set** (never per scenario, never per turn — the
+loop's wall-clock budget is already the binding constraint). Cheap deterministic filter first, judge only the residue. The same shape as every
 gate we already have.
 
 **openrig asks the agent whether it has drifted. We can measure it.** That is the one place
