@@ -3,9 +3,9 @@
 **Date:** 2026-09-24 · **Subject:** `github.com/mvschwarz/openrig` read at `HEAD` vs. what
 test-agent-v2 has built.
 
-**Status (2026-09-25): R0–R3 implemented and committed.** Implementation corrected three claims
-below; each correction is marked inline rather than quietly edited. R4/R5 stay rejected, R6/R7
-open.
+**Status (2026-09-25): R0–R3 and R7 implemented and committed.** Implementation corrected three claims
+below; each correction is marked inline rather than quietly edited. R4/R5 stay rejected; R6 is the
+only item still open.
 
 ### Diagram index
 
@@ -54,7 +54,7 @@ Applying that lens to our code turned up a **live defect** (§6.4): the semantic
 | **REJECT** | **R4** slice-intent on `TestStep` | over-modelling; the scenario is the unit |
 | **REJECT** | **R5** a periodic refocus hook/channel | 5 human gates + request-scoped runtime |
 | **DEFER** | **R6** the maturity ladder + planning dial | real, but neither is a drift fix |
-| **FREE** | **R7** CONTEXT-GAP / JUDGMENT-GAP on existing verdicts | one enum value |
+| **FREE** | **R7** CONTEXT-GAP / JUDGMENT-GAP on the drift findings | done — `589dea9` |
 
 And the inversion worth the whole document: **openrig's refocus asks the agent to
 self-assess ("discomfort is the signal"). We own a calibrated judge. Ours can be measured.**
@@ -475,10 +475,17 @@ anything superseded; and assured-loop rigor is set by **deployment-global env kn
 obviously a per-piece property. Both are config /
 lifecycle refactors, not drift fixes. Do not let them ride in on this change.
 
-**R7 — CONTEXT-GAP vs JUDGMENT-GAP. STEAL, it's free.** One field on `TriageVerdict` and on
-the assured loop's `issues`. It answers a question we have argued repeatedly and never
-measured: *when a scenario is wrong, do we fix the pack (gather) or the prompt
-(generation)?* One word per finding; the **rate** is the calibration signal.
+**R7 — CONTEXT-GAP vs JUDGMENT-GAP. STEAL, it's free.** *(Done — `589dea9`, and re-homed.)*
+It answers a question we have argued repeatedly and never measured: *when a scenario is wrong,
+do we fix the pack (gather) or the prompt (generation)?* One word per finding; the **rate** is
+the calibration signal.
+
+Landed on **R2's drift findings**, not on `TriageVerdict` as this section originally proposed —
+there the disposition derives for free (an orphan against an *empty* pack is CONTEXT-GAP; against
+a populated one it is JUDGMENT-GAP; an out-of-scope hit is always JUDGMENT-GAP because the
+boundary was stated and fed to the generator). `TriageVerdict`'s buckets answer why a run failed
+*at runtime*; the disposition asks why a scenario was badly *authored*, and triage cannot see the
+pack — deriving it there would need an LLM and different inputs. Left alone deliberately.
 
 ---
 
