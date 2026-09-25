@@ -58,6 +58,19 @@ robot **read pack (GCS) · interrogate** → question round (**methodology / sco
 **◆ approve_plan** → **plan LOCKED (GCS)** → **◆ implement_plan** → TPD robot
 **gen test data / scenarios / steps (Vertex claude-sonnet-5) → GCS** → hand human the
 **final test plan + scenarios + steps**. 🎉
+🆕 big plan go **Pub/Sub**: TPD **publish batch jobs** (`tpd-gen-batches`) → **push POST · OIDC** →
+`tpd-gen-worker` robot **generate scenario → GCS** → TPD **poll result → merge**. Topic dead? TPD just
+do it himself (**synchronous fallback**, `TPD_GEN_MODE=workers`). 🔁
+
+**⑦ EXECUTE** 🏃 *(Pillar 2 — now RUN the .feature, not just write it)*
+Boss call **◆ `run_suite(context_id, env)`** on the **gateway** (MCP → A2A) → gateway whisper
+**test-executor-v2** robot (`A2A-only · via gateway`). Robot open **Run Sandbox** — **Playwright** for
+screen, **httpx** for API, **LLM-translate** when plan only word-word. Robot **record env + run →
+Postgres** (`exec_environment` · `exec_run`) **+ traces → GCS**. 🗄️
+Run is LONG, so robot answer in pieces: **`[state: in_progress]` → boss re-poll → `[done]`** — then
+**real signal** go to **test-evaluation-v2** (`evaluate_plan`). ⇢
+Step break? Robot **triage: Bug / Heal / Flaky / Env**, and **◆ self-heal only behind a Yes/No gate —
+NEVER silent**. Bounded loop: **run → measure → (heal) → triage**. 🩹
 
 ---
 
@@ -83,6 +96,8 @@ robot **read pack (GCS) · interrogate** → question round (**methodology / sco
 - 🟦 **blue solid arrow** = tool call · **grey dashed** = reply · **green arrow** = write-to-cave
 - 🟨 **amber box** = a loop note
 - 🩵 **cyan dashed box** = test-evaluation-v2 robot (optional)
+- 🟠 **orange dashed box + orange band** = test-executor-v2 robot + the EXECUTE band (Pillar 2)
+  — orange here mean *the band*, NOT the User pole; arrow inside still follow normal blue/grey/green rule
 
 ---
 
@@ -93,6 +108,8 @@ Big v2 change: no more per-robot door. Boss knock ONE `mcp-gateway-v2` for every
 gateway route (A2A + bearer) to the right A2A-only robot.
 Boss still hold every Yes/No gate ◆ and drive every loop 🔁 with human.
 Cave smart: truth-book (GCS) + meaning-brain (pgvector) — now **LIVE**, not just built. 🧠👍
+🆕 And hunt no stop at *writing* the test — band ⑦ **RUN** it for real (test-executor-v2) and bring
+back real signal. Write-test → run-test → judge-test, all one line. 🏃🩹
 
 *(Sibling rock: `full-flow.excalidraw` = whole loop; `deployment-architecture.excalidraw` = where robot LIVE;
 `DESIGN-mcp-gateway-target.*` = the one-door blueprint; this rock = who-talk-who IN ORDER.)*
