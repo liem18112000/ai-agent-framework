@@ -25,21 +25,8 @@ command -v terraform >/dev/null || { echo "terraform not on PATH"; exit 1; }
 command -v gcloud   >/dev/null || { echo "gcloud not on PATH"; exit 1; }
 [ -f terraform.tfvars ] || { echo "terraform.tfvars missing (copy terraform.tfvars.example)"; exit 1; }
 
-# Load secrets from the app .env if present (non-fatal if absent).
-ENV_FILE="../../test-agent-v2/.env"
-if [ -f "$ENV_FILE" ]; then
-  set -a; . "$ENV_FILE"; set +a
-fi
-
-add_secret() {  # <secret-name> <env-var-name> — add a version only if the value is available
-  local name="$1" val="${!2:-}"
-  if [ -n "$val" ]; then
-    printf '%s' "$val" | gcloud secrets versions add "$name" --data-file=- >/dev/null
-    echo "    $name: version added"
-  else
-    echo "    $name: SKIPPED ($2 not set)"
-  fi
-}
+# .env loading + add_secret live in lib.sh, shared with rotate_a2a_bearer_key.sh.
+. ./lib.sh
 
 build_and_push() {  # <image> — build via Cloud Build, tolerant of the log-streaming exit-code quirk
   local img="$1" id status
