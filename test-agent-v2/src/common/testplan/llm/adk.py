@@ -18,6 +18,7 @@ import os
 
 from google.adk.agents import LlmAgent
 
+from common.llm import meter
 from common.monitoring import get_logger
 
 log = get_logger("llm.adk")
@@ -32,6 +33,22 @@ def _gen_timeout_s() -> float:
     with contextlib.suppress(KeyError, ValueError, TypeError):
         return max(1.0, float(os.environ["TPD_GEN_TIMEOUT_S"]))
     return _DEFAULT_GEN_TIMEOUT_S
+
+
+def _record_usage(label: str, seen: list) -> None:
+    """Meter the ADK path's token spend. ADK reports google.genai `usage_metadata` (not Anthropic's
+    `usage`), so the field names differ; `cached_content_token_count` is the cache READ — the LiteLlm
+    bridge exposes no cache-write count, so a cached ADK prefix shows reads with no matching write.
+
+    Takes the LAST usage seen, not the sum: ADK re-emits cumulative usage on partial and final events,
+    so summing double-counts. Our generators are single-call leaves, so the last event is the total."""
+    if not seen:
+        return
+    u = seen[-1]
+    meter.record(label,
+                 input=getattr(u, "prompt_token_count", 0) or 0,
+                 output=getattr(u, "candidates_token_count", 0) or 0,
+                 cache_read=getattr(u, "cached_content_token_count", 0) or 0)
 
 
 def build_generator_agent(*, name: str, system: str, output_schema, output_key: str, model):
@@ -72,10 +89,13 @@ async def run_json_agent(agent: LlmAgent, *, output_key: str, user: str = "gener
     runner = Runner(app_name="tpd-gen", agent=agent, session_service=svc)
 
     texts: list[str] = []  # capture the model's raw output for the state-empty recovery path
+    usage = []              # last non-None usage_metadata — see _record_usage
 
     async def _drive() -> None:
         async for ev in runner.run_async(user_id="tpd", session_id="gen", new_message=types.Content(
                 role="user", parts=[types.Part(text=user)])):
+            if (u := getattr(ev, "usage_metadata", None)) is not None:
+                usage.append(u)
             for part in (getattr(getattr(ev, "content", None), "parts", None) or []):
                 if getattr(part, "text", None):
                     texts.append(part.text)
@@ -89,6 +109,7 @@ async def run_json_agent(agent: LlmAgent, *, output_key: str, user: str = "gener
     except Exception as exc:  # noqa: BLE001 — ADK schema-validation etc.; try the raw-text recovery below
         log.warning("%s: generator run raised (%s); trying raw-text recovery", agent.name, exc)
 
+    _record_usage(agent.name, usage)
     session = await svc.get_session(app_name="tpd-gen", user_id="tpd", session_id="gen")
     data = (session.state or {}).get(output_key) if session else None
     # Return state only if it has real content. On the deployed Claude/LiteLlm path ADK populates the

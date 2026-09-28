@@ -18,5 +18,10 @@ def claude_understanding(
     # Lazy import — see common.llm.questions.claude_questions for the cycle rationale.
     from common.adk.model import complete
 
-    return complete(understanding_prompt(pack, insights, open_questions, confidence, deferred),
-                    max_tokens=700, tier="fast").strip() + "\n"  # summarisation → fast tier
+    # Prompt-cache the pack instead of re-sending it inline: `cache_prefix` must be the SAME string
+    # claude_questions passes (`pack.summary_text()`, no header) or the prefixes differ byte-for-byte
+    # and neither call ever reads the other's entry.
+    return complete(understanding_prompt(pack, insights, open_questions, confidence, deferred,
+                                         include_context=False),
+                    max_tokens=700, tier="fast", cache_prefix=pack.summary_text(),
+                    label="refine.understanding").strip() + "\n"  # summarisation → fast tier

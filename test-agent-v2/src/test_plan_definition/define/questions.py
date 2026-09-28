@@ -29,7 +29,8 @@ def make_generator(understanding: str = "") -> Generator:
     def generator(pack: Pack, round_name: str) -> list[Question]:
         summary = pack.summary_text()
         raw = complete(question_prompt(summary, understanding, round_name, include_context=False),
-                       max_tokens=6000, cache_prefix=pack_block(summary))
+                       max_tokens=6000, cache_prefix=pack_block(summary),
+                       label=f"define.questions.{round_name}")
         qs: list[Question] = []
         for it in loads_array(raw) or []:
             if not isinstance(it, dict):  # valid-but-non-object array element → skip, don't crash

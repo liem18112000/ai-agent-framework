@@ -59,7 +59,8 @@ def handle_job(data: bytes) -> None:
     from common.store import build_object_store
 
     job = json.loads(data)
-    text = complete(job["user"], max_tokens=int(job["max_tokens"]), cache_prefix=job.get("system"))
+    text = complete(job["user"], max_tokens=int(job["max_tokens"]), cache_prefix=job.get("system"),
+                    label="implement.worker")
     build_object_store().blob(job["result_blob"]).upload_from_string(text or "")
     log.info("worker: wrote %s (%d chars)", job["result_blob"], len(text or ""))
 

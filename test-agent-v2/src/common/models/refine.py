@@ -10,6 +10,9 @@ GAP_SEED = "gap-seed"
 LESSON = "lesson"
 CORRECTION = "correction"
 GOTCHA = "gotcha"
+#: A lesson specifically about spending fewer tokens at UNCHANGED quality. Its own kind so the
+#: admin surface can list them apart from general lessons; otherwise an ordinary lesson in every way.
+TOKEN_SAVING = "token-saving"
 
 INSIGHT = "insight"
 

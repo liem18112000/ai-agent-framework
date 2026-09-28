@@ -111,7 +111,9 @@ def _llm_semantic_judge():
             "exactly 'yes' or 'no'.\n\n"
             f"QUESTION: {question}\n\nTEXT:\n{text}\n\nAnswer (yes/no):"
         )
-        answer = provider.complete(prompt, max_tokens=8)
+        # Deliberately uncached: the QUESTION varies per call and precedes the TEXT, so there is
+        # no stable leading prefix to mark. Offline eval harness only — not a request path.
+        answer = provider.complete(prompt, max_tokens=8, label="tev.semantic_judge")
         return answer.strip().lower().startswith("y")
 
     return judge

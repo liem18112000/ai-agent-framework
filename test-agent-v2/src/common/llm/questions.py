@@ -29,7 +29,7 @@ def claude_questions(pack: Pack, round_name: str) -> list[Question]:
     # Prompt-cache the pack (stable across a pass's rounds) instead of re-sending it uncached each
     # round — mirrors the define path. cache_prefix goes first (Anthropic ephemeral cache prefix).
     raw = complete(question_prompt(pack, round_name, include_context=False), max_tokens=6000,
-                   cache_prefix=pack.summary_text())
+                   cache_prefix=pack.summary_text(), label=f"refine.questions.{round_name}")
     return _parse(raw, round_name)
 
 

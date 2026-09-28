@@ -23,10 +23,7 @@ Output rules:
 Return ONLY a JSON array; each item: {id, round, question, why, options:[{label,implication}], recommendation, depends_on:[], applies_to, status, confidence}. Use id prefix 'Q-$round_prefix-'.$ctx"""
 
 _UNDERSTANDING_BODY = """Restate, in plain language for a human to confirm, what the QA Testing Agent now understands. Overall confidence is '$confidence'. Use these headings: Problem, In scope, Out/deferred, Settled decisions, Open gaps.
-
-Context pack:
 $pack
-
 Settled decisions:
 $decided
 

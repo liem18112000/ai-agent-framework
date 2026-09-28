@@ -65,7 +65,7 @@ def make_restater() -> Restater:
     def restater(plan: TestPlan, plan_pack: PlanPack, opens: list[Question]) -> str:
         summary = plan_pack.summary_text()
         prompt = brief_prompt(plan, summary, [q.question for q in opens], include_context=False)
-        return complete(prompt, max_tokens=700, cache_prefix=pack_block(summary),
+        return complete(prompt, max_tokens=700, cache_prefix=pack_block(summary), label="define.brief",
                         tier="fast").strip() + "\n"  # brief restatement → fast tier
 
     return restater

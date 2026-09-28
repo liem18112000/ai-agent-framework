@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from common.models import CORRECTION, GOTCHA, INSIGHT, LESSON
+from common.models import CORRECTION, GOTCHA, INSIGHT, LESSON, TOKEN_SAVING
 
-_KINDS = (LESSON, CORRECTION, GOTCHA)
+_KINDS = (LESSON, CORRECTION, GOTCHA, TOKEN_SAVING)
 _KIND_SET = frozenset(_KINDS)
 
 

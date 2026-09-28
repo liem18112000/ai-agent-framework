@@ -26,7 +26,11 @@ class _FakeProvider:
     def is_configured(self) -> bool:
         return True
 
-    def complete(self, prompt: str, *, max_tokens: int) -> str:
+    def complete(self, prompt: str, *, max_tokens: int, cache_prefix: str | None = None,
+                 tier: str = "default", label: str = "") -> str:
+        # Mirrors the full `ModelProvider.complete` signature — a double that only accepts the args
+        # today's caller happens to pass turns any port change into a TypeError here instead of a
+        # compile-time-ish signature mismatch, which is exactly what happened when `label` landed.
         self.prompts.append(prompt)
         return self.answer
 

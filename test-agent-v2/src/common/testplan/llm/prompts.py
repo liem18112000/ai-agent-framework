@@ -140,7 +140,12 @@ def scope_classify_prompt(plan: TestPlan, summary: str, grounded, understanding:
     The crawl sweeps in sibling tickets, framework/meta pages and cross-project docs; those are context,
     not things to write scenarios for. Marker 'SCOPE CLASSIFIER' (not a generator router substring).
     The confirmed ``understanding`` is the ANCHOR — the model classifies each node against the feature
-    it describes, not against the run id (which carries no signal)."""
+    it describes, not against the run id (which carries no signal).
+
+    ``summary`` is NOT re-embedded here: ``classify_in_scope`` already passes the same pack as the
+    agent's cached system instruction, so inlining it again sent the whole pack twice in one call —
+    the second copy uncached, and pure waste. The parameter stays (callers and the stored template
+    both still name it) but renders empty."""
     listing = "\n".join(
         f"- {n.id} :: {n.title} :: {(n.synopsis or '')[:160]}" for n in grounded) or "(none)"
     target = understanding.strip() or (
@@ -150,7 +155,7 @@ def scope_classify_prompt(plan: TestPlan, summary: str, grounded, understanding:
         "scope_hints": ", ".join(plan.scope) or "(none)",
         "out_hints": ", ".join(plan.out_of_scope) or "(none)",
         "listing": listing,
-        "pack": pack_block(summary),
+        "pack": "",  # the pack rides in the cached system instruction — see the docstring
     })
 
 

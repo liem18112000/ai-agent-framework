@@ -25,6 +25,13 @@ from common.admin.runs import (
     list_runs,
     record_artifact,
 )
+from common.admin.tokens import (
+    estimate_usage,
+    persist_usage,
+    record_token_lesson,
+    token_by_agent,
+    token_usage,
+)
 from common.admin.wipe import forget_memory, wipe_all, wipe_required_token
 
 __all__ = [
@@ -32,13 +39,18 @@ __all__ = [
     "RunSummary",
     "backup_memory",
     "compare_runs",
+    "estimate_usage",
     "forget_memory",
     "get_artifacts",
     "get_run",
     "list_backups",
     "list_runs",
     "memory_graph_html",
+    "persist_usage",
     "record_artifact",
+    "record_token_lesson",
+    "token_by_agent",
+    "token_usage",
     "view_memory",
     "wipe_all",
     "wipe_required_token",

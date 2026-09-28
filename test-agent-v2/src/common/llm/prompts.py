@@ -83,14 +83,19 @@ def question_prompt(pack: Pack, round_name: str, *, include_context: bool = True
 
 def understanding_prompt(
     pack: Pack, insights: list[Insight], open_questions: list[Question], confidence: str,
-    deferred: list[Question] | None = None,
+    deferred: list[Question] | None = None, *, include_context: bool = True,
 ) -> str:
-    """Claude-on-Vertex prompt to restate the agent's understanding for a human to confirm."""
+    """Claude-on-Vertex prompt to restate the agent's understanding for a human to confirm.
+
+    `include_context=False` drops the pack dump so the caller can pass `pack.summary_text()` as a
+    `cache_prefix` instead — the same treatment `question_prompt` already gets. Both calls in a refine
+    pass then share one cached prefix; before this, understanding re-sent the whole pack uncached on
+    every pass while questions cached the byte-identical string."""
     # The 'Out/deferred' heading needs the deferred questions behind it — the heuristic sibling renders
     # them, so the LLM brief must too, else it silently hides gaps the agent chose not to resolve.
     return _render(templates.UNDERSTANDING, {
         "confidence": confidence,
-        "pack": pack.summary_text(),
+        "pack": f"\nContext pack:\n{pack.summary_text()}\n" if include_context else "",
         "decided": "\n".join(f"- {i.statement} ({i.answered_by})" for i in insights) or "(none)",
         "deferred": "\n".join(f"- {q.question}" for q in (deferred or [])) or "(none)",
         "opens": "\n".join(f"- {q.question}" for q in open_questions) or "(none)",

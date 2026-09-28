@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 
+from common.admin import tokens as token_admin
 from common.interrogate.round.case_design import EXTRA_KINDS, kinds_from_answer
+from common.llm import meter
 from common.testplan import memory as store
 from common.testplan.llm.prompts import refresh_store
 from common.testplan.models import (
@@ -55,6 +57,19 @@ async def implement_plan(bank, context_id: str, *, run_id: str = "implement", no
                          detail: bool = False, model=None, guidance: str = "",
                          max_rounds: int | None = None,
                          rigor: int | None = None) -> ImplementResult:
+    # Attribute every token this stage spends to `context_id`. A ContextVar, so the ~10 call sites
+    # below (and the blocking ones on worker threads — to_thread copies the context) need no
+    # signature change. Persisted at the end so the numbers outlive this Cloud Run instance.
+    with meter.run_scope(context_id):
+        return await _implement_plan(bank, context_id, run_id=run_id, now=now, detail=detail,
+                                     model=model, guidance=guidance, max_rounds=max_rounds,
+                                     rigor=rigor)
+
+
+async def _implement_plan(bank, context_id: str, *, run_id: str = "implement", now: str = "",
+                          detail: bool = False, model=None, guidance: str = "",
+                          max_rounds: int | None = None,
+                          rigor: int | None = None) -> ImplementResult:
     plan = await asyncio.to_thread(store.read_plan, bank, context_id)  # blocking GCS reads/writes → off the loop
     if plan is None:
         return ImplementResult(message=f"No test plan for {context_id}; run define first.")
@@ -112,6 +127,7 @@ async def implement_plan(bank, context_id: str, *, run_id: str = "implement", no
             scenarios.append(s)
     if pending:  # loop paused with rounds remaining — persist the partial scenarios, defer the finalize
         await asyncio.to_thread(store.write_scenarios, bank, context_id, scenarios)
+        await _persist_tokens(bank, context_id)  # a paused round still spent tokens
         return ImplementResult(plan, test_data, scenarios, quality=quality, done=False,
                                message="Assured loop in progress — re-run implement_plan to continue.")
     steps = await generate_all_steps(scenarios, plan, plan_pack, test_data,
@@ -137,8 +153,22 @@ async def implement_plan(bank, context_id: str, *, run_id: str = "implement", no
     log.info("implement done: %d scenarios, %d steps, %d test-data, feature=%s, quality=%s, %s",
              len(scenarios), len(steps), len(test_data), bool(feature),
              quality.final_score if quality else "n/a", coverage or "no-coverage")
+    # The token bill next to the result. Counters are PROCESS-cumulative, not per-request (a
+    # Cloud Run instance serves many), so read the cache-hit ratio, not the absolute numbers:
+    # near 0% means the pack prefix is not being reused and every call is paying full price.
+    log.info("implement tokens: %s", meter.summary_line(context_id))
+    await _persist_tokens(bank, context_id)
     return ImplementResult(plan, test_data, scenarios, steps, feature, run, quality=quality,
                            coverage_summary=coverage)
+
+
+async def _persist_tokens(bank, context_id: str) -> None:
+    """Fold this call's counters into the run's stored blob (best-effort — accounting must never
+    break the pipeline it measures). Blocking GCS, so off the loop."""
+    try:
+        await asyncio.to_thread(token_admin.persist_usage, bank, context_id)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("implement: token accounting skipped (%s)", exc)
 
 
 def render_feature(subject: str, scenarios: list[TestScenario], steps: list[TestStep]) -> str:

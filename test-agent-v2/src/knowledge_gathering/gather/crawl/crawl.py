@@ -6,6 +6,7 @@ import asyncio
 import time
 from dataclasses import dataclass, field
 
+from common.llm import meter
 from common.llm.distill import heuristic_distill
 from common.models import EXTERNAL_WEB, LinkRecord, Note, RunLog, Scope
 from knowledge_gathering.gather.crawl.fetch import fetch_node
@@ -26,6 +27,17 @@ class CrawlResult:
 
 
 async def crawl(
+    client, bank, seed: str, *, scope: Scope | None = None, depth: int = 2, max_nodes: int = 40,
+    max_seconds: float = 180.0, run_id: str = "run", distiller=None, concurrency: int = 8,
+    extra_seeds: list[str] | None = None, exclude: set[str] | None = None,
+) -> CrawlResult:
+    with meter.run_scope(run_id):
+        return await _crawl(client, bank, seed, scope=scope, depth=depth, max_nodes=max_nodes,
+                            max_seconds=max_seconds, run_id=run_id, distiller=distiller,
+                            concurrency=concurrency, extra_seeds=extra_seeds, exclude=exclude)
+
+
+async def _crawl(
     client, bank, seed: str, *, scope: Scope | None = None, depth: int = 2, max_nodes: int = 40,
     max_seconds: float = 180.0, run_id: str = "run", distiller=None, concurrency: int = 8,
     extra_seeds: list[str] | None = None, exclude: set[str] | None = None,
@@ -65,7 +77,7 @@ async def crawl(
             note.run_id, note.depth = run_id, d
             note.body = note.body or text  # retain verbatim body (spec PDFs etc.) — not just the synopsis
             if not note.synopsis:
-                note.synopsis = await asyncio.to_thread(distiller, note, text)
+                note.synopsis = await asyncio.to_thread(_cached_distill, bank, distiller, note, text)
             result.notes.append(note)
             result.inventory.extend(links)
             log.info("fetched %s (d=%d): %d links, %d in-scope",
@@ -84,13 +96,40 @@ async def crawl(
 
     log.info("crawl done: %d nodes, %d links, %d gaps — persisting",
              len(result.notes), len(result.inventory), len(result.gaps))
+    log.info("crawl tokens: %s", meter.summary_line(run_id))  # distill = 1 LLM call per node
     result.run = RunLog(
         run_id=run_id, seed=seed, params={"depth": depth, "max_nodes": max_nodes},
         sources=[n.id for n in result.notes], nodes_fetched=len(result.notes),
         links_found=len(result.inventory), gaps=result.gaps, confidence="high",
     )
     await asyncio.to_thread(_persist, bank, result)  # sync GCS I/O off the event loop (Cloud Run liveness)
+    try:  # best-effort: accounting must never break the crawl it measures
+        from common.admin import tokens as token_admin
+        await asyncio.to_thread(token_admin.persist_usage, bank, run_id)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("crawl: token accounting skipped (%s)", exc)
     return result
+
+
+def _cached_distill(bank, distiller, note, text: str) -> str:
+    """The node's synopsis, reusing the bank's if this node's content hasn't changed.
+
+    Distillation is one LLM call per fetched node, so a crawl costs up to `max_nodes` of them — and
+    re-gathering a ticket (a routine move: a fresh context per repo, a re-run after a fix) re-paid for
+    every unchanged node. The bank already holds the last synopsis; when the body it was distilled
+    from is byte-identical, the new call would return the same thing.
+
+    Body equality is the whole freshness check: any edit upstream changes the body and re-distills.
+    Best-effort — a bank read that fails just falls through to the distiller."""
+    try:
+        prior = bank.read_note(note.id, note.type)
+    except Exception as exc:  # noqa: BLE001 — an unreadable prior note must not break the crawl
+        log.debug("distill cache: %s unreadable (%s); distilling", note.id, exc)
+        prior = None
+    if prior is not None and prior.synopsis and prior.body == note.body:
+        log.info("distill cache hit: %s (unchanged body) — no LLM call", note.id)
+        return prior.synopsis
+    return distiller(note, text)
 
 
 def _persist(bank, result: CrawlResult) -> None:

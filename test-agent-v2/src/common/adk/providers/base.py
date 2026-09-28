@@ -22,9 +22,10 @@ class ModelProvider(Protocol):
         ...
 
     def complete(self, prompt: str, *, max_tokens: int, cache_prefix: str | None = None,
-                 tier: str = "default") -> str:
+                 tier: str = "default", label: str = "") -> str:
         """Synchronous single-shot completion (engine text path). ``cache_prefix`` is an optional
         stable prefix a provider MAY prompt-cache (Anthropic ephemeral cache); ``None`` = no caching,
         identical to a plain completion. ``tier="fast"`` MAY route to a cheaper model (see
-        ``llm_agent_model``). Providers that can't cache / have no fast tier ignore these."""
+        ``llm_agent_model``). ``label`` names the calling stage for the token meter. Providers that
+        can't cache / have no fast tier / don't meter ignore these."""
         ...

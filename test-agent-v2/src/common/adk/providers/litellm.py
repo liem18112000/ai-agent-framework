@@ -59,7 +59,7 @@ class LiteLlmProvider:
                        max_tokens=max_tokens or get_config().default_max_tokens, **_extra_args())
 
     def complete(self, prompt: str, *, max_tokens: int, cache_prefix: str | None = None,
-                 tier: str = "default") -> str:
+                 tier: str = "default", label: str = "") -> str:
         # cache_prefix is a no-op here (prompt caching is provider-specific); prepend so the text still
         # reaches the model when a caller passes a stable pack prefix.
         import litellm

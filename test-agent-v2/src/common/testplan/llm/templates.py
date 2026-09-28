@@ -61,7 +61,6 @@ Return ONLY a JSON object {in_scope_ids: [pack ids, verbatim]} — a SUBSET of t
 
 Pack nodes:
 $listing
-
 $pack"""
 
 _SCENARIOS_BODY = """You are the QA Testing Agent generating TEST SCENARIOS from a confirmed plan.

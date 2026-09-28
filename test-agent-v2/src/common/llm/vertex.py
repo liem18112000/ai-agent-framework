@@ -8,6 +8,7 @@ import time
 from functools import cache
 from typing import Any
 
+from common.llm import meter
 from common.monitoring import get_logger
 
 log = get_logger("llm.vertex")
@@ -67,38 +68,60 @@ def first_text(msg: Any) -> str:
     return next((b.text for b in msg.content if getattr(b, "type", None) == "text"), "")
 
 
+# Prompt-cache TTL for `cache_prefix`. The 5-minute default is WRONG for every caller we have: the
+# define/refine rounds are separated by a human answering the questions (minutes to hours), and one
+# implement round runs a dozen serial batches well past 5 minutes — so the prefix expired between
+# calls and every call paid the 1.25x write again and never read. At "1h" the write costs 2x once and
+# each later call reads at ~0.1x, which beats uncached from the 3rd call on; every cache_prefix site
+# here makes at least 4 (4 define rounds + brief; questions + understanding per refine pass).
+_CACHE_TTL = "1h"
+
+# Below the model's minimum cacheable prefix the API silently ignores cache_control (no error, no
+# write, no read). claude-sonnet-5's minimum is 1024 tokens; this is that in characters at the usual
+# ~4 chars/token, used only to log why a cache never hit.
+_MIN_CACHEABLE_CHARS = 4096
+
+
 def _user_content(prompt: str, cache_prefix: str | None):
     """The `messages` content: a plain string, or a [cached-prefix, prompt] block list when a
-    stable `cache_prefix` is given (Anthropic prompt caching — cache_control: ephemeral)."""
+    stable `cache_prefix` is given (Anthropic prompt caching — cache_control: ephemeral, 1h TTL)."""
     if not cache_prefix:
         return prompt
+    if len(cache_prefix) < _MIN_CACHEABLE_CHARS:
+        log.debug("cache_prefix is %d chars (< ~%d): under the model's minimum cacheable prefix, so "
+                  "cache_control is ignored and this call bills uncached",
+                  len(cache_prefix), _MIN_CACHEABLE_CHARS)
     return [
-        {"type": "text", "text": cache_prefix, "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": cache_prefix,
+         "cache_control": {"type": "ephemeral", "ttl": _CACHE_TTL}},
         {"type": "text", "text": prompt},
     ]
 
 
 def complete(prompt: str, *, project: str, location: str, model: str, max_tokens: int,
-             cache_prefix: str | None = None, stream: bool = True) -> str:
+             cache_prefix: str | None = None, stream: bool = True, label: str = "complete") -> str:
     """Run one Claude-on-Vertex completion and return its first text block.
 
     Streams by default (`messages.stream`) — same result, but robust on long generations (keeps the
     connection alive past read timeouts). When `cache_prefix` is given, that stable block is
     **prompt-cached**, so repeated calls sharing it (e.g. the 4 define rounds over one pack) are
-    materially faster and ~cheaper on the cached tokens; set `stream=False`/`cache_prefix=None` to opt out."""
+    materially faster and ~cheaper on the cached tokens; set `stream=False`/`cache_prefix=None` to opt out.
+
+    `label` names the calling stage on the token meter — without it a snapshot says how much we spent
+    but never where, which is the only question worth asking."""
     client = _client(project, location)
     kwargs = {
         "model": model, "max_tokens": max_tokens, "thinking": {"type": "disabled"},
         "messages": [{"role": "user", "content": _user_content(prompt, cache_prefix)}],
     }
 
-    def _stream_once() -> str:
+    def _stream_once():
         with client.messages.stream(**kwargs) as s:  # inside retry: a mid-stream drop re-runs the call
-            return first_text(s.get_final_message())
+            return s.get_final_message()
 
-    if stream:
-        return _with_retry(_stream_once)
-    return _with_retry(lambda: first_text(client.messages.create(**kwargs)))
+    msg = _with_retry(_stream_once if stream else lambda: client.messages.create(**kwargs))
+    meter.record_message(label, getattr(msg, "usage", None))
+    return first_text(msg)
 
 
 _OCR_PROMPT = (
@@ -119,6 +142,8 @@ def describe_image(data: bytes, *, media_type: str, project: str, location: str,
         {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
         {"type": "text", "text": prompt or _OCR_PROMPT},
     ]
-    return first_text(client.messages.create(
+    msg = client.messages.create(
         model=model, max_tokens=max_tokens, thinking={"type": "disabled"},
-        messages=[{"role": "user", "content": content}]))
+        messages=[{"role": "user", "content": content}])
+    meter.record_message("vision.ocr", getattr(msg, "usage", None))
+    return first_text(msg)

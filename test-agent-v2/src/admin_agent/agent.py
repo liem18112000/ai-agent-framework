@@ -44,6 +44,10 @@ class AdminRouter(RouterAgent):
             "list-backups": (self._list_backups, "list-backups"),
             "view-memory": (self._view_memory, "view-memory [all|working|episodic|semantic|procedural] [ctx]"),
             "memory-graph": (self._memory_graph, "memory-graph [title]"),
+            "token-usage": (self._token_usage, "token-usage [run-id]"),
+            "token-agents": (self._token_agents, "token-agents [run-id ...]"),
+            "token-estimate": (self._token_estimate, "token-estimate <ctx> [assured-rounds]"),
+            "token-lesson": (self._token_lesson, "token-lesson <ctx> <lesson text...>"),
             "wipe-all": (self._wipe_all, "wipe-all <confirm>"),
             "forget-memory": (self._forget_memory, "forget-memory [confirm]"),
         }
@@ -157,6 +161,31 @@ class AdminRouter(RouterAgent):
         Returns the HTML itself — the client writes it to a file and publishes it via the Artifact tool."""
         title = rest.strip() or "Memory graph"
         return await admin.memory_graph_html(await self._bank(), self._engine(), title=title)
+
+    # --- token accounting (F5) ---------------------------------------------------------------
+    async def _token_usage(self, rest: str) -> str:
+        """No arg = every stored run; a run id = that run alone."""
+        return await self._bank_call(lambda b: admin.token_usage(b, rest.strip()))
+
+    async def _token_agents(self, rest: str) -> str:
+        """Per-agent breakdown. Run ids are OPTIONAL and may be several — the difference between
+        "which agent is expensive in general" and "...on this ticket"."""
+        ids = rest.split()
+        return await self._bank_call(lambda b: admin.token_by_agent(b, ids))
+
+    async def _token_estimate(self, rest: str) -> str:
+        parts = rest.split()
+        if not parts:
+            return "Provide a context id: token-estimate <ctx> [assured-rounds]."
+        ctx = parts[0]
+        rounds = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 2
+        return await self._bank_call(lambda b: admin.estimate_usage(b, ctx, assured_rounds=rounds))
+
+    async def _token_lesson(self, rest: str) -> str:
+        ctx, _, statement = rest.partition(" ")
+        if not (ctx and statement.strip()):
+            return "Usage: token-lesson <ctx> <lesson text...>."
+        return await self._bank_call(lambda b: admin.record_token_lesson(b, ctx, statement.strip()))
 
     async def _wipe_all(self, rest: str) -> str:
         return await admin.wipe_all(await self._bank(), self._engine(), rest.strip())

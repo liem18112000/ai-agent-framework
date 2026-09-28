@@ -19,8 +19,10 @@ def model_configured() -> bool:
 
 
 def complete(prompt: str, *, max_tokens: int, cache_prefix: str | None = None,
-             tier: str = "default") -> str:
+             tier: str = "default", label: str = "") -> str:
     """Provider-agnostic single-shot completion — routes the engine text path through the port so
     the LLM stays swappable. `cache_prefix` (optional) forwards a stable prompt-caching prefix;
-    `tier="fast"` requests the provider's cheaper model (inert unless one is configured)."""
-    return get_provider().complete(prompt, max_tokens=max_tokens, cache_prefix=cache_prefix, tier=tier)
+    `tier="fast"` requests the provider's cheaper model (inert unless one is configured); `label` names
+    the calling stage on the token meter (`common.llm.meter`)."""
+    return get_provider().complete(prompt, max_tokens=max_tokens, cache_prefix=cache_prefix,
+                                   tier=tier, label=label)
