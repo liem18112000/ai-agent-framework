@@ -1,0 +1,600 @@
+"""Run orchestration + failure triage for the Test Executor.
+
+`EXEC_RUNNER` gates execution. Default `stub`: resolve+record the environment and a placeholder run —
+the whole agent+DB+gateway path is real without touching a live system. `auto`: route each scenario to
+the engine that fits its nature (`runners.select_engine`, keyed on `TestScenario.methodology`) and
+aggregate real pass/fail + failures — chunked + polled so no call blocks past the request timeout. All
+three engines are real (API httpx-conformance · LLM NL→request · browser Playwright). The triage
+classifier (`classify_failure`) is the heuristic tier of the §5 JEV cascade.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import os
+import re
+import time
+from dataclasses import dataclass, field
+
+from common.env import env_float, env_int
+from common.monitoring import get_logger
+from test_executor.runners.select import ENGINES, select_engine
+
+log = get_logger("exec.runner")
+
+# The deterministic heuristic tier — the fallback tail of the §5 JEV cascade (see `triage`).
+_BUG_HINTS = ("assertion", "assert", "expected", "wrong value", "500", "server error", "exception")
+_HEAL_HINTS = ("selector", "locator", "not found", "no element", "timeout waiting", "not visible")
+_ENV_HINTS = ("connection refused", "econnrefused", "dns", "unreachable", "503", "cert", "ssl", "auth")
+
+_BUCKETS = ["Bug", "Heal", "Flaky", "Environment"]     # JEV Choice options / heuristic outputs
+# The classifier instruction now lives in the store-backed registry (`exec.triage`, test_executor.prompts)
+# so it is DB-publishable/versioned like tpd.report/kga.report; the compiled default is the offline fallback.
+
+
+@dataclass
+class Failure:
+    """One failed step the run surfaces — the unit triage consumes and the ledger persists (JSON, in the
+    run's `signals.failures`). `flaky` = a proven-oscillating step (a deterministic Flaky signal)."""
+
+    message: str
+    scenario: str | None = None
+    flaky: bool = False
+
+    def as_dict(self) -> dict:
+        return {"message": self.message, "flaky": self.flaky, "scenario": self.scenario}
+
+    @classmethod
+    def from_row(cls, d: Failure | dict) -> Failure:
+        """Accept an in-loop `Failure` unchanged or rehydrate one from a store-read JSON dict."""
+        if isinstance(d, Failure):
+            return d
+        return cls(message=str(d.get("message", "")), scenario=d.get("scenario"), flaky=bool(d.get("flaky")))
+
+
+@dataclass
+class Summary:
+    """The run's rolled-up counts — persisted (JSON) as the ledger `summary`, read back on resume."""
+
+    passed: int = 0
+    failed: int = 0
+    unbound: int = 0
+    by_engine: dict = field(default_factory=dict)
+
+    def as_dict(self) -> dict:
+        return {"passed": self.passed, "failed": self.failed, "unbound": self.unbound,
+                "executed": self.passed + self.failed, "by_engine": self.by_engine}
+
+    @classmethod
+    def from_row(cls, d: dict | None) -> Summary:
+        d = d or {}
+        return cls(passed=int(d.get("passed", 0)), failed=int(d.get("failed", 0)),
+                   unbound=int(d.get("unbound", 0)), by_engine=dict(d.get("by_engine") or {}))
+
+
+@dataclass
+class ScenarioResult:
+    """ONE scenario's outcome — the unit a test-completion report is built from.
+
+    The run summary counts outcomes and `failures` lists what broke, but a report needs a row per
+    scenario INCLUDING the passes: its coverage matrix is `requirement -> covering scenario -> result ->
+    evidence`, which cannot be written from counts alone. `source_refs` carries the requirement/AC ids the
+    scenario cites (the traceability link), and `method`/`path` record what was actually exercised."""
+
+    id: str
+    title: str
+    status: str                                   # passed | failed | unbound
+    engine: str = ""
+    kind: str = ""
+    source_refs: list = field(default_factory=list)   # the AC / pack-note ids this scenario covers
+    method: str = ""
+    path: str = ""                                 # the PATH TEMPLATE (host-free, no injected ids)
+    messages: list = field(default_factory=list)   # failure detail; empty when passed
+    duration_ms: int = 0
+
+    def as_dict(self) -> dict:
+        return {"id": self.id, "title": self.title, "status": self.status, "engine": self.engine,
+                "kind": self.kind, "source_refs": self.source_refs, "method": self.method,
+                "path": self.path, "messages": self.messages, "duration_ms": self.duration_ms}
+
+    @classmethod
+    def from_row(cls, d: ScenarioResult | dict) -> ScenarioResult:
+        if isinstance(d, ScenarioResult):
+            return d
+        return cls(id=str(d.get("id", "")), title=str(d.get("title", "")), status=str(d.get("status", "")),
+                   engine=str(d.get("engine", "")), kind=str(d.get("kind", "")),
+                   source_refs=list(d.get("source_refs") or []), method=str(d.get("method", "")),
+                   path=str(d.get("path", "")), messages=list(d.get("messages") or []),
+                   duration_ms=int(d.get("duration_ms", 0)))
+
+
+@dataclass
+class TriageVerdict:
+    """One failure's triage outcome (§5 cascade): its message + the chosen bucket. Persisted (JSON) as
+    the ledger `triage`; rendered by the agent/report from the store-read dict."""
+
+    message: str
+    verdict: str
+
+    def as_dict(self) -> dict:
+        return {"message": self.message, "verdict": self.verdict}
+
+
+def _evidence(message: str) -> str:
+    """The part of a failure message that is EVIDENCE, with quoted spec metadata stripped.
+
+    A conformance failure embeds the operation's declared status list — "status 400 not declared in the
+    spec (declared: ['200', '404', '500', '503'])". Those codes are the CONTRACT, not what happened, and
+    a bare substring scan matched the '503' in that list and filed a real Bug under Environment. Drop the
+    parenthetical before classifying."""
+    import re
+    return re.sub(r"\(declared:[^)]*\)", "", message).lower()
+
+
+def classify_failure(failure: Failure) -> str:
+    """Map one failure to a triage bucket: Bug | Heal | Flaky | Environment.
+
+    A confirmed-oscillating step is Flaky; otherwise the message text routes it. Defaults to Bug (fail
+    loud — a real regression must not be silently healed/quarantined)."""
+    if failure.flaky:
+        return "Flaky"
+    msg = _evidence(str(failure.message))
+    # A numeric hint must match as a WHOLE token: '503' must not fire on /api/doc5039 (nor, before
+    # _evidence strips it, on a status code quoted in the spec's declared list). Word hints stay plain.
+    if any((h in re.findall("[0-9]+", msg) if h.isdigit() else h in msg) for h in _ENV_HINTS):
+        return "Environment"
+    if any(h in msg for h in _HEAL_HINTS):
+        return "Heal"
+    if any(h in msg for h in _BUG_HINTS):
+        return "Bug"
+    return "Bug"
+
+
+def _jev_bucket(failure: Failure, provider, conf_min: float) -> str | None:
+    """JEV Choice over the four buckets — returns the chosen bucket only when confident, else None so
+    the caller falls back to the heuristic. Any decision error → None (never breaks triage)."""
+    try:
+        from test_executor.prompts import triage_instructions
+        v = provider.choice(str(failure.message), _BUCKETS, triage_instructions())
+    except Exception as exc:  # noqa: BLE001 — a decision-backend failure must never break triage
+        log.warning("triage: JEV choice failed (%s) → heuristic", exc)
+        return None
+    if v is not None and v.confidence >= conf_min and v.value in _BUCKETS:
+        return str(v.value)
+    return None
+
+
+def triage(failures: list) -> list[TriageVerdict]:
+    """Classify each failure Bug/Heal/Flaky/Environment (§5 cascade). A configured, confident JEV
+    `DecisionProvider` (TPD_DECISION_BACKEND) FRONTS the deterministic heuristic; otherwise, or on the
+    low-confidence tail / any error, the heuristic decides — strictly additive, default OFF. SYNC
+    (JEV is blocking) — call via asyncio.to_thread from an event loop. Accepts `Failure`s or store-read
+    dicts (the agent's fallback path passes the persisted JSON)."""
+    from common.adk.providers import get_decision_provider
+    provider = get_decision_provider()
+    use_jev = provider is not None and provider.is_configured()
+    conf_min = env_float("EXEC_TRIAGE_CONF_MIN", 0.6)
+    out = []
+    for f in map(Failure.from_row, failures):
+        verdict = None
+        if use_jev and not f.flaky:    # a proven-flaky is a deterministic signal — don't re-judge
+            verdict = _jev_bucket(f, provider, conf_min)
+        out.append(TriageVerdict(message=f.message, verdict=verdict or classify_failure(f)))
+    return out
+
+
+def _needs_llm(engine: str, sc: dict) -> bool:
+    """True if routing `sc` to `engine` will make an LLM translation call — so it counts against the
+    per-run budget. Pre-bound scenarios (llm with a `request`, browser with a `browser` plan) don't."""
+    if engine == "llm":
+        req = sc.get("request")
+        return not (isinstance(req, dict) and req.get("path"))
+    if engine == "browser":
+        return not isinstance(sc.get("browser"), dict)
+    return False
+
+
+async def load_scenarios(context_id: str) -> list[dict]:
+    """Read the persisted scenarios for `context_id` from the shared memory bank — the same
+    `scenarios.json` TPD writes via `common.testplan.memory.write_scenarios`. Returns dicts (carrying
+    the `methodology` routing key); [] when none / no bank. Blocking bank I/O runs off the event loop."""
+    from dataclasses import asdict
+
+    def _read() -> list[dict]:
+        from common.memory.factory import build_bank
+        from common.testplan import memory as tp_store
+        return [asdict(s) for s in tp_store.read_scenarios(build_bank(), context_id)]
+
+    try:
+        return await asyncio.to_thread(_read)
+    except Exception as exc:  # noqa: BLE001 — a missing/empty bank degrades to [], never crashes the run
+        log.warning("load_scenarios(%s) failed: %s", context_id, exc)
+        return []
+
+
+_CHUNK_DEFAULT = 5
+
+
+def _chunk_size() -> int:
+    return max(1, env_int("EXEC_CHUNK", _CHUNK_DEFAULT))
+
+
+async def _resolve_upload_refs(scenarios: list[dict], context_id: str) -> None:
+    """Inject bank fixture bytes into bound file-upload scenarios: for each scenario whose
+    `request.upload` names a `data_ref`, load that TestData from the bank and set `upload.content` from
+    its base64 payload (TestData.spec = {filename, content_type, b64}). This is what lets a file-upload
+    test live in the bank — the model can't carry raw bytes, so it references a fixture by id. No-op when
+    nothing references a fixture. Blocking bank I/O runs off the event loop. A missing fixture leaves the
+    upload unresolved → the engine reports a real failure rather than crashing the run."""
+    need = [s for s in scenarios
+            if isinstance(s.get("request"), dict)
+            and isinstance(s["request"].get("upload"), dict)
+            and s["request"]["upload"].get("data_ref") and s["request"]["upload"].get("content") is None]
+    if not need:
+        return
+    import base64
+    from asyncio import to_thread
+
+    def _load() -> dict:
+        from common.memory.factory import build_bank
+        from common.testplan.memory.writers import read_test_data
+        return {d.id: d for d in read_test_data(build_bank(), context_id)}
+
+    try:
+        by_id = await to_thread(_load)
+    except Exception as exc:  # noqa: BLE001 — a missing/broken bank leaves uploads unresolved, never crashes
+        log.warning("exec: could not load test-data for uploads: %s", type(exc).__name__)
+        return
+    for s in need:
+        up = s["request"]["upload"]
+        spec = getattr(by_id.get(up["data_ref"]), "spec", {}) or {}
+        if not spec.get("b64"):
+            continue
+        try:
+            up["content"] = base64.b64decode(spec["b64"])
+        except (ValueError, TypeError):  # a malformed fixture degrades THIS upload, not the whole run
+            log.warning("exec: bad base64 in upload fixture %s — leaving unresolved", up.get("data_ref"))
+            continue
+        up.setdefault("filename", spec.get("filename"))
+        up.setdefault("content_type", spec.get("content_type"))
+
+
+async def _persist_spec(context_id: str, spec: dict, spec_url: str) -> None:
+    """Write the freshly-fetched OpenAPI spec back to the bank as a `TestData(kind="openapi")` fixture,
+    so the NEXT `implement_plan` can generate conformance scenarios from the real contract.
+
+    This closes the handoff: the executor is the only side with network reach to an internal system under
+    test, and TPD is the side that needs the spec at planning time. Idempotent — rewrites only when the
+    document actually changed, so the per-chunk poll of a long run does not re-upload it every time.
+    Best-effort: any bank failure logs and is ignored (a run must never fail because a cache write did)."""
+    from common.testplan.models import TestData
+
+    def _write() -> str:
+        from common.memory.factory import build_bank
+        from common.testplan.memory.writers import read_test_data, write_test_data
+        bank = build_bank()
+        existing = read_test_data(bank, context_id)
+        fid = f"test-data:{context_id}:openapi"
+        current = next((d for d in existing if d.id == fid), None)
+        if current is not None and (current.spec or {}).get("openapi_spec") == spec:
+            return "unchanged"
+        fixture = TestData(id=fid, kind="openapi",
+                           spec={"openapi_spec": spec, "spec_url": spec_url,
+                                 "purpose": "captured from the live target by the executor; the source "
+                                            "for implement_plan's OpenAPI conformance scenarios"})
+        merged = [d for d in existing if d.id != fid] + [fixture]
+        write_test_data(bank, context_id, merged)
+        return "written"
+
+    try:
+        outcome = await asyncio.to_thread(_write)
+        if outcome == "written":
+            log.info("exec: cached the OpenAPI spec for %s (%d paths) — implement_plan can now generate "
+                     "conformance scenarios", context_id, len(spec.get("paths") or {}))
+    except Exception as exc:  # noqa: BLE001 — a cache write must never fail the run
+        log.warning("exec: could not cache the OpenAPI spec for %s: %s", context_id, type(exc).__name__)
+
+
+async def _ac_coverage(context_id: str, results: list) -> dict:
+    """The report's coverage matrix, computed from the story's acceptance criteria and this run's rows.
+
+    Criteria come from the gathered story note in the bank (the plan's scope names it). A scenario covers
+    a criterion by citing its id in `source_refs`, so this is only meaningful once generators emit per-AC
+    refs — but it is computed either way, because a run with 0 covered criteria and N gaps is exactly the
+    finding a completion report must not omit. {} when no criteria are found (coverage NOT assessable,
+    which is different from 'all covered'). Best-effort: any bank failure logs and yields {}."""
+    from common.testplan.acceptance import coverage_matrix, parse_acceptance_criteria
+
+    def _load() -> list:
+        from common.memory.factory import build_bank
+        from common.testplan.memory.writers import read_plan
+        bank = build_bank()
+        plan = read_plan(bank, context_id)
+        stories = [s for s in ((plan.scope if plan else []) or []) if str(s).startswith("jira:")]
+        acs: list = []
+        for story in stories:
+            note = bank.read_note_md(story, "jira-issue") or ""
+            acs += parse_acceptance_criteria(note, story=story)
+        return acs
+
+    try:
+        criteria = await asyncio.to_thread(_load)
+    except Exception as exc:  # noqa: BLE001 — coverage is reporting metadata, never a reason to fail a run
+        log.warning("exec: acceptance criteria unavailable for %s: %s", context_id, type(exc).__name__)
+        return {}
+    if not criteria:
+        return {}
+    m = coverage_matrix(criteria, [r.as_dict() if hasattr(r, "as_dict") else r for r in results])
+    log.info("exec: AC coverage for %s — %d/%d covered, %d gap(s)",
+             context_id, m["covered"], m["total"], m["gaps"])
+    return m
+
+
+async def _fetch_version(version_url: str, *, base_url: str, headers: dict | None = None,
+                         field: str = "") -> str:
+    """GET the target's version endpoint → the deployed BUILD version, for report §1 (Scope).
+
+    The OpenAPI `info.version` is the contract's version, not the build's, so a report that wants to pin
+    what actually ran needs this. Field name varies per service ({"luz_docs": "0.01.18.00-SNAPSHOT"}), so
+    `version_field` names it; absent, the first non-empty string value is used. Same-host gated like every
+    other call. Returns "" on any failure OR an empty value — the caller then omits the version rather
+    than reporting a wrong or blank one."""
+    import httpx
+
+    from test_executor.runners import _same_site
+    url = str(httpx.URL(base_url).join(version_url))
+    if not _same_site(url, base_url):
+        log.warning("version_url %r is off-site for base_url — refusing to fetch", version_url)
+        return ""
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(url, headers=headers or None)
+        resp.raise_for_status()
+        data = resp.json()
+        if not isinstance(data, dict):
+            return str(data or "").strip()
+        if field:
+            return str(data.get(field) or "").strip()
+        return next((v.strip() for v in data.values() if isinstance(v, str) and v.strip()), "")
+    except Exception as exc:  # noqa: BLE001 — a missing version must not fail the run
+        log.warning("version fetch (%s) failed: %s", version_url, type(exc).__name__)
+        return ""
+
+
+#: Per-RUN cache of the EXPENSIVE, NON-SECRET prep: (run_id, base_url) -> (expires_at, {spec_ctx, target}).
+#: A chunked run is polled once per chunk and re-fetched the target's OpenAPI spec (48 KB for luz_docs),
+#: re-read the spec cache and re-fetched the build version on every one — none of which changes mid-run.
+#:
+#: Credentials are deliberately NOT cached. A bearer is re-minted per poll as before, because (a) the
+#: executor never learns a token's real lifetime, so any TTL here is a guess that can serve an expired
+#: token for the tail of a long run, and (b) a token in a process-global outlives an abandoned run. One
+#: token mint per poll is cheap next to the spec fetch this does remove.
+#:
+#: Keyed by base_url as well as run_id so a poll that resolves a different target can never read prep
+#: prepared for another host.
+_PREP: dict[tuple[str, str], tuple[float, dict]] = {}
+_PREP_TTL_S = 600
+_PREP_LOCKS: dict[tuple[str, str], asyncio.Lock] = {}
+
+
+def _evict_expired(now: float) -> None:
+    for k in [k for k, (exp, _) in _PREP.items() if exp <= now]:
+        _PREP.pop(k, None)
+        _PREP_LOCKS.pop(k, None)
+
+
+async def _prepare_run(run_id: str, context_id: str, env_cfg: dict, auth_cfg: dict, *,
+                       base_url: str, target: dict) -> dict:
+    """Auth (fresh every call) + OpenAPI spec and build version (cached for the life of the run).
+
+    Returns {auth, spec_ctx, target}. A cache miss simply recomputes, so behaviour is identical to
+    preparing every time — only the I/O differs."""
+    from test_executor.environments import authenticate
+    auth = await authenticate(auth_cfg, base_url=base_url)           # never cached — see above
+
+    key = (run_id, base_url)
+    now = time.monotonic()
+    hit = _PREP.get(key)
+    if hit and hit[0] > now:
+        return {"auth": auth, **hit[1]}
+
+    # One preparer per key: without this, a client polling again before the previous chunk returns has
+    # both coroutines miss, both fetch the spec and both write the spec cache — the exact I/O this exists
+    # to remove.
+    lock = _PREP_LOCKS.setdefault(key, asyncio.Lock())
+    async with lock:
+        hit = _PREP.get(key)
+        if hit and hit[0] > time.monotonic():
+            return {"auth": auth, **hit[1]}
+
+        spec_ctx = None
+        if env_cfg.get("spec_url"):
+            from test_executor.oracle import fetch_spec, parse_operations
+            raw_spec = await fetch_spec(env_cfg["spec_url"], base_url=base_url,
+                                        headers=getattr(auth, "headers", None))
+            if raw_spec:
+                spec_ctx = {"spec": raw_spec, "ops": parse_operations(raw_spec)}
+                await _persist_spec(context_id, raw_spec, env_cfg["spec_url"])
+                info = raw_spec.get("info") or {}
+                # The spec's `info.version` is the CONTRACT's version, not the deployed build's (SmallRye
+                # defaults it to "1.0" while the service reports 0.01.18.00-SNAPSHOT). Label it as such —
+                # a completion report that pins the wrong build version is worse than one that omits it.
+                target.update({k: v for k, v in (("item", info.get("title")),
+                                                 ("spec_version", info.get("version"))) if v})
+        if env_cfg.get("version_url"):
+            # The DEPLOYED build version (report §1) — what actually ran, not the contract version.
+            build = await _fetch_version(env_cfg["version_url"], base_url=base_url,
+                                         headers=getattr(auth, "headers", None),
+                                         field=env_cfg.get("version_field", ""))
+            if build:
+                target["item_version"] = build
+
+        cached = {"spec_ctx": spec_ctx, "target": target}
+        _evict_expired(time.monotonic())     # drop lapsed entries instead of clearing live ones
+        _PREP[key] = (time.monotonic() + _PREP_TTL_S, cached)
+        return {"auth": auth, **cached}
+
+
+async def run_suite(store, context_id: str, env: str = "", *, scenarios: list[dict] | None = None,
+                    base_url: str = "") -> dict:
+    """Advance the execution run for a context by ONE chunk; return the run dict (status 'in_progress'
+    while chunks remain, else 'done'). The run is POLLED — the client re-invokes until done (like
+    implement_plan) so no single call blocks past the Cloud Run request timeout.
+
+    EXEC_RUNNER gates execution. `stub` (default): a one-shot honest placeholder (no live system).
+    `auto`: route each scenario to the engine that fits its nature and aggregate real pass/fail —
+    EXEC_CHUNK scenarios at a time, checkpointed to the ledger so a resume CONTINUES, not restarts.
+
+    Multi-env (§4): `env` NAMES a target in EXEC_ENVIRONMENTS ({base_url, auth}); its base_url + auth are
+    resolved from there, falling back to the `base_url` arg / EXEC_BASE_URL. The ledger records base_url +
+    the auth KIND (creds_ref), never the secret."""
+    from test_executor.environments import resolve_env
+    # A resume poll is documented as `run_suite(context_id)` with NO env (bridge/mcp_server.py), so `env`
+    # arrives empty on chunks 2+. Without recovering it, resolve_env("") -> {} and the target silently
+    # falls back to EXEC_BASE_URL — a DIFFERENT host from the one chunk 1 ran against, with that host's
+    # auth config lost. Recover the run's own env NAME from its ledger row so every chunk of a run keeps
+    # the same target and credentials.
+    if not env.strip():
+        active = await store.get_run(context_id=context_id)
+        if active and active.get("status") == "in_progress":
+            env = str(active.get("environment_id") or "").rsplit(":", 1)[-1]
+    env_cfg = resolve_env(env)
+    base_url = base_url or env_cfg.get("base_url") or os.environ.get("EXEC_BASE_URL", "")
+    if base_url and "@" in base_url:  # strip any inline userinfo/creds so they never hit the ledger/reply
+        import httpx
+        base_url = str(httpx.URL(base_url).copy_with(username=None, password=None))
+    auth_cfg = env_cfg.get("auth") or {}
+    creds_ref = str(auth_cfg.get("type", "")) or None      # the auth KIND for the ledger (never the secret)
+
+    if os.environ.get("EXEC_RUNNER", "stub").lower() != "auto":
+        environment_id = await store.upsert_env(context_id, env.strip() or "default", base_url=base_url,
+                                                 creds_ref=creds_ref)
+        run_id = await store.start_run(context_id, environment_id)
+        await store.finish_run(run_id, status="done",
+                               summary={"passed": 0, "failed": 0, "executed": 0},
+                               signals={"stub": True,
+                                        "note": "stub runner — set EXEC_RUNNER=auto to route scenarios to engines"},
+                               triage=[])
+        return await store.get_run(run_id=run_id) or {"id": run_id, "status": "done"}
+
+    if scenarios is None:
+        scenarios = await load_scenarios(context_id)
+    await _resolve_upload_refs(scenarios, context_id)   # inject bank fixture bytes into bound file uploads
+    total = len(scenarios)
+
+    latest = await store.get_run(context_id=context_id)
+    if latest and latest.get("status") == "in_progress":       # resume the running chunked run
+        run_id = latest["id"]
+        prog = latest.get("signals") or {}
+        summ = Summary.from_row(latest.get("summary"))
+        cursor, llm_used = int(prog.get("cursor", 0)), int(prog.get("llm_used", 0))
+        failures = [Failure.from_row(f) for f in prog.get("failures") or []]
+        results = [ScenarioResult.from_row(r) for r in prog.get("results") or []]
+    else:                                                       # start a fresh run
+        environment_id = await store.upsert_env(context_id, env.strip() or "default", base_url=base_url,
+                                                 creds_ref=creds_ref)
+        run_id = await store.start_run(context_id, environment_id)
+        summ = Summary()
+        cursor = llm_used = 0
+        failures = []
+        results = []
+
+    # §4 prepare phase + Pillar-3 grounding + report §1 Scope, computed ONCE per run and reused by every
+    # later chunk poll (see `_prepare_run`): the bearer, the OpenAPI spec and the build version are
+    # identical across the chunks of one run, so re-fetching them per poll was pure waste.
+    prep = await _prepare_run(run_id, context_id, env_cfg, auth_cfg,
+                              base_url=base_url, target={"env": env.strip() or "default",
+                                                         "base_url": base_url})
+    auth, spec_ctx, target = prep["auth"], prep["spec_ctx"], prep["target"]
+
+    llm_max = env_int("EXEC_LLM_MAX", 8)
+    for sc in scenarios[cursor:cursor + _chunk_size()]:
+        name = select_engine(sc)
+        summ.by_engine[name] = summ.by_engine.get(name, 0) + 1
+        cursor += 1
+        title = sc.get("title") or sc.get("id")
+        req = sc.get("request") if isinstance(sc.get("request"), dict) else {}
+
+        def _row(status: str, msgs: list, started: float, *, sc=sc, name=name, title=title, req=req):
+            """One report row for this scenario — recorded on EVERY outcome path, passes included."""
+            results.append(ScenarioResult(
+                id=str(sc.get("id") or ""), title=str(title or ""), status=status, engine=name,
+                kind=str(sc.get("kind") or ""), source_refs=list(sc.get("source_refs") or []),
+                method=str(req.get("method", "") or ""), path=str(req.get("path", "") or ""),
+                messages=msgs, duration_ms=int((time.monotonic() - started) * 1000)))
+
+        t0 = time.monotonic()
+        if _needs_llm(name, sc):
+            if llm_used >= llm_max:
+                summ.unbound += 1
+                _row("unbound", [f"over the per-run LLM budget ({llm_max})"], t0)
+                continue                 # over the per-run LLM budget — record unbound, make no call
+            llm_used += 1
+        try:
+            res = await ENGINES[name].run(sc, base_url=base_url, auth=auth, spec=spec_ctx,
+                                          path_vars=env_cfg.get("path_vars") or {})
+        except Exception as exc:  # noqa: BLE001 — one scenario's crash must not wedge the whole chunked run
+            log.warning("exec: scenario %r crashed engine %s: %s", title, name, exc)
+            summ.failed += 1
+            msg = f"engine {name} crashed: {type(exc).__name__}"
+            failures.append(Failure(message=msg, scenario=title))
+            _row("failed", [msg], t0)
+            continue                  # cursor already advanced above → the run progresses, never re-wedges
+        if not res.ran:
+            summ.unbound += 1
+            _row("unbound", [res.note] if res.note else [], t0)
+        elif res.passed:
+            summ.passed += 1
+            _row("passed", [], t0)
+        else:
+            summ.failed += 1
+            msgs = [o.message for o in res.outcomes if not o.ok]
+            failures += [Failure(message=o.message, flaky=o.flaky, scenario=title)
+                         for o in res.outcomes if not o.ok]
+            _row("failed", msgs, t0)
+
+    if cursor < total:                                         # more chunks remain → checkpoint + poll
+        await store.save_progress(run_id, summary=summ.as_dict(),
+                                  signals={"cursor": cursor, "total": total,
+                                           "failures": [f.as_dict() for f in failures], "llm_used": llm_used,
+                                           "results": [r.as_dict() for r in results],
+                                           "target": target})
+        return await store.get_run(run_id=run_id) or {"id": run_id, "status": "in_progress"}
+
+    _PREP.pop((run_id, base_url), None)                        # run is finishing — drop its cached prep
+    _PREP_LOCKS.pop((run_id, base_url), None)
+    coverage = await _ac_coverage(context_id, results)         # the report's AC matrix (gaps included)
+    verdicts = await asyncio.to_thread(triage, failures)       # JEV cascade is sync/blocking — off-loop
+    await store.finish_run(run_id, status="done", summary=summ.as_dict(),
+                           signals={"failures": [f.as_dict() for f in failures], "total": total,
+                                    "results": [r.as_dict() for r in results],
+                                    "target": target, "ac_coverage": coverage},
+                           triage=[v.as_dict() for v in verdicts])
+    return await store.get_run(run_id=run_id) or {"id": run_id, "status": "done"}
+
+
+async def heal_step(store, context_id: str, step_id: str, *, base_url: str = "",
+                    scenarios: list[dict] | None = None) -> dict:
+    """Propose + verify a fix for ONE failed step of the latest run (§3.1 self-heal). Finds the failure
+    by `step_id` (its scenario title/id), re-translates the scenario with the failure fed back, and
+    re-runs to check the patch works. Returns {healed, engine, patch, note} — the patch is a PROPOSAL,
+    surfaced for a human Yes/No; it is NEVER applied here (no silent retarget)."""
+    from test_executor.runners.translate import heal
+
+    base_url = base_url or os.environ.get("EXEC_BASE_URL", "")
+    run = await store.get_run(context_id=context_id)
+    failures = ((run or {}).get("signals") or {}).get("failures") or []
+    fail = next((f for f in failures if str(f.get("scenario")) == step_id), None)
+    if fail is None:
+        return {"healed": False, "note": f"no failed step '{step_id}' in the latest run to heal"}
+    from common.adk.model import model_configured
+    if not (base_url and model_configured()):
+        return {"healed": False, "note": "healing needs a model provider + base_url (EXEC_BASE_URL)"}
+    if scenarios is None:
+        scenarios = await load_scenarios(context_id)
+    sc = next((s for s in scenarios if step_id in (s.get("title"), s.get("id"))), None)
+    if sc is None:
+        return {"healed": False, "note": f"scenario '{step_id}' not found in the bank to heal"}
+    plan, res = await heal(sc, fail.get("message", ""), base_url=base_url)
+    return {"healed": bool(res.ran and res.passed), "engine": res.engine, "patch": plan,
+            "note": "PROPOSED patch — surfaced for human Yes/No; not applied automatically (no silent retarget)."}

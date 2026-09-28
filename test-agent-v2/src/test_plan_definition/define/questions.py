@@ -1,0 +1,52 @@
+"""Generate the clarifying questions for one define round (methodology | scope | metrics)."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+
+from common.adk.model import complete, model_configured
+from common.interrogate.pack import Pack
+from common.interrogate.questions import build_round_questions
+from common.llm.parse import coerce_str, loads_array
+from common.models import Question
+from common.testplan.llm.prompts import pack_block, question_prompt
+from common.testplan.models import ROUND_PREFIX as _PREFIX
+from test_plan_definition.monitoring import get_logger
+
+log = get_logger("define.questions")
+
+Generator = Callable[[Pack, str], list[Question]]
+
+_FIELDS = ("id", "round", "question", "why", "options", "recommendation",
+           "depends_on", "applies_to", "status", "confidence")
+
+
+def make_generator(understanding: str = "") -> Generator:
+    """Select the generator: the configured model provider when ready, else the heuristic."""
+    if not model_configured():
+        return lambda pack, round_name: heuristic_questions(pack, round_name)
+
+    def generator(pack: Pack, round_name: str) -> list[Question]:
+        summary = pack.summary_text()
+        raw = complete(question_prompt(summary, understanding, round_name, include_context=False),
+                       max_tokens=6000, cache_prefix=pack_block(summary),
+                       label=f"define.questions.{round_name}")
+        qs: list[Question] = []
+        for it in loads_array(raw) or []:
+            if not isinstance(it, dict):  # valid-but-non-object array element → skip, don't crash
+                continue
+            it.setdefault("round", round_name)
+            if "applies_to" in it:
+                it["applies_to"] = coerce_str(it["applies_to"])
+            qs.append(Question(**{k: it.get(k) for k in _FIELDS if k in it}))
+        if not qs:
+            log.warning("round %s: no/invalid LLM questions — using heuristic fallback", round_name)
+            qs = heuristic_questions(pack, round_name)
+        return qs
+
+    return generator
+
+
+def heuristic_questions(pack: Pack, round_name: str) -> list[Question]:
+    """Derive plan judgement-calls from the pack via the shared interrogation scaffolding."""
+    return build_round_questions(pack, round_name, id_prefix=_PREFIX[round_name])

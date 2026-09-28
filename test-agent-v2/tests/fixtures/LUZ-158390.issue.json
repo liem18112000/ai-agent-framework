@@ -1,0 +1,72 @@
+{
+  "key": "LUZ-158390",
+  "fields": {
+    "summary": "[eArchive] Import a conformant transfer package",
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {
+          "type": "paragraph",
+          "content": [
+            { "type": "text", "text": "See the design in " },
+            {
+              "type": "text",
+              "text": "Confluence",
+              "marks": [
+                {
+                  "type": "link",
+                  "attrs": { "href": "https://axonivy.atlassian.net/wiki/spaces/LUZ/pages/49662787598/Perf" }
+                }
+              ]
+            },
+            { "type": "text", "text": " and the spec at https://example.com/spec.pdf" }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "inlineCard",
+              "attrs": { "url": "https://bitbucket.org/acme/luz-docs/src/main/FileUtil.java" }
+            }
+          ]
+        }
+      ]
+    },
+    "comment": {
+      "comments": [
+        {
+          "body": {
+            "type": "doc",
+            "version": 1,
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Figma mock",
+                    "marks": [
+                      { "type": "link", "attrs": { "href": "https://www.figma.com/file/abc/eArchive" } }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "issuelinks": [
+      { "type": { "name": "Blocks" }, "inwardIssue": { "key": "LUZ-159670" } },
+      { "type": { "name": "Relates" }, "outwardIssue": { "key": "LUZ-159671" } }
+    ],
+    "attachment": [
+      {
+        "filename": "transfer.zip",
+        "content": "https://axonivy.atlassian.net/rest/api/3/attachment/content/10001"
+      }
+    ]
+  }
+}

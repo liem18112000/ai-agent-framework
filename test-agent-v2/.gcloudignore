@@ -1,0 +1,36 @@
+# Cloud Build source-upload filter.
+#
+# WHY THIS FILE EXISTS: without it gcloud falls back to .gitignore, which left docs/ (61MB of PNGs) +
+# tools/ (38MB) in the tarball — ~99MB of the 100MB upload, none of it used by the Dockerfile (it only
+# COPYs pyproject.toml, src/, main.py, worker.py, redis_worker.py). That upload timed out
+# (`gcloud crashed (ReadTimeout)` to storage.googleapis.com) and killed a deploy before the build began.
+#
+# CAREFUL: this file REPLACES the .gitignore fallback, so every secret/junk exclusion is repeated here
+# explicitly — dropping one would start uploading it.
+
+# --- secrets / local config (were covered by .gitignore; MUST stay excluded) ---
+.env
+.env.*
+!.env.example
+!.env.compose.example
+*.tfvars
+*.pem
+*credentials*
+
+# --- local env + caches ---
+.venv/
+__pycache__/
+*.pyc
+*.db
+.pytest_cache/
+.ruff_cache/
+.git/
+.gitignore
+
+# --- not used by the image build (the bulk of the old upload) ---
+docs/
+tools/
+tests/
+spikes/
+*.md
+!README.md

@@ -1,0 +1,8 @@
+{
+  "_comment": "EXAMPLE GCP env->coordinates map for the KGA cloud tiers (5/6/7). Mount this file and point KGA_GCP_ENV_MATRIX_FILE at it (or inline the same JSON in KGA_GCP_ENV_MATRIX). Per env: project+region required; cluster+namespace needed for k8s discovery/log filters. No values are compiled into source — configuring this is what enables the tiers.",
+  "dev":         {"project": "klara-nonprod", "region": "europe-west6", "cluster": "klara-nonprod", "namespace": "dev"},
+  "dev-staging": {"project": "klara-nonprod", "region": "europe-west6", "cluster": "klara-nonprod", "namespace": "staging"},
+  "performance": {"project": "klara-nonprod", "region": "europe-west6", "cluster": "klara-nonprod", "namespace": "performance"},
+  "test":        {"project": "klara-nonprod", "region": "europe-west6", "cluster": "klara-nonprod", "namespace": "test"},
+  "prod":        {"project": "klara-prod",    "region": "europe-west6", "cluster": "klara-prod",    "namespace": "prod"}
+}

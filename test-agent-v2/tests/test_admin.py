@@ -1,0 +1,434 @@
+"""Admin utility — offline tests for the A0 enabler + F1–F4 handlers (InMemoryObjectStore, no DB)."""
+
+from __future__ import annotations
+
+import datetime
+import json
+
+from common import admin
+from common.memory import MemoryBank
+from common.models import LESSON, Answer, Insight, Note, Question
+from common.store.memory import InMemoryObjectStore
+
+
+def _bank() -> MemoryBank:
+    return MemoryBank(InMemoryObjectStore())
+
+
+def _seed_run(bank: MemoryBank, ctx: str, *, seed: str, now: str, done: bool = True,
+              questions: int = 0, answers: int = 0, understanding: str | None = None) -> None:
+    bank.write_refine_state(ctx, {"seed": seed, "now": now, "done": done, "pending": []})
+    if questions:
+        bank.write_questions(ctx, [Question(id=f"q{i}", round="business", question=f"Q{i}?")
+                                   for i in range(questions)])
+    if answers:
+        bank.append_answers(ctx, [Answer(question_id=f"q{i}", text="a") for i in range(answers)])
+    if understanding is not None:
+        bank.write_understanding(ctx, understanding)
+
+
+def _add_note(bank: MemoryBank, note: Note) -> None:
+    bank.upsert_note(note)
+    bank.update_index(lambda g: g.add_note(note))
+
+
+def _add_lesson(bank: MemoryBank, ins: Insight) -> None:
+    bank.upsert_insight(ins)
+    bank.update_index(lambda g: g.add_insight(ins))
+
+
+# --- A0: the ObjectStore port extension ------------------------------------------------------------
+
+def test_iter_blobs_by_prefix_and_delete_idempotent():
+    store = InMemoryObjectStore()
+    for k in ("memory/a.json", "memory/sub/b.json", "other/c.json"):
+        store.blob(k).upload_from_string("x")
+    assert sorted(b.name for b in store.iter_blobs("memory/")) == ["memory/a.json", "memory/sub/b.json"]
+    assert sorted(b.name for b in store.iter_blobs("")) == ["memory/a.json", "memory/sub/b.json", "other/c.json"]
+    assert store.delete("memory/a.json") is True
+    assert store.delete("memory/a.json") is False  # idempotent
+
+
+def test_delete_prefix_returns_count_and_spares_backups():
+    bank = _bank()
+    store = bank._bucket
+    store.blob("memory/x.json").upload_from_string("1")
+    store.blob("memory/y.json").upload_from_string("2")
+    store.blob("memory-backups/v1/MANIFEST.json").upload_from_string("{}")
+    assert bank.delete_prefix("memory/") == 2
+    assert "memory-backups/v1/MANIFEST.json" in store.store  # trailing-slash prefix spares backups
+
+
+# --- F1: run history -------------------------------------------------------------------------------
+
+def test_list_runs_newest_first_with_counts():
+    bank = _bank()
+    _seed_run(bank, "run-old", seed="LUZ-1", now="2026-01-01T00-00-00Z", questions=2, answers=1)
+    _seed_run(bank, "run-new", seed="LUZ-2", now="2026-02-01T00-00-00Z", questions=3, answers=3)
+    out = admin.list_runs(bank)
+    assert out.index("run-new") < out.index("run-old")  # newest first
+    assert "1/2" in out and "3/3" in out  # answered/asked counts
+
+
+def test_get_run_composes_understanding_qa_pack():
+    bank = _bank()
+    ctx = "run-x"
+    _seed_run(bank, ctx, seed="LUZ-9", now="2026-01-01T00-00-00Z",
+              questions=1, answers=1, understanding="The confirmed understanding.")
+    _add_note(bank, Note(id="jira:LUZ-9", type="jira-issue", title="ticket", run_id=ctx))
+    _add_lesson(bank, Insight(id="ins:1", kind=LESSON, context_id=ctx, question_id="q0",
+                              statement="always check the dunning day"))
+    out = admin.get_run(bank, ctx)
+    assert "The confirmed understanding." in out
+    assert "1 nodes" in out and "jira-issue" in out
+    assert "always check the dunning day" in out
+    assert "Q&A (1/1 answered)" in out
+    assert out.count("_none_") == 1  # run logs empty → one "_none_"; lessons present → not duplicated
+
+
+def test_get_run_unknown_context_is_clean_message():
+    out = admin.get_run(_bank(), "run-nope")
+    assert "No such run" in out and "run-nope" in out
+
+
+def test_record_artifact_persists_dedupes_and_surfaces_in_get_run():
+    bank = _bank()
+    ctx = "run-art"
+    _seed_run(bank, ctx, seed="LUZ-7", now="2026-01-01T00-00-00Z", understanding="brief")
+
+    admin.record_artifact(bank, ctx, "knowledge", "https://x/knowledge", title="Knowledge report")
+    admin.record_artifact(bank, ctx, "plan", "https://x/plan", title="Test plan")
+
+    arts = admin.get_artifacts(bank, ctx)
+    assert [a["url"] for a in arts] == ["https://x/plan", "https://x/knowledge"]  # newest first
+    assert arts[0]["kind"] == "plan" and arts[0]["ts"]                            # fields + ts stamped
+
+    # dedupe on url — re-recording the same url is a no-op, not a second entry
+    admin.record_artifact(bank, ctx, "plan", "https://x/plan", title="dup")
+    assert [a["url"] for a in admin.get_artifacts(bank, ctx)] == ["https://x/plan", "https://x/knowledge"]
+
+    out = admin.get_run(bank, ctx)
+    assert "https://x/knowledge" in out and "https://x/plan" in out
+    assert "Artifacts (2)" in out
+
+
+def test_list_runs_shows_artifact_count():
+    bank = _bank()
+    _seed_run(bank, "run-art", seed="LUZ-7", now="2026-01-01T00-00-00Z")
+    admin.record_artifact(bank, "run-art", "report", "https://x/r")
+    out = admin.list_runs(bank)
+    assert "artifacts" in out              # column header present
+    assert out.rstrip().endswith("| 1 |")  # this run's artifact count
+
+
+def test_compare_runs_splits_common_and_divergent():
+    """Two runs of the same ticket → shared understanding bullets land in COMMON, unique ones in the
+    per-run buckets, plus a consensus header."""
+    bank = _bank()
+    _seed_run(bank, "run-a", seed="LUZ-9", now="2026-01-01T00-00-00Z",
+              understanding="- import is partial\n- HEALTH type carries healthData\n- only-in-A point")
+    _seed_run(bank, "run-b", seed="LUZ-9", now="2026-02-01T00-00-00Z",
+              understanding="- import is partial\n- HEALTH type carries healthData\n- only-in-B point")
+    out = admin.compare_runs(bank, "run-a", "run-b")
+    assert "Compare runs: run-a vs run-b" in out and "Consensus" in out
+    assert "import is partial" in out and "HEALTH type carries healthData" in out  # common
+    assert "only-in-A point" in out and "only-in-B point" in out                   # divergent
+    assert "Only in run-a" in out and "Only in run-b" in out
+
+
+def test_compare_runs_rejects_same_or_unknown():
+    bank = _bank()
+    _seed_run(bank, "run-a", seed="LUZ-9", now="2026-01-01T00-00-00Z", understanding="- x")
+    assert "two DIFFERENT run ids" in admin.compare_runs(bank, "run-a", "run-a")
+    assert "No such run" in admin.compare_runs(bank, "run-a", "run-nope")
+
+
+def test_get_run_caps_oversized_sections():
+    """A huge section (real case: run-cd156028's scenarios_md was ~1.4 MB) must be clipped with a
+    pointer to the full-read tool, so get_run stays a bounded summary under the MCP token limit."""
+    from common.admin.runs import _TOTAL_CAP, RunDetail
+
+    md = RunDetail(context_id="run-x", scenarios_md="x" * 2_000_000).md()
+    assert len(md) <= _TOTAL_CAP + 200          # bounded — no more 1.4 MB dumps
+    assert "truncated" in md and "get_scenarios" in md  # clipped + points to the tool that returns it in full
+
+
+# --- F2: memory introspection ----------------------------------------------------------------------
+
+async def test_view_memory_all_degrades_without_db():
+    bank = _bank()
+    _seed_run(bank, "run-a", seed="LUZ-1", now="2026-01-01T00-00-00Z", understanding="brief")
+    out = await admin.view_memory(bank, None, "all", "run-a")
+    assert "Working (in-context)" in out
+    assert "Episodic" in out and "in-memory, no DB configured" in out
+    assert "Semantic" in out and "no DB configured" in out
+    assert "Procedural" in out
+
+
+async def test_view_memory_procedural_lists_tool_names():
+    out = await admin.view_memory(_bank(), None, "procedural")
+    for tool in ("gather_knowledge", "define_plan", "evaluate_pack", "wipe_all"):
+        assert tool in out
+    assert "interrogation rounds:" in out
+
+
+async def test_view_memory_working_needs_context():
+    out = await admin.view_memory(_bank(), None, "working")
+    assert "Provide a context_id" in out
+
+
+# --- F3: wipe-all ----------------------------------------------------------------------------------
+
+async def test_wipe_all_refuses_without_token():
+    # ADM-04: the refusal must NOT echo the required token — in prod it is the GCS bucket name.
+    out = await admin.wipe_all(_bank(), None, "", required_token="secret-prod-bucket")
+    assert "REFUSED" in out
+    assert "secret-prod-bucket" not in out   # the bucket name / token is never disclosed
+    assert "bucket name" in out              # but the operator is told what to provide
+
+
+async def test_wipe_all_clears_bank_but_keeps_backups_and_is_idempotent():
+    bank = _bank()
+    _seed_run(bank, "run-a", seed="LUZ-1", now="2026-01-01T00-00-00Z", understanding="brief")
+    admin.backup_memory(bank, "safety", now=datetime.datetime(2026, 1, 2, tzinfo=datetime.UTC))
+
+    first = await admin.wipe_all(bank, None, "WIPE", required_token="WIPE")
+    assert "blobs removed" in first
+    assert not any(k.startswith("memory/") for k in bank._bucket.store)
+    assert any(k.startswith("memory-backups/") for k in bank._bucket.store)
+    assert "in-memory, nothing persisted" in first  # no-DB task/session report
+
+    second = await admin.wipe_all(bank, None, "WIPE", required_token="WIPE")
+    assert "0 blobs removed" in second  # idempotent
+
+
+# --- F4: backup ------------------------------------------------------------------------------------
+
+def test_backup_copies_all_blobs_and_writes_manifest():
+    bank = _bank()
+    _seed_run(bank, "run-a", seed="LUZ-1", now="2026-01-01T00-00-00Z", understanding="brief")
+    live = {k for k in bank._bucket.store if k.startswith("memory/")}
+    out = admin.backup_memory(bank, "snap one", now=datetime.datetime(2026, 1, 2, tzinfo=datetime.UTC))
+    assert "Backed up" in out
+    version = "2026-01-02T00-00-00Z_snap_one"
+    for k in live:
+        assert f"memory-backups/{version}/{k}" in bank._bucket.store
+    manifest = json.loads(bank._bucket.store[f"memory-backups/{version}/MANIFEST.json"])
+    assert manifest["blob_count"] == len(live)
+    assert manifest["summary"] == "snap one" and manifest["source_prefix"] == "memory/"
+
+
+def test_two_backups_are_distinct_versions_listed_newest_first():
+    bank = _bank()
+    _seed_run(bank, "run-a", seed="LUZ-1", now="2026-01-01T00-00-00Z", understanding="brief")
+    admin.backup_memory(bank, "first", now=datetime.datetime(2026, 1, 2, tzinfo=datetime.UTC))
+    admin.backup_memory(bank, "second", now=datetime.datetime(2026, 3, 4, tzinfo=datetime.UTC))
+    out = admin.list_backups(bank)
+    assert "Backups (2)" in out
+    assert out.index("second") < out.index("first")  # newest first
+
+
+def test_backup_skips_blob_deleted_mid_snapshot():
+    """ADM-05: a blob listed then deleted before copy is skipped, not an AttributeError that aborts."""
+    bank = _bank()
+    _seed_run(bank, "run-a", seed="LUZ-1", now="2026-01-01T00-00-00Z", understanding="brief")
+    store = bank._bucket
+    live = sorted(b.name for b in store.iter_blobs("memory/"))
+    victim = live[0]
+    real_get = store.get_blob
+    store.get_blob = lambda name: None if name == victim else real_get(name)  # concurrent delete
+    out = admin.backup_memory(bank, "snap", now=datetime.datetime(2026, 1, 2, tzinfo=datetime.UTC))
+    assert "Backed up" in out
+    version = "2026-01-02T00-00-00Z_snap"
+    assert f"memory-backups/{version}/{victim}" not in store.store       # the vanished blob was skipped
+    manifest = json.loads(store.store[f"memory-backups/{version}/MANIFEST.json"])
+    assert manifest["blob_count"] == len(live) - 1                       # survivors counted, not the victim
+
+
+# --- F5: memory-graph HTML visualisation -----------------------------------------------------------
+async def test_memory_graph_html_renders_nodes_edges_from_index_fallback():
+    """No DB → reads the GCS index; emits a self-contained force-directed page with the node + a legend."""
+    bank = _bank()
+    _add_note(bank, Note(id="jira:LUZ-9", type="jira-issue", title="Dunning ticket", run_id="r"))
+    _add_note(bank, Note(id="attachment:spec", type="attachment", title="spec.pdf", run_id="r",
+                         links=[]))
+    # an edge jira -> attachment via the index graph
+    bank.update_index(lambda g: g.edges.__setitem__(
+        "e1", {"source_id": "jira:LUZ-9", "target": "attachment:spec", "type": "attachment"}))
+
+    html = await admin.memory_graph_html(bank, None, title="Mem")
+    assert "<canvas" in html and "const DATA=" in html          # self-contained force-graph page
+    assert "GCS knowledge index" in html                        # fallback source labelled
+    assert "attachment:spec" in html and "jira-issue" in html   # node + type legend present
+    assert "__DATA__" not in html                               # all tokens substituted
+    # safe <script> embedding — no raw closing tag can break out of the DATA literal
+    assert "</script>" not in html.split("const DATA=")[1].split("</script>", 1)[0]
+
+
+def test_memory_graph_html_escapes_tooltip_fields_against_stored_xss():
+    """ADM-03: a crawled node label like `<img onerror=...>` must not reach innerHTML raw. The tooltip
+    routes label/type/syn through the esc() helper, so a stored payload can't run as inline JS."""
+    from common.admin.graph_html import build_memory_graph_html
+
+    nodes = [{"id": "n1", "type": "jira-issue",
+              "title": "<img src=x onerror=alert(1)>", "synopsis": "<b>x</b>"}]
+    html = build_memory_graph_html(nodes, [])
+    assert "esc(n.label)" in html and "esc(n.type)" in html and "esc(n.syn)" in html
+    assert "+n.label+" not in html and "+n.type+" not in html   # no raw innerHTML concat remains
+
+
+def test_wipe_all_preserves_schema_metadata_and_config_tables():
+    """Regression for a 2026-09-17 FULL OUTAGE.
+
+    wipe_all used to truncate "every table that is not pgvector", which made it a catch-all: any table
+    added to the shared database was silently in scope. A real wipe therefore truncated ADK's
+    `adk_internal_metadata`, removing its `schema_version` row — and because all five agents share one
+    DatabaseSessionService, every agent then failed with "Schema version not found" on its next
+    request. The same wipe destroyed `prompt_template`/`prompt_version`, which are CONFIGURATION, not
+    memory: wiping the memory bank must never discard someone's edited prompts.
+
+    The selection is now an allowlist, so a table nobody classified is preserved, not destroyed."""
+    from common.admin import wipe
+
+    assert "adk_internal_metadata" not in wipe._RUNTIME_TABLES
+    assert "adk_internal_metadata" not in wipe._PGVECTOR_TABLES
+    for cfg in ("prompt_template", "prompt_version"):
+        assert cfg not in wipe._RUNTIME_TABLES and cfg not in wipe._PGVECTOR_TABLES
+
+    # the tables a wipe SHOULD clear are still covered
+    assert set(wipe._PGVECTOR_TABLES) == {"memory_node", "memory_edge"}
+    assert {"sessions", "events", "tasks"} <= set(wipe._RUNTIME_TABLES)
+
+    # and an unknown future table is preserved by default, never silently truncated
+    known = set(wipe._PGVECTOR_TABLES) | set(wipe._RUNTIME_TABLES)
+    assert "some_future_table" not in known
+
+
+# --- forget-memory: the confirm gate must actually gate -------------------------------------------
+class _FakeBank:
+    """Records whether anything was deleted, so a test can prove the gate held."""
+
+    def __init__(self):
+        self.deleted: list[str] = []
+
+    def load_index(self):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(nodes={"a": 1, "b": 2}, edges={"a->b": 1}), 0
+
+    def delete_prefix(self, prefix):
+        self.deleted.append(prefix)
+        return 7
+
+
+async def test_forget_memory_without_confirmation_deletes_nothing_and_previews():
+    """The whole point of the gate: a bare call must be SAFE. It reports what would go and hands back
+    the token, because server-driven confirm prompts (MCP elicitation) render blank over HTTP here —
+    so the re-confirm has to be a second deliberate call."""
+    from common.admin import forget_memory
+
+    bank = _FakeBank()
+    out = await forget_memory(bank, None, "", required_token="TOKEN")
+    assert bank.deleted == []                         # nothing was touched
+    assert "NOT EXECUTED" in out
+    assert "2 node(s) / 1 edge(s)" in out             # preview of what would be lost
+    assert "'TOKEN'" in out                           # tells the caller how to proceed
+    assert "PRESERVED" in out
+
+
+async def test_forget_memory_rejects_a_wrong_token():
+    from common.admin import forget_memory
+
+    bank = _FakeBank()
+    out = await forget_memory(bank, None, "not-the-token", required_token="TOKEN")
+    assert bank.deleted == [] and "NOT EXECUTED" in out
+
+
+async def test_forget_memory_with_the_token_clears_the_bank_only():
+    """With the token it deletes the memory bank — and says explicitly what it preserved, because the
+    2026-09-17 outage came from a destructive command whose blast radius was wider than its name."""
+    from common.admin import forget_memory
+
+    bank = _FakeBank()
+    out = await forget_memory(bank, None, "TOKEN", required_token="TOKEN")
+    assert bank.deleted == ["memory/"]
+    assert "7 blobs removed" in out
+    assert "preserved: A2A tasks, ADK sessions, adk_internal_metadata, prompt store" in out
+
+
+def test_forget_memory_never_targets_session_or_config_tables():
+    """forget-memory is memory-only: it must not reach the tables wipe_all clears, and must never go
+    near ADK's boot metadata or the prompt store."""
+    import inspect
+
+    from common.admin import wipe
+
+    src = inspect.getsource(wipe.forget_memory)
+    assert "_PGVECTOR_TABLES" in src                  # memory tier only
+    assert "_RUNTIME_TABLES" not in src               # not sessions/events/tasks
+    for forbidden in ("adk_internal_metadata", "prompt_template", "prompt_version"):
+        assert forbidden not in src or "does NOT touch" in src or "preserved" in src
+
+
+class _ConflictOnceStore:
+    """Wrap a store so the first upload_from_string raises CASConflict — exercises the retry loop."""
+    def __init__(self, inner):
+        self.inner, self.tripped = inner, False
+
+    def get_blob(self, p):
+        return self.inner.get_blob(p)
+
+    def iter_blobs(self, prefix):
+        return self.inner.iter_blobs(prefix)
+
+    def delete(self, p):
+        return self.inner.delete(p)
+
+    def blob(self, p):
+        real, outer = self.inner.blob(p), self
+
+        class _B:
+            name = real.name
+            download_as_text = real.download_as_text
+            generation = property(lambda self: real.generation)
+
+            def upload_from_string(self, data, content_type=None, if_generation_match=None):
+                if not outer.tripped:
+                    outer.tripped = True
+                    from common.store.object_store import CASConflict
+                    raise CASConflict("injected")
+                return real.upload_from_string(data, content_type, if_generation_match)
+        return _B()
+
+
+def test_record_artifact_retries_on_cas_conflict():
+    bank = MemoryBank(_ConflictOnceStore(InMemoryObjectStore()))
+    msg = admin.record_artifact(bank, "run-cas", "report", "https://x/r", title="T")
+    assert "Recorded" in msg                                   # retry succeeded despite the conflict
+    arts = admin.get_artifacts(bank, "run-cas")
+    assert len(arts) == 1 and arts[0]["url"] == "https://x/r"
+
+
+async def test_record_artifact_router_json_args_preserve_spaces(monkeypatch):
+    import admin_agent.agent as agentmod
+    bank = _bank()
+    monkeypatch.setattr(agentmod, "build_bank", lambda: bank)
+    router = agentmod.build_root_agent()
+    payload = json.dumps({"ctx": "run-json", "kind": "knowledge (ePost)",
+                          "url": "https://x/a b c", "title": "My Title"})
+    out = await router._record_artifact(payload)
+    assert "Recorded" in out
+    arts = admin.get_artifacts(bank, "run-json")
+    assert arts and arts[0]["kind"] == "knowledge (ePost)"     # space in kind survives (was mis-split)
+    assert arts[0]["url"] == "https://x/a b c" and arts[0]["title"] == "My Title"
+
+
+async def test_record_artifact_router_positional_still_works(monkeypatch):
+    import admin_agent.agent as agentmod
+    bank = _bank()
+    monkeypatch.setattr(agentmod, "build_bank", lambda: bank)
+    router = agentmod.build_root_agent()
+    out = await router._record_artifact("run-pos report https://x/p My plan report")
+    assert "Recorded" in out
+    arts = admin.get_artifacts(bank, "run-pos")
+    assert arts[0]["url"] == "https://x/p" and arts[0]["title"] == "My plan report"

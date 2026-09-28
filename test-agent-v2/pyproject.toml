@@ -1,0 +1,90 @@
+[project]
+name = "knowledge-gathering"
+version = "0.1.0"
+description = "Knowledge-Gathering Test Agent — read-only Atlassian crawler with a GCS markdown memory bank, driven over A2A."
+requires-python = ">=3.12"
+
+# Minimal runtime deps. Pin a2a-sdk to an exact version at M0 once the served
+# well-known path (/.well-known/agent-card.json vs /.well-known/agent.json) is confirmed.
+dependencies = [
+  "a2a-sdk[http-server,postgresql]>=1.1,<2",   # http-server = ASGI app; postgresql = SQLAlchemy+asyncpg for the durable DatabaseTaskStore
+  "cloud-sql-python-connector[asyncpg]>=1.4,<2",  # dials Cloud SQL via IAM+TLS (NOT the /cloudsql socket, which never reaches a Cloud Run sidecar) — see common/taskstore.py
+  "fastapi>=0.110",                 # the agent server app (FastAPI, a superset of Starlette)
+  "httpx>=0.27",
+  "google-cloud-storage>=2.16",
+  "google-cloud-pubsub>=2.20",  # Phase C: distributed scenario generation (worker pool over Pub/Sub)
+  "google-cloud-secret-manager>=2.20",
+  "anthropic[vertex]>=1,<2",    # Claude on Vertex AI (claude-sonnet-5) — the Distill step
+  "google-cloud-aiplatform>=1.60",  # vertexai TextEmbeddingModel — pgvector recall embeddings (M3); imported lazily
+  "beautifulsoup4>=4.12",
+  "pypdf>=4",                       # attachment fetcher: extract text from PDF attachments (the spec PDFs)
+  "python-docx>=1",                # attachment fetcher: MS Word (.docx) text
+  "openpyxl>=3",                   # attachment fetcher: MS Excel (.xlsx) cell text
+  "pillow>=10",                    # attachment fetcher: normalize/downscale images before vision OCR
+  "uvicorn[standard]>=0.30",
+  "graphifyy>=0.9,<1",              # local tree-sitter code-graph CLI (`graphify`) — the codegraph fetcher
+  "google-adk[db]>=2",              # ADK runtime (v2 rebuild) — [db] = SQLAlchemy for DatabaseSessionService
+  "litellm>=1.0",                   # LiteLlm model routing: Claude Sonnet 5 on Vertex via ADK
+  "aiosqlite>=0.19",               # async sqlite driver for local/dev DatabaseSessionService + tests
+  "redis>=5,<6",                    # common/cache RedisCache adapter (GCP Memorystore); lazy-imported
+  "boto3>=1.35.60",                 # common/store S3ObjectStore adapter (MinIO / AWS S3); lazy-imported. Floor: conditional PutObject (IfMatch/IfNoneMatch) — the store's CAS — landed ~botocore 1.35.60
+  "pydantic-settings>=2",           # common/adk/config.py — the model-backend switch (E2)
+  "python-dotenv>=1",               # __init__ env bootstrap for local adk web/run (E1)
+]
+
+[project.optional-dependencies]
+# The A2A->MCP bridge (client-side, run next to Claude). The agent server does NOT need this.
+bridge = ["mcp>=2,<3"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "pytest-timeout>=2", "ruff>=0.6", "mcp>=2,<3"]
+# The LLM-judged eval tier (tests/eval, nightly / `eval:` label). The deterministic PR gate
+# (trajectory + node-overlap) needs NONE of these — install only for the judged job. Absent → the
+# RAGAS tests skip cleanly (see tests/eval/metrics/ragas_judge.available()).
+eval = ["ragas>=0.2", "pandas>=2", "datasets>=2", "google-adk>=1.22"]
+# The JEV DecisionProvider (System-1 cascade, default OFF via TPD_DECISION_BACKEND). LAZY-imported
+# in providers/jev.py, like the gcp adapter — base install + offline tests never need it. Enable per
+# env by installing this extra AND setting TYPESAFE_API_KEY. Unpinned: JEV SDK is early-access.
+jev = [
+    "typesafe-sdk==0.7.1",
+]
+# The BrowserEngine (test_executor UI/E2E execution). LAZY-imported in runners.py (find_spec gates it),
+# so the base install + offline tests never need it — BrowserEngine reports unbound without it. Enabling
+# in the image ALSO requires the chromium binary: `playwright install --with-deps chromium` (Dockerfile).
+browser = ["playwright>=1.40"]
+# The OpenAPI grounding + conformance oracle (test_executor Pillar 3). LAZY-imported in openapi.py, so
+# the base install + offline tests degrade cleanly to ungrounded execution without it; install in the
+# image where Pillar-3 grounding runs (`pip install .[exec]`).
+exec = ["jsonschema>=4", "pyyaml>=6"]
+# The GCP adapter for the CloudProvider port (KGA tiers 5/6/7 — discover/logs/relate). LAZY-imported
+# (like aiplatform), so the base install + offline tests never need these; install only where the gcp
+# adapter runs (deployed image). Enablement is config-presence: a non-empty KGA_GCP_ENV_MATRIX. Azure/AWS = future extras.
+gcp = [
+  "google-cloud-asset>=3.20",       # Cloud Asset Inventory searchAllResources (Tier 5 discover)
+  "google-cloud-logging>=3.5",      # Cloud Logging read (Tier 6 expanding window)
+  "google-cloud-run>=0.10",         # run_v2 ServicesClient (Tier 5 per-platform fallback)
+  "google-cloud-container>=2.40",   # container_v1 (GKE workload fallback)
+  "google-cloud-trace>=1.11",       # Cloud Trace spans (Tier 7 edges, optional)
+]
+
+# The single MCP gateway fronting all three A2A agents (the one endpoint local Claude connects to).
+[project.scripts]
+testing-agent-gateway = "gateway.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/common", "src/knowledge_gathering", "src/test_plan_definition", "src/test_evaluation", "src/test_executor", "src/testing_agent", "src/gateway", "src/admin_agent"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+# Domain models are named Test* (TestPlan, TestData, TestScenario, TestStep) and would
+# otherwise trip pytest's default `Test*` class-collection heuristic. The suite uses only
+# function-style tests, so require a `*Tests` suffix for class collection instead.
+python_classes = ["*Tests"]
