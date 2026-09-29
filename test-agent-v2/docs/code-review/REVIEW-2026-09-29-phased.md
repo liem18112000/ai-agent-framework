@@ -36,7 +36,7 @@ package bootstrap, 25 lines of hand-rolled numeric-env parsing that a shared hel
 | Category | Count | Net verdict |
 |---|---|---|
 | **A. Security** | 1 | One P0, fixed |
-| **B. Correctness** | 2 | One P1 (repro'd, fixed), one P2 (fixed) |
+| **B. Correctness** | 3 | One P1 (repro'd, fixed), one P2 (fixed), one P2 (reported) |
 | **C. Cost / performance** | 1 | Latent, conditional — documented, deliberately not built |
 | **D. Ponytail — shorter code** | 4 | all 4 applied (−87 lines + 2 stores de-duplicated) |
 | **E. Hygiene** | 1 | Applied |
@@ -118,6 +118,21 @@ so the caller owns what it persisted. `persist_usage` is the one caller. Same ch
 
 **Regression test:** `tests/test_admin_tokens.py::test_persist_does_not_double_count_chunks_on_one_warm_instance`
 — three chunks, no reset, asserts 300/30/3 in storage, in the admin view, and an empty meter after.
+
+### TOK-3 · **P2** · The token admin surface is unreachable from the gateway
+
+**Where:** `src/admin_agent/agent.py:47-50` (registered) vs `src/admin_agent/bridge/mcp_server.py` (not)
+
+`a08a3d1` added four commands to `AdminRouter` — `token-usage`, `token-agents`, `token-estimate`,
+`token-lesson` — and registered none of them on the admin MCP bridge. That bridge is what the single
+MCP gateway exposes, and the gateway is the only client-facing surface: the agents are A2A-only.
+
+So the entire F5 operator surface is reachable only by speaking A2A to the admin agent directly with
+`A2A_BEARER_TOKEN`. The feature works; nobody can call it the documented way.
+
+Found while building the post-deploy check, which needs `token-usage` — `tools/e2e_refactor_check.py`
+talks A2A for exactly this reason. **Not fixed here:** adding four MCP tools is a product-surface
+change, not a review cleanup. Four forwarders in the style of the existing nine is the whole fix.
 
 ### PROXY-1 · **P2** · A failed `claude` CLI call returns `200 OK` with an empty completion
 
