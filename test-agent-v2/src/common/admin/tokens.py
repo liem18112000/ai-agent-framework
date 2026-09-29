@@ -57,9 +57,13 @@ def persist_usage(bank, run_id: str, snap: dict | None = None) -> dict:
     """Fold this process's counters for `run_id` into the run's stored blob and return the merged map.
 
     ACCUMULATES rather than overwrites: a run is chunked across several MCP calls (the assured loop
-    pauses and resumes, a re-run continues a context), and each call lands on a different instance
-    with its own empty counters. Overwriting would keep only the last chunk."""
-    snap = meter.snapshot(run_id) if snap is None else snap
+    pauses and resumes, a re-run continues a context), so overwriting would keep only the last chunk.
+
+    DRAINS the counters it folds in. They are process-cumulative, and consecutive chunks of one run
+    usually land on the SAME warm instance — so an un-drained snapshot re-adds every earlier chunk on
+    top of what storage already holds (3 chunks stored 2x the real bill; the admin view, which reads
+    storage *and* the live counters, showed 3x)."""
+    snap = meter.snapshot(run_id, drain=True) if snap is None else snap
     stored = read_usage(bank, run_id)
     merged = _with_total(_merge({k: v for k, v in stored.items() if k != "TOTAL"}, snap))
     try:

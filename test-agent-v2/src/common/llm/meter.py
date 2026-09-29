@@ -89,17 +89,26 @@ def record_message(label: str, usage) -> None:
            cache_write=getattr(usage, "cache_creation_input_tokens", 0) or 0)
 
 
-def snapshot(run_id: str | None = None) -> dict[str, dict]:
+def snapshot(run_id: str | None = None, *, drain: bool = False) -> dict[str, dict]:
     """Per-label totals plus a ``TOTAL`` row, as plain dicts (JSON-safe, for logs / admin).
 
     ``run_id=None`` aggregates every run this process has seen; pass a run id to scope it, or ``""``
-    for the calls recorded outside any ``run_scope``."""
+    for the calls recorded outside any ``run_scope``.
+
+    ``drain=True`` also CLEARS what it returned, so the caller OWNS those numbers. `persist_usage`
+    uses it: the counters are process-cumulative and a chunked run persists on every chunk, so
+    folding an un-drained snapshot into the stored blob re-adds every earlier chunk (3 chunks on one
+    warm instance stored 2x the real bill, and the admin view showed 3x). It also stops `_TOTALS`
+    growing for the life of the process."""
     with _LOCK:
         runs = _TOTALS if run_id is None else {run_id: _TOTALS.get(run_id, {})}
         out: dict[str, TokenUsage] = {}
         for by_label in runs.values():
             for label, usage in by_label.items():
                 out.setdefault(label, TokenUsage()).add(usage)
+        if drain:
+            for r in list(runs):
+                _TOTALS.pop(r, None)
     total = TokenUsage()
     for v in out.values():
         total.add(v)
