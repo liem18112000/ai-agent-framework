@@ -14,9 +14,9 @@ seams that refactor moved, each of which fails in a way a pipeline run would not
                        chunked on one warm instance stored the triangular sum (see TOK-1). We read
                        the accounting back and check it is internally consistent.
 
-Reaching (3) needs A2A, not MCP: the four token-* commands live on the AdminRouter but were never
-registered on the admin MCP bridge, so they are unreachable from the gateway (TOK-3 in the review).
-This script talks A2A to the admin agent with A2A_BEARER_TOKEN.
+Talks A2A to the admin agent with A2A_BEARER_TOKEN, deliberately: the token-* commands are on the
+gateway now (TOK-3 is fixed), but going direct means a gateway fault cannot be mistaken for an agent
+fault — this script is the one that has to say WHICH layer broke.
 
 Run (after a deploy, and after at least one pipeline run so there is something to read):
   PYTHONIOENCODING=utf-8 uv run python tools/e2e_refactor_check.py

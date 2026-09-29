@@ -36,7 +36,7 @@ package bootstrap, 25 lines of hand-rolled numeric-env parsing that a shared hel
 | Category | Count | Net verdict |
 |---|---|---|
 | **A. Security** | 1 | One P0, fixed |
-| **B. Correctness** | 3 | One P1 (repro'd, fixed), one P2 (fixed), one P2 (reported) |
+| **B. Correctness** | 3 | One P1 (repro'd, fixed) and two P2, all fixed |
 | **C. Cost / performance** | 1 | Latent, conditional — documented, deliberately not built |
 | **D. Ponytail — shorter code** | 4 | all 4 applied (−87 lines + 2 stores de-duplicated) |
 | **E. Hygiene** | 1 | Applied |
@@ -130,9 +130,18 @@ MCP gateway exposes, and the gateway is the only client-facing surface: the agen
 So the entire F5 operator surface is reachable only by speaking A2A to the admin agent directly with
 `A2A_BEARER_TOKEN`. The feature works; nobody can call it the documented way.
 
-Found while building the post-deploy check, which needs `token-usage` — `tools/e2e_refactor_check.py`
-talks A2A for exactly this reason. **Not fixed here:** adding four MCP tools is a product-surface
-change, not a review cleanup. Four forwarders in the style of the existing nine is the whole fix.
+Found while building the post-deploy check, which needs `token-usage`.
+
+**Fixed (Phase 5):** four forwarders in the style of the existing ones — and, more usefully, a guard
+so the next verb cannot slip the same way. `test_gateway.py::test_every_admin_verb_is_reachable_over_mcp`
+enumerates `AdminRouter._commands()` and fails on any verb with no MCP tool. Mutation-checked: with
+the forwarders reverted it names exactly the four token verbs.
+
+The `AdminRouter` docstring said adding a verb was "a new method plus one line here", which is the
+trap that produced this; it now says the forwarder is part of the job. Also completed the dict
+`register_tools` returns — the six `prompt_*` tools and `forget_memory` were registered on MCP but
+missing from it, so they were callable over the wire yet not importable from `gateway.mcp_server`,
+which is how the tests reach them.
 
 ### PROXY-1 · **P2** · A failed `claude` CLI call returns `200 OK` with an empty completion
 
@@ -306,6 +315,7 @@ comment-removal pass was performed because performing one would have removed inf
 | **1 — The bug** | TOK-1 `drain=True` + regression test | low — one call site, covered by a test that fails without it | ✅ applied |
 | **2 — Failure visibility** | PROXY-1 non-zero exit → 500 | low — local/compose path only | ✅ applied |
 | **3 — Structural** | PONY-3 shared `_ensure` → `common.db.SchemaOnce` + the 3 tests it was missing | low — mutation-checked | ✅ applied |
+| **5 — Reachability** | TOK-3 four admin forwarders + the router/bridge drift guard | low — additive | ✅ applied |
 | **4 — Decisions, no code** | CACHE-1 (if `VERTEX_MODEL_FAST` is ever set); A-3; A-4; delete `.env.bak` | — | ⬜ yours |
 
 ### Phase order rationale
