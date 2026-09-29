@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import json
 
+from common.db import SchemaOnce
 from test_executor.store.ids import _j, env_id, new_id
 
-SCHEMA_SQL = """
+_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS exec_environment (
   id           text PRIMARY KEY,
   context_id   text NOT NULL,
@@ -43,29 +44,10 @@ CREATE INDEX IF NOT EXISTS exec_run_ctx ON exec_run (context_id);
 """
 
 
-class ExecStore:
+class ExecStore(SchemaOnce):
     """Postgres-backed run ledger on the shared async engine. Schema applied once per process."""
 
-    def __init__(self, engine) -> None:
-        self._engine = engine
-        self._ready = False
-        self._lock = None
-
-    async def _ensure(self) -> None:
-        if self._ready:
-            return
-        import asyncio
-
-        from sqlalchemy import text
-        if self._lock is None:  # no await before assignment → safe under cooperative asyncio
-            self._lock = asyncio.Lock()
-        async with self._lock:
-            if self._ready:
-                return
-            async with self._engine.begin() as conn:
-                for stmt in (s.strip() for s in SCHEMA_SQL.split(";") if s.strip()):
-                    await conn.execute(text(stmt))
-            self._ready = True
+    SCHEMA_SQL = _SCHEMA_SQL
 
     async def upsert_env(self, context_id: str, name: str, *, base_url: str = "", kind: str | None = None,
                          revision: str | None = None, creds_ref: str | None = None,

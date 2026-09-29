@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 
-from common.memory.pg.schema import HNSW_INDEX_SQL, SCHEMA_SQL
+from common.db import SchemaOnce
+from common.memory.pg.schema import HNSW_INDEX_SQL
+from common.memory.pg.schema import SCHEMA_SQL as _SCHEMA_SQL
 from common.memory.vector_store import DEFAULT_SCOPES
 from common.monitoring import get_logger
 
@@ -25,30 +27,8 @@ def rrf_fuse(*ranked_lists: list[str], k0: int = 60, limit: int = 40) -> list[st
     return sorted(scores, key=lambda i: (-scores[i], i))[:limit]
 
 
-class PgMemoryStore:
-    def __init__(self, engine) -> None:
-        self._engine = engine
-        self._ready = False
-        self._lock = None
-
-    async def _ensure(self) -> None:
-        """Apply the schema once per process (idempotent CREATE … IF NOT EXISTS statements).
-        Serialised by a lock so concurrent first callers don't race the CREATE EXTENSION/INDEX
-        (which would raise `tuple concurrently updated` and silently degrade recall — MEM-02)."""
-        if self._ready:
-            return
-        import asyncio
-
-        from sqlalchemy import text
-        if self._lock is None:  # no await before assignment → safe under cooperative asyncio
-            self._lock = asyncio.Lock()
-        async with self._lock:
-            if self._ready:
-                return
-            async with self._engine.begin() as conn:
-                for stmt in (s.strip() for s in SCHEMA_SQL.split(";") if s.strip()):
-                    await conn.execute(text(stmt))
-            self._ready = True
+class PgMemoryStore(SchemaOnce):
+    SCHEMA_SQL = _SCHEMA_SQL   # applied once per process by SchemaOnce._ensure (the CREATE EXTENSION race)
 
     async def upsert_node(self, node: dict) -> None:
         """INSERT … ON CONFLICT (id) DO UPDATE — a note/insight projection (no embedding here)."""
