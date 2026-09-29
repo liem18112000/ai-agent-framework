@@ -37,9 +37,10 @@ try:
 except ImportError:
     pass
 
-import kga_source_gate_calibrate as g4  # noqa: E402  reuse sweep()/best_tau() verbatim
-from common.adk.providers.jev import JevProvider  # noqa: E402
-from knowledge_gathering.gather.explore.source_gate import _STATEMENTS  # noqa: E402
+import kga_source_gate_calibrate as g4
+
+from common.adk.providers.jev import JevProvider
+from knowledge_gathering.gather.explore.source_gate import _STATEMENTS
 
 # Golden ticket states (from tests/eval/fixtures/atlassian/*.json summaries). A compact stand-in for
 # the production _gate_state(seed, terms, project, thin) — seed + the real summary + sibling terms.
@@ -78,7 +79,7 @@ def main() -> int:
     print("=== live JEV per golden ticket × source (P(true), conf) ===")
     print(f"{'ticket':10} {'source':18} {'P':>6} {'conf':>6} {'helps':>6}")
     for r in rows:
-        print(f"{r['ticket']:10} {r['source']:18} {r['P']:>6.2f} {r['conf']:>6.2f} {str(r['helps']):>6}")
+        print(f"{r['ticket']:10} {r['source']:18} {r['P']:>6.2f} {r['conf']:>6.2f} {r['helps']!s:>6}")
 
     conf_min = float(os.environ.get("KGA_SOURCE_GATE_CONF_MIN", "0.40"))
     taus = [0.30, 0.40, 0.50, 0.60, 0.70]

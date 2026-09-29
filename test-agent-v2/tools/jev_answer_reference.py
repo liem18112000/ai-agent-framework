@@ -30,8 +30,8 @@ import sys
 _ROOT = pathlib.Path(__file__).resolve().parents[1]  # test-agent-v2/
 sys.path.insert(0, str(_ROOT / "src"))
 
-from common.adk.providers.decision import Verdict  # noqa: E402
-from common.adk.providers.jev import JevProvider  # noqa: E402
+from common.adk.providers.decision import Verdict
+from common.adk.providers.jev import JevProvider
 
 _SCORE_LEVELS = ["contradicted", "unsupported", "supported", "strongly-supported"]
 
