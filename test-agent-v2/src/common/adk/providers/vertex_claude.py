@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 
 from common.adk.config import get_config
+from common.env import env_int
 from common.llm.vertex import _CACHE_TTL, vertex_config
 from common.llm.vertex import complete as _vertex_complete
 
@@ -16,10 +17,7 @@ _FAST_MAX_TOKENS_DEFAULT = 64000
 
 
 def _fast_max_tokens() -> int:
-    try:
-        return max(1, int(os.environ["VERTEX_MODEL_FAST_MAX_TOKENS"]))
-    except (KeyError, ValueError, TypeError):
-        return _FAST_MAX_TOKENS_DEFAULT
+    return max(1, env_int("VERTEX_MODEL_FAST_MAX_TOKENS", _FAST_MAX_TOKENS_DEFAULT))
 
 
 class VertexClaudeProvider:

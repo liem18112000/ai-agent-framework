@@ -123,3 +123,68 @@ async def test_gateway_http_app_open_when_env_unset(monkeypatch):
     app = gw.http_app()
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t/") as c:
         assert (await c.get("/livez")).status_code == 200
+
+
+# --- the admin router and the admin bridge must not drift apart ---------------------------------
+#: Bridge tool names that deliberately differ from their router verb. Keep this map SMALL — it is the
+#: escape hatch, and every entry is a place where the two surfaces read differently.
+_ADMIN_TOOL_ALIASES = {"memory-graph": "publish_memory_graph"}
+
+
+async def test_every_admin_verb_is_reachable_over_mcp():
+    """A verb on AdminRouter with no bridge tool is a feature nobody can call.
+
+    That is not hypothetical: a08a3d1 added token-usage / token-agents / token-estimate /
+    token-lesson to the router and registered none of them, so the whole token-accounting surface
+    was unreachable from the gateway — which is the ONLY client-facing surface, the agents being
+    A2A-only. The module docstring even says adding a verb is "a new method plus one line here",
+    which is the trap. This test is the line that makes that true.
+    """
+    from admin_agent.agent import root_agent as admin_root
+
+    verbs = set(admin_root._commands())
+    names = {t.name for t in await gw.mcp.list_tools()}
+    missing = {v for v in verbs if _ADMIN_TOOL_ALIASES.get(v, v.replace("-", "_")) not in names}
+    assert not missing, (f"admin verb(s) with no MCP tool: {sorted(missing)} — add a forwarder in "
+                         f"admin_agent/bridge/mcp_server.py (or an alias in _ADMIN_TOOL_ALIASES)")
+
+
+async def test_register_admin_returns_every_tool_it_registered():
+    """The returned dict is what `gateway.mcp_server` re-exports via globals(); a tool missing from
+    it is registered on MCP but not importable, so tests silently cannot reach it."""
+    from admin_agent.agent import root_agent as admin_root
+
+    for verb in admin_root._commands():
+        attr = _ADMIN_TOOL_ALIASES.get(verb, verb.replace("-", "_"))
+        assert hasattr(gw, attr), f"{attr} not re-exported from gateway.mcp_server"
+
+
+async def test_token_tools_route_only_to_admin():
+    client = RecordingClient("admin")
+    gw.admin_session.set_client(client)
+    try:
+        await gw.token_usage("run-abc")
+        await gw.token_estimate("ctx-1", assured_rounds=3)
+        await gw.token_agents(["run-a", "run-b"])
+        await gw.token_lesson("ctx-1", "drop the pack from the brief prompt")
+    finally:
+        gw.admin_session.set_client(None)
+
+    sent = [t for t, _c, _t in client.sent]
+    assert sent == ["token-usage run-abc", "token-estimate ctx-1 3", "token-agents run-a run-b",
+                    "token-lesson ctx-1 drop the pack from the brief prompt"]
+    assert client.sent[0][1] == "run-abc"      # run id rides as the context so the task is grouped
+    assert client.sent[2][1] is None           # ...but token-agents spans runs, so it has none
+
+
+async def test_token_usage_with_no_run_id_asks_for_every_run():
+    """The bare verb must not be sent as 'token-usage ' with a trailing space — the router partitions
+    on the first space and would hand the handler an empty rest either way, but the deployed surface
+    is text, so keep it exact."""
+    client = RecordingClient("admin")
+    gw.admin_session.set_client(client)
+    try:
+        await gw.token_usage()
+    finally:
+        gw.admin_session.set_client(None)
+    assert client.sent[0][0] == "token-usage"

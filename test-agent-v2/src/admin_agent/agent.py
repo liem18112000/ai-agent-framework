@@ -1,7 +1,10 @@
 """Admin root agent (ADK) — a deterministic, registry-dispatched text router (mirrors KgaRouter), NO LLM.
 
-`_commands()` is one literal `{verb: (handler, usage)}` table — adding an admin verb is a new method
-plus one line here; the dispatch loop + usage string derive from the table. Each handler has one job:
+`_commands()` is one literal `{verb: (handler, usage)}` table — adding an admin verb is a new method,
+one line here, AND a forwarder in `bridge/mcp_server.py`. That last part is not optional: this agent
+is A2A-only, so a verb with no bridge tool cannot be called by any client (it is how the whole
+token-accounting surface shipped unreachable). `test_gateway.py` fails if the two drift.
+The dispatch loop + usage string derive from the table. Each handler has one job:
 parse its `rest` and delegate to `common.admin` (Single-Responsibility). Blocking GCS + async
 SQLAlchemy run off the event loop (`_bank_call` for the sync handlers; the DB handlers await directly).
 """

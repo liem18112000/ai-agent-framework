@@ -3,8 +3,6 @@ plus the lesson capture and reply summary. Also the autonomous SequentialAgent's
 
 from __future__ import annotations
 
-import contextlib
-import os
 import re
 from dataclasses import asdict
 
@@ -12,6 +10,7 @@ from google.adk.agents import BaseAgent
 
 from common import learn
 from common.adk.events import incoming_text, now, text_event
+from common.env import env_int
 from common.memory.factory import build_bank
 from common.testplan.models import HAPPY, NEGATIVE
 from test_plan_definition.implement.generate.pipeline import ImplementResult, implement_plan
@@ -40,9 +39,7 @@ def _step_rounds() -> int:
     """Assured rounds per ``implement_plan`` call (env ``TPD_IMPLEMENT_STEP_ROUNDS``, default 1). One
     round ≈ one generate + one (cheap) judge, well under the client's ~300s MCP tool idle timeout — the
     client re-invokes until '[state: done]'. Set high (≈ MAX_ITERS) to restore one-shot blocking."""
-    with contextlib.suppress(KeyError, ValueError, TypeError):
-        return max(1, int(os.environ["TPD_IMPLEMENT_STEP_ROUNDS"]))
-    return _DEFAULT_STEP_ROUNDS
+    return max(1, env_int("TPD_IMPLEMENT_STEP_ROUNDS", _DEFAULT_STEP_ROUNDS))
 
 
 def summarize_progress(result: ImplementResult) -> str:

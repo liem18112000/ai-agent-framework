@@ -62,6 +62,24 @@ def test_persist_accumulates_across_chunked_calls(bank):
     assert stored["TOTAL"]["input"] == 220  # TOTAL recomputed, never accumulated
 
 
+def test_persist_does_not_double_count_chunks_on_one_warm_instance(bank):
+    """The sibling above resets between chunks; the COMMON case does not.
+
+    Cloud Run keeps an instance warm and the client re-invokes immediately, so consecutive chunks of
+    one run share a process — and the counters are cumulative. Folding an un-drained snapshot in on
+    every chunk stored the triangular sum (3 chunks -> 2x the real bill), and the admin view, which
+    reads storage *and* the live counters, showed 3x. Only the ratios stayed right, which is why it
+    read as plausible."""
+    for _ in range(3):
+        _spend("ctx", "gen", input=100, output=10)     # no reset: same instance, same process
+        token_admin.persist_usage(bank, "ctx")
+
+    stored = token_admin.read_usage(bank, "ctx")["TOTAL"]
+    assert (stored["calls"], stored["input"], stored["output"]) == (3, 300, 30)
+    assert token_admin._collect(bank, ["ctx"])["gen"]["input"] == 300   # the admin view agrees
+    assert meter.snapshot("ctx")["TOTAL"]["calls"] == 0                 # drained, so _TOTALS stays bounded
+
+
 def test_usage_overall_spans_runs_and_by_run_narrows(bank):
     for run, label, n in (("ctx-a", "define.brief", 100), ("ctx-b", "gather.distill", 40)):
         _spend(run, label, input=n)

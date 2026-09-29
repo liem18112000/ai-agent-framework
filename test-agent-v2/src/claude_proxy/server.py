@@ -35,7 +35,13 @@ def run_claude(prompt):
     if os.environ.get("CLAUDE_MODEL"):
         args += ["--model", os.environ["CLAUDE_MODEL"]]
     with _SEM:
-        out = subprocess.run(args, capture_output=True, text=True, timeout=600, check=False).stdout
+        p = subprocess.run(args, capture_output=True, text=True, timeout=600, check=False)
+    # A CLI failure (not logged in, quota, crash) writes nothing to stdout, and an empty stdout parses
+    # as a valid EMPTY completion — so the caller got a 200 with "" and silently fell back to its
+    # heuristic instead of seeing the error. Raise; do_POST turns it into a 500 the client can read.
+    if p.returncode != 0:
+        raise RuntimeError(f"claude CLI exited {p.returncode}: {(p.stderr or '').strip()[:500]}")
+    out = p.stdout
     try:
         j = json.loads(out)
     except json.JSONDecodeError:

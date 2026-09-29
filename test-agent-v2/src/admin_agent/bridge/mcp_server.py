@@ -1,8 +1,12 @@
 """Admin MCP tool definitions — the [ADMIN — non-pipeline] group on the single MCP gateway.
 
-Six thin forwarders over the admin A2A agent. Every docstring is prefixed so a client can visibly tell
-the admin surface from the `gather → … → implement` pipeline; `wipe_all` is destructive and states the
-required confirm token.
+Thin forwarders over the admin A2A agent — one per verb in `AdminRouter._commands()`. Every docstring
+is prefixed so a client can visibly tell the admin surface from the `gather → … → implement` pipeline;
+`wipe_all` and `forget_memory` are destructive and state their confirm token.
+
+Adding a verb to the router is NOT enough: the agents are A2A-only, so a verb with no forwarder here
+is unreachable by any client. `test_gateway.py::test_every_admin_verb_is_reachable_over_mcp` fails
+when the two drift.
 """
 
 from __future__ import annotations
@@ -123,6 +127,38 @@ def register_tools(mcp: MCPServer, session: BridgeSession) -> dict:
         with the Artifact tool. Reads pgvector when configured, else the GCS knowledge index."""
         return (await session.ask(f"memory-graph {title}".strip())).text
 
+    # --- token accounting (F5) ------------------------------------------------------------------
+    @mcp.tool()
+    async def token_usage(run_id: str = "") -> str:
+        """[ADMIN — not part of the testing pipeline] What a run actually spent, in tokens, per stage:
+        input / cached-read / cached-write / output, with a TOTAL and a cache-hit ratio. No `run_id`
+        aggregates every stored run. Read cached-read against cached-write — a prefix that never reads
+        back means the prompt cache is not working and those tokens cost more, not less."""
+        return (await session.ask(f"token-usage {run_id}".strip(), context_id=run_id or None)).text
+
+    @mcp.tool()
+    async def token_agents(run_ids: list[str] | None = None) -> str:
+        """[ADMIN — not part of the testing pipeline] The same per-stage breakdown narrowed to the runs
+        you name — "which agent is expensive in general" vs "...on this ticket". No ids = every run."""
+        ids = " ".join(run_ids or [])
+        return (await session.ask(f"token-agents {ids}".strip())).text
+
+    @mcp.tool()
+    async def token_estimate(context_id: str, assured_rounds: int = 2) -> str:
+        """[ADMIN — not part of the testing pipeline] Project what a run WILL cost from the pack it
+        would run against, before spending anything. Run it against a context that already has real
+        numbers and the model is shown against the actuals, so a bad estimate is visible."""
+        return (await session.ask(f"token-estimate {context_id} {assured_rounds}",
+                                  context_id=context_id)).text
+
+    @mcp.tool()
+    async def token_lesson(context_id: str, statement: str) -> str:
+        """[ADMIN — not part of the testing pipeline] Record a lesson about spending fewer tokens at
+        UNCHANGED quality, against a run. Stored as its own `token-saving` kind so these stay listable
+        apart from general lessons."""
+        return (await session.ask(f"token-lesson {context_id} {statement}",
+                                  context_id=context_id)).text
+
     @mcp.tool()
     async def wipe_all(confirm: str) -> str:
         """[ADMIN — not part of the testing pipeline] DESTRUCTIVE — clears the memory bank, pgvector,
@@ -131,8 +167,17 @@ def register_tools(mcp: MCPServer, session: BridgeSession) -> dict:
         memory-backups/** always survives. Ask the user Yes/No before calling."""
         return (await session.ask(f"wipe-all {confirm}")).text
 
+    # Every tool above, so `gateway.mcp_server` can re-export them (globals().update). The prompt_*
+    # family and forget_memory were registered on `mcp` but missing from here, so they were callable
+    # over MCP yet not importable from the gateway module — which is how the tests reach them.
     return {
         "list_runs": list_runs, "get_run": get_run, "record_artifact": record_artifact,
         "compare_runs": compare_runs, "view_memory": view_memory, "backup_memory": backup_memory,
-        "list_backups": list_backups, "publish_memory_graph": publish_memory_graph, "wipe_all": wipe_all,
+        "list_backups": list_backups, "publish_memory_graph": publish_memory_graph,
+        "prompt_list": prompt_list, "prompt_seed": prompt_seed, "prompt_get": prompt_get,
+        "prompt_publish": prompt_publish, "prompt_rollback": prompt_rollback,
+        "prompt_history": prompt_history, "forget_memory": forget_memory,
+        "token_usage": token_usage, "token_agents": token_agents,
+        "token_estimate": token_estimate, "token_lesson": token_lesson,
+        "wipe_all": wipe_all,
     }

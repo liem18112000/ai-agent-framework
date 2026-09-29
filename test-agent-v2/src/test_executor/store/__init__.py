@@ -10,6 +10,6 @@ from __future__ import annotations
 from test_executor.store.factory import build_store
 from test_executor.store.ids import _j, _now, env_id, new_id
 from test_executor.store.memory import InMemoryExecStore
-from test_executor.store.sql import SCHEMA_SQL, ExecStore
+from test_executor.store.sql import ExecStore
 
-__all__ = ["SCHEMA_SQL", "ExecStore", "InMemoryExecStore", "_j", "_now", "build_store", "env_id", "new_id"]
+__all__ = ["ExecStore", "InMemoryExecStore", "_j", "_now", "build_store", "env_id", "new_id"]

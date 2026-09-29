@@ -1,4 +1,7 @@
-"""Shared async SQLAlchemy engine for Cloud SQL — ONE pool for the A2A task store AND the"""
+"""Shared async SQLAlchemy engine for Cloud SQL — ONE pool for the A2A task store, the ADK sessions,
+the pgvector memory tier and the executor's run ledger — plus `SchemaOnce`, the base every store on
+that engine uses to apply its own DDL exactly once per process.
+"""
 
 from __future__ import annotations
 
@@ -84,3 +87,38 @@ def reset_engine_cache() -> None:
     """Drop the cached engine (tests only — lets a test flip env and rebuild)."""
     global _engine, _resolved
     _engine, _resolved = None, False
+
+
+class SchemaOnce:
+    """Base for a store that owns tables on the shared engine: applies `SCHEMA_SQL` once per process.
+
+    Subclass and set `SCHEMA_SQL` to idempotent `CREATE … IF NOT EXISTS` statements separated by `;`,
+    then `await self._ensure()` at the top of each public method.
+
+    The lock is the point. Two concurrent first callers both racing the CREATE EXTENSION/INDEX raise
+    `tuple concurrently updated`, and the store then degrades silently (MEM-02). This lived as a
+    byte-identical copy in `memory/pg/store.py` and `test_executor/store/sql.py` — two copies of a
+    race fix is one copy too many, since a correction to either is invisible in the other."""
+
+    SCHEMA_SQL = ""
+
+    def __init__(self, engine) -> None:
+        self._engine = engine
+        self._ready = False
+        self._lock = None
+
+    async def _ensure(self) -> None:
+        if self._ready:
+            return
+        import asyncio
+
+        from sqlalchemy import text
+        if self._lock is None:  # no await before assignment → safe under cooperative asyncio
+            self._lock = asyncio.Lock()
+        async with self._lock:
+            if self._ready:
+                return
+            async with self._engine.begin() as conn:
+                for stmt in (s.strip() for s in self.SCHEMA_SQL.split(";") if s.strip()):
+                    await conn.execute(text(stmt))
+            self._ready = True
