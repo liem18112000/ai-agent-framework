@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import contextlib
-import os
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict, replace
 
+from common.env import env_int
 from common.interrogate.answers import ingest
 from common.interrogate.insight import assumption_from_self_answer, distill_answer
 from common.interrogate.pack import load_pack
@@ -35,9 +34,7 @@ _DEFAULT_MAX_QUESTIONS = 50  # per-round open-question cap; overflow is DEFERRED
 def _resolve_max_questions() -> int:
     """Per-round open-question cap: env ``REFINE_MAX_QUESTIONS`` (default 50). Raise it to surface more
     questions per round; there is no hard ceiling beyond this — extra questions just defer to later."""
-    with contextlib.suppress(KeyError, ValueError, TypeError):
-        return max(1, int(os.environ["REFINE_MAX_QUESTIONS"]))
-    return _DEFAULT_MAX_QUESTIONS
+    return max(1, env_int("REFINE_MAX_QUESTIONS", _DEFAULT_MAX_QUESTIONS))
 
 
 def _resolve_max_rounds() -> int:

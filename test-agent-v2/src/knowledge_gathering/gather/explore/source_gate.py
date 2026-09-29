@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 
 from common.adk.providers import Verdict, get_decision_provider
+from common.env import env_float
 from knowledge_gathering.monitoring import get_logger
 
 log = get_logger("explore.source_gate")
@@ -37,11 +38,6 @@ def gate_enabled() -> bool:
     return os.environ.get("KGA_SOURCE_GATE", "").strip().lower() in ("1", "true", "yes", "on")
 
 
-def _f(env: str, default: float) -> float:
-    try:
-        return float(os.environ[env])
-    except (KeyError, ValueError):
-        return default
 
 
 def _statement(key: str) -> str:
@@ -113,5 +109,5 @@ def select_sources(candidates, *, state: str) -> set:
     if provider is None or not provider.is_configured():
         return candidates  # backend OFF/unconfigured → fire all (worst case = today)
     return apply_cascade(candidates, state=state, provider=provider,
-                         conf_min=_f("KGA_SOURCE_GATE_CONF_MIN", _DEFAULT_CONF_MIN),
-                         tau=_f("KGA_SOURCE_GATE_TAU", _DEFAULT_TAU))
+                         conf_min=env_float("KGA_SOURCE_GATE_CONF_MIN", _DEFAULT_CONF_MIN),
+                         tau=env_float("KGA_SOURCE_GATE_TAU", _DEFAULT_TAU))

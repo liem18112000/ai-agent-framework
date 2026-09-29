@@ -13,11 +13,10 @@ degrade to its heuristic (the best-effort contract — never raise).
 from __future__ import annotations
 
 import asyncio
-import contextlib
-import os
 
 from google.adk.agents import LlmAgent
 
+from common.env import env_float
 from common.llm import meter
 from common.monitoring import get_logger
 
@@ -30,9 +29,7 @@ def _gen_timeout_s() -> float:
     """Per-call ceiling (s) for one generator run (env ``TPD_GEN_TIMEOUT_S``). Bounds a slow Vertex
     call so it degrades to the caller's heuristic instead of hanging the handler past the server's
     request ceiling — the root cause of implement_plan timing out with nothing persisted."""
-    with contextlib.suppress(KeyError, ValueError, TypeError):
-        return max(1.0, float(os.environ["TPD_GEN_TIMEOUT_S"]))
-    return _DEFAULT_GEN_TIMEOUT_S
+    return max(1.0, env_float("TPD_GEN_TIMEOUT_S", _DEFAULT_GEN_TIMEOUT_S))
 
 
 def _record_usage(label: str, seen: list) -> None:
